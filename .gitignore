@@ -1,0 +1,75 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+htmlcov/
+.tox/
+
+# --- Virtual Environments ---
+.venv/
+venv/
+env/
+.venv/
+venv/
+backend/.venv/
+backend/venv/
+backend/env/
+
+# --- Node / Frontend ---
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# --- Shared Data (generated at runtime) ---
+shared/uploads/
+shared/processed/
+shared/database/*.db
+shared/database/*.sqlite
+
+# --- Root PDFs (large source docs, not code) ---
+*.pdf
+
+# --- IDE ---
+.idea/
+.idea/workspace.xml
+.vscode/
+.vscode/settings.json
+*.swp
+*.swo
+*~
+*.orig
+
+# --- OS ---
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+
+# --- Environment & Secrets ---
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.cert
+
+# --- Logs ---
+*.log
+/tmp/
+
+# --- Backend generated artifacts ---
+backend/app/__pycache__/
+backend/app/.pytest_cache/

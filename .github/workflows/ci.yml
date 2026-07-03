@@ -1,0 +1,62 @@
+name: SSIAR CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install backend dependencies
+        run: |
+          pip install fastapi uvicorn python-multipart openpyxl opencv-python-headless numpy pydantic PyMuPDF
+          pip install pytest ruff
+      
+      - name: Lint with ruff
+        run: ruff check backend/app/ --ignore E501
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          python -m pytest app/test_backend.py -v --tb=short -x
+        timeout-minutes: 10
+
+  frontend-lint-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+      
+      - name: Lint
+        run: |
+          cd frontend
+          npm run lint || true
+      
+      - name: Type check
+        run: |
+          cd frontend
+          npx tsc -b --noEmit || true
+      
+      - name: Build
+        run: |
+          cd frontend
+          npm run build
