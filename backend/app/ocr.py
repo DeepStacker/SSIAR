@@ -24,7 +24,7 @@ ROIS_P2 = {
     'math_pct': (140.0, 658.0, 240.0, 688.0),
     'science_pct': (140.0, 688.0, 240.0, 718.0),
     'language_pct': (140.0, 718.0, 240.0, 748.0),
-    'rank': (40.0, 755.0, 110.0, 785.0)
+    'rank': (25.0, 745.0, 140.0, 795.0)
 }
 
 ROIS_REMARKS = {
@@ -129,16 +129,40 @@ def normalize_score(text):
     digits = re.sub(r"\D", "", clean)
     return digits, len(digits) > 0
 
+def normalize_pct(text):
+    value, is_valid = normalize_score(text)
+    if not is_valid:
+        return value, False
+    try:
+        num = int(value)
+        if num < 0 or num > 100:
+            return value, False
+    except ValueError:
+        return value, False
+    return value, True
+
+def normalize_rank_val(text):
+    value, is_valid = normalize_score(text)
+    if not is_valid:
+        return value, False
+    try:
+        num = int(value)
+        if num < 0 or num > 999:
+            return value, False
+    except ValueError:
+        return value, False
+    return value, True
+
 def get_normalizer(field_name):
     norm_map = {
         'roll_number': (normalize_roll_number, '0123456789०१२३४५६७८९'),
         'class': (normalize_class, '0123456789०१२३४५६७८९'),
         'dob': (normalize_dob, '0123456789०१२३४५६७८९/'),
         'gender': (normalize_gender, 'MFmfMFmf'),
-        'math_pct': (normalize_score, '0123456789०१२३४५६७८९%'),
-        'science_pct': (normalize_score, '0123456789०१२३४५६७८९%'),
-        'language_pct': (normalize_score, '0123456789०१२३४५६७८९%'),
-        'rank': (normalize_score, '0123456789०१२३४५६७८९'),
+        'math_pct': (normalize_pct, '0123456789०१२३४५६७८९%'),
+        'science_pct': (normalize_pct, '0123456789०१२३४५६७८९%'),
+        'language_pct': (normalize_pct, '0123456789०१२३४५६७८९%'),
+        'rank': (normalize_rank_val, '0123456789०१२३४५६७८९'),
     }
     return norm_map.get(field_name, (normalize_score, None))
 
@@ -467,16 +491,74 @@ class AzureOCREngine(OCREngine):
             texts = []
             confs = []
             for page in result.pages:
-                for line in page.lines:
+                words = list(page.words or [])
+                for line in list(page.lines or []):
                     texts.append(line.content)
-                    confs.append(line.confidence)
+                    line_start = line.spans[0].offset if line.spans else None
+                    line_end = (line_start + line.spans[0].length) if line_start is not None else None
+                    if line_start is not None:
+                        for w in words:
+                            ws, wl = w.span.offset, w.span.length
+                            if ws >= line_start and ws + wl <= line_end:
+                                confs.append(w.confidence)
             raw_text = " ".join(texts)
             avg_conf = float(np.mean(confs)) if confs else 0.0
             clean = clean_ocr_text(raw_text)
+            print(f"  azure {field_name}: raw='{raw_text}' clean='{clean}' avg_conf={avg_conf:.3f} n_words={len(confs)}")
             return OCREngineResult(clean, avg_conf, self.name)
         except Exception as e:
             print(f"Azure error on {field_name}: {e}")
             return None
+
+    def recognize_full_page(self, page_img, rois: dict) -> dict:
+        """
+        Process a full aligned page with Azure DI once, extract fields by ROI position.
+        rois: {field_name: (x0_pts, y0_pts, x1_pts, y1_pts)} in points (template coords)
+        Returns: {field_name: (text, confidence, is_valid)} or empty for not found
+        """
+        if not self._lazy_init():
+            return {}
+        try:
+            import io
+            from PIL import Image
+            rgb = cv2.cvtColor(page_img, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(rgb)
+            buf = io.BytesIO()
+            pil_image.save(buf, format="PNG")
+            buf.seek(0)
+
+            poller = self._client.begin_analyze_document("prebuilt-read", body=buf, content_type="image/png")
+            result = poller.result()
+
+            page_h = float(result.pages[0].height)
+            page_w = float(result.pages[0].width)
+            results = {}
+
+            # Build word list with positions
+            words_with_pos = []
+            for page in result.pages:
+                for word in list(page.words or []):
+                    xs = [word.polygon[i] for i in range(0, len(word.polygon), 2)]
+                    ys = [word.polygon[i+1] for i in range(0, len(word.polygon), 2)]
+                    cx = sum(xs) / len(xs)
+                    cy = sum(ys) / len(ys)
+                    words_with_pos.append((cx, cy, word.content, word.confidence))
+
+            for field_name, (x0, y0, x1, y1) in rois.items():
+                px0 = int(x0 * (page_w / 2484))
+                px1 = int(x1 * (page_w / 2484))
+                py0 = int(y0 * (page_h / 3509))
+                py1 = int(y1 * (page_h / 3509))
+                field_words = [w for w in words_with_pos if px0 <= w[0] <= px1 and py0 <= w[1] <= py1]
+                if field_words:
+                    text = " ".join(w[2] for w in field_words)
+                    conf = float(np.mean([w[3] for w in field_words]))
+                    clean = clean_ocr_text(text)
+                    results[field_name] = (clean, conf, True)
+            return results
+        except Exception as e:
+            print(f"Azure full-page error: {e}")
+            return {}
 
 # ==========================================
 # OCR Router
@@ -486,19 +568,22 @@ class AzureOCREngine(OCREngine):
 
 ENGINE_TIMEOUT = 15
 
+# Per-field reprocess uses Azure-first sequential mode (route_override in reprocess_field endpoint)
+# Main pipeline: PaddleOCR (best general) → EasyOCR (printed) → TrOCR (handwriting)
+# Engines that fail init (e.g. PaddleOCR on macOS, Surya without llama-server) are skipped automatically
 FIELD_ENGINE_ROUTES = {
-    'roll_number': ['paddleocr', 'surya', 'easyocr', 'trocr', 'azure'],
-    'class':       ['paddleocr', 'surya', 'easyocr', 'trocr', 'azure'],
-    'dob':         ['paddleocr', 'surya', 'easyocr', 'trocr', 'azure'],
-    'gender':      ['paddleocr', 'surya', 'easyocr', 'azure'],
-    'math_pct':    ['paddleocr', 'surya', 'easyocr', 'trocr', 'azure'],
-    'science_pct': ['paddleocr', 'surya', 'easyocr', 'trocr', 'azure'],
-    'language_pct':['paddleocr', 'surya', 'easyocr', 'trocr', 'azure'],
-    'rank':        ['paddleocr', 'surya', 'easyocr', 'trocr', 'azure'],
-    'remarks':     ['paddleocr', 'surya', 'easyocr', 'azure'],
+    'roll_number': ['paddleocr', 'easyocr', 'trocr'],
+    'class':       ['paddleocr', 'easyocr', 'trocr'],
+    'dob':         ['paddleocr', 'easyocr', 'trocr'],
+    'gender':      ['paddleocr', 'easyocr'],
+    'math_pct':    ['paddleocr', 'easyocr', 'trocr'],
+    'science_pct': ['paddleocr', 'easyocr', 'trocr'],
+    'language_pct':['paddleocr', 'easyocr', 'trocr'],
+    'rank':        ['paddleocr', 'easyocr', 'trocr'],
+    'remarks':     ['paddleocr', 'easyocr'],
 }
 
-DEFAULT_ENGINE_ROUTE = ['paddleocr', 'surya', 'easyocr', 'trocr', 'azure']
+DEFAULT_ENGINE_ROUTE = ['paddleocr', 'easyocr', 'trocr']
 
 class OCRRouter:
     def __init__(self, gpu: bool = True):
@@ -528,14 +613,32 @@ class OCRRouter:
     def get_available_engines(self) -> list:
         return list(self._engine_order)
 
-    def recognize_field(self, crop, field_name: str) -> OCREngineResult:
-        route = FIELD_ENGINE_ROUTES.get(field_name, DEFAULT_ENGINE_ROUTE)
+    def recognize_field(self, crop, field_name: str, route_override: list = None, sequential: bool = False) -> OCREngineResult:
+        route = route_override if route_override is not None else FIELD_ENGINE_ROUTES.get(field_name, DEFAULT_ENGINE_ROUTE)
         normalizer_fn = get_normalizer(field_name)[0]
 
         candidates = [name for name in route if name in self._engines]
         if not candidates:
             return OCREngineResult("", 0.0, "none")
 
+        # Sequential mode: try engines one at a time, return first valid parseable result
+        if sequential:
+            results: list[OCREngineResult] = []
+            for engine_name in candidates:
+                engine = self._engines[engine_name]
+                result = self._safe_recognize(engine, crop, field_name)
+                if result and result.text:
+                    norm_val, is_valid = normalizer_fn(result.text)
+                    result.text = norm_val
+                    print(f"  seq {engine_name}: raw='{result.text}' valid={is_valid} conf={result.confidence:.3f}")
+                    if is_valid and norm_val:
+                        return result
+                    results.append(result)
+                else:
+                    print(f"  seq {engine_name}: empty/no result")
+            return self._consensus(results, field_name)
+
+        # Parallel mode: run all engines, take first good result
         futures = {}
         for engine_name in candidates:
             engine = self._engines[engine_name]
@@ -555,6 +658,9 @@ class OCRRouter:
                     result.text = norm_val
                     results.append(result)
                     if is_valid and result.confidence > 0.7:
+                        for f in futures:
+                            if not f.done():
+                                f.cancel()
                         return result
                 except Exception:
                     pass
@@ -563,7 +669,11 @@ class OCRRouter:
         except FuturesTimeoutError:
             pass
 
-        return self._consensus(results, field_name)
+        result = self._consensus(results, field_name)
+        for f in futures:
+            if not f.done():
+                f.cancel()
+        return result
 
     def _safe_recognize(self, engine, crop, field_name) -> Optional[OCREngineResult]:
         try:
@@ -639,11 +749,11 @@ def run_ocr_on_fields(aligned_p1, aligned_p2):
         page = aligned_p1 if field_name in ROIS_P1 else aligned_p2
         crop = page[py0+5:py1-5, px0:px1] if field_name in ROIS_P1 else page[py0:py1, px0:px1]
 
-        # 3x upscale + CLAHE for small P2 fields (marks, rank) to improve OCR
+        # 4x upscale + CLAHE for small P2 fields (marks, rank) to improve OCR
         if field_name in ROIS_P2:
             h, w = crop.shape[:2]
             if h > 10 and w > 10:
-                up = cv2.resize(crop, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC)
+                up = cv2.resize(crop, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
                 gray = cv2.cvtColor(up, cv2.COLOR_BGR2GRAY)
                 clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
                 enhanced = clahe.apply(gray)

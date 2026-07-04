@@ -19,7 +19,7 @@ from app.pipeline import (
 from app.ocr import run_ocr_on_fields, ocr_remarks
 from app.sse import notify as notify_sse
 
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=2)
 
 
 def get_executor() -> ThreadPoolExecutor:
@@ -151,16 +151,87 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
         if has_page2:
             remarks_text = ocr_remarks(aligned_p2)
 
-        if has_page2:
-            ocr_results = run_ocr_on_fields(aligned_p1, aligned_p2)
-        else:
-            ocr_results = run_ocr_on_fields(aligned_p1, aligned_p1)
+        # Phase 1: EasyOCR on each field crop (fast, free baseline)
+        from app.ocr import get_router, get_normalizer, ROIS_P1, ROIS_P2, AzureOCREngine
+        from app.crops import extract_crop
+        _router = get_router()
+        _all_roi = list({**ROIS_P1, **ROIS_P2}.keys())
+        ocr_results = {"data": {}, "validation": {}, "confidences": {}, "roi_qualities": {}, "preprocessing_modes": {}}
+        _azure_full = {}  # will store Azure full-page results for ⟳ reprocess
+
+        for _field in _all_roi:
+            _page = aligned_p1 if _field in ROIS_P1 else aligned_p2
+            _crop = extract_crop(_page, _field)
+            _val, _conf, _valid = "", 0.0, False
+            if _crop is not None and _crop.size > 0:
+                h, w = _crop.shape[:2]
+                if h > 10 and w > 10:
+                    up = cv2.resize(_crop, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
+                    gray = cv2.cvtColor(up, cv2.COLOR_BGR2GRAY)
+                    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+                    enhanced = clahe.apply(gray)
+                    _crop = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+                _res = _router.recognize_field(_crop, _field, route_override=['easyocr'])
+                if _res and _res.text:
+                    _norm, _valid = get_normalizer(_field)[0](_res.text)
+                    if _valid and _norm:
+                        _val, _conf = _norm, _res.confidence
+            ocr_results["data"][_field] = _val
+            ocr_results["confidences"][_field] = _conf
+            ocr_results["validation"][_field] = "valid" if _valid else "invalid"
+
+        # Phase 2: Azure full-page OCR — ONE call per aligned page covers ALL fields
+        _az = AzureOCREngine()
+        if _az._lazy_init():
+            import json as _json
+            for _page_num, _page_img, _page_rois in [
+                (1, aligned_p1, {k: ROIS_P1[k] for k in ROIS_P1 if k in _all_roi}),
+                (2, aligned_p2, {k: ROIS_P2[k] for k in ROIS_P2 if k in _all_roi}),
+            ]:
+                if _page_img is None or not _page_rois:
+                    continue
+                _az_results = _az.recognize_full_page(_page_img, _page_rois)
+                for _field, (_text, _conf, _ok) in _az_results.items():
+                    if _ok and _text:
+                        _norm, _valid = get_normalizer(_field)[0](_text)
+                        if _valid and _norm:
+                            ocr_results["data"][_field] = _norm
+                            ocr_results["confidences"][_field] = _conf
+                            ocr_results["validation"][_field] = "valid"
+                            print(f"  azure full-page {_field}: '{_norm}' conf={_conf:.3f}")
+                _azure_full[f"page_{_page_num}"] = _az_results
+
+        # Store Azure full-page results for ⟳ reprocess (avoid repeat API calls)
+        ocr_results["_azure_cache"] = _azure_full
+
+        # Explicit sanity checks on extracted values (belt-and-suspenders)
+        data = ocr_results["data"]
+        data_has_impossible = False
+        for pct_field in ["math_pct", "science_pct", "language_pct"]:
+            val = data.get(pct_field, "").strip()
+            if val:
+                try:
+                    if int(val) > 100:
+                        data_has_impossible = True
+                        break
+                except ValueError:
+                    data_has_impossible = True
+                    break
+        if not data_has_impossible:
+            rank_val = data.get("rank", "").strip()
+            if rank_val:
+                try:
+                    if int(rank_val) > 999:
+                        data_has_impossible = True
+                except ValueError:
+                    data_has_impossible = True
 
         if quality_report["crop"] or quality_report["blur"] < 40:
             escalation_level = "level_4"
         elif orb_failed_on_p2 or quality_report["quality"] < 50:
             escalation_level = "level_3"
-        elif (any(v == "invalid" for v in ocr_results["validation"].values()) or
+        elif (data_has_impossible or
+              any(v == "invalid" for v in ocr_results["validation"].values()) or
               any(c == "low_confidence" for c in confidences.values()) or
               consent_val == "Unanswered" or
               any(score < 0.65 for score in ocr_results["confidences"].values())):
@@ -168,10 +239,15 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
         else:
             escalation_level = "level_1"
 
-        if auto_verify and escalation_level in ("level_1", "level_2"):
+        if auto_verify and escalation_level == "level_1":
             status = "verified"
         else:
-            status = "needs_review" if escalation_level != "level_1" else "verified"
+            status = "needs_review"
+
+        # Clear impossible values so they don't pollute the database
+        if data_has_impossible:
+            for pct_field in ["math_pct", "science_pct", "language_pct", "rank"]:
+                data[pct_field] = ""
 
         academic_scores = {
             "math_pct": ocr_results["data"].get("math_pct", ""),

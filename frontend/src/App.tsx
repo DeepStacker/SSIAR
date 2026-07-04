@@ -34,8 +34,8 @@ function AppInner() {
   // Upload
   const [uploading, setUploading] = useState(false);
   const [autoVerify, setAutoVerify] = useState(true);
-  const [folderPath, setFolderPath] = useState('');
-  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [splitPages, setSplitPages] = useState(false);
+
   const [isDragOver, setIsDragOver] = useState(false);
 
   // Dashboard
@@ -230,8 +230,7 @@ function AppInner() {
   const downloadIndividualReport = (doc: Document) => {
     window.open(api.getExportUrl({
       format: 'csv',
-      date_from: doc.created_at?.slice(0, 10),
-      date_to: doc.created_at?.slice(0, 10),
+      doc_ids: doc.id,
     }), '_blank');
   };
 
@@ -257,7 +256,7 @@ function AppInner() {
   const handleUpload = async (files: File[]) => {
     if (!files.length) return;
     setUploading(true);
-    try { await api.uploadFiles(files, autoVerify); await loadAll(); }
+    try { await api.uploadFiles(files, autoVerify, splitPages); await loadAll(); }
     catch { show("Upload failed", 'error'); }
     finally { setUploading(false); }
   };
@@ -266,17 +265,6 @@ function AppInner() {
     if (!e.target.files?.length) return;
     await handleUpload(Array.from(e.target.files));
     e.target.value = '';
-  };
-
-  const handleBatchFolder = async () => {
-    if (!folderPath.trim()) return;
-    setBatchProcessing(true);
-    try {
-      const res = await api.batchProcessFolder(folderPath.trim(), true);
-      show(`Queued ${res.total} PDFs`);
-      await loadAll();
-    } catch (err: any) { show(err.message, 'error'); }
-    finally { setBatchProcessing(false); }
   };
 
   // Bulk selection
@@ -370,7 +358,7 @@ function AppInner() {
     }
 
     if (selectedDoc.status === 'verified' && docDetails) {
-      return <VerifiedView doc={selectedDoc} details={docDetails} onClose={closeDoc} />;
+      return <VerifiedView doc={selectedDoc} details={docDetails} onClose={closeDoc} onDetailsChange={setDocDetails} />;
     }
 
     if (selectedDoc.status === 'failed') {
@@ -439,9 +427,8 @@ function AppInner() {
 
             <UploadZone
               uploading={uploading} autoVerify={autoVerify} onAutoVerifyChange={setAutoVerify}
+              splitPages={splitPages} onSplitPagesChange={setSplitPages}
               onUpload={handleUpload}
-              folderPath={folderPath} onFolderPathChange={setFolderPath}
-              batchProcessing={batchProcessing} onBatchProcess={handleBatchFolder}
               failedCount={failed.length} onRetryAllFailed={handleReprocessAllFailed}
               isDragOver={isDragOver} onDragOver={setIsDragOver}
             />

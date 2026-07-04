@@ -1,12 +1,19 @@
+import cv2
+import numpy as np
 from fastapi import APIRouter, HTTPException
 from app.database import (
     get_document, get_all_documents, delete_document as db_delete,
     bulk_delete_documents, update_document_status, insert_or_update_form_data,
-    log_correction_data, get_edit_history
+    log_correction_data, get_edit_history, get_page_image
 )
+from app.crops import extract_crop, get_crop_page
+from app.ocr import get_router, get_normalizer
 from app.schemas import VerifyDataRequest, BulkRequest
 from app.services.processing import get_executor, process_pdf_background
 from app.sse import notify as notify_sse
+
+FIELD_NAMES = {"roll_number", "class", "dob", "gender", "math_pct", "science_pct", "language_pct", "rank"}
+SCORE_FIELDS = {"math_pct", "science_pct", "language_pct", "rank"}
 
 router = APIRouter()
 
@@ -134,6 +141,119 @@ def bulk_reprocess(payload: BulkRequest):
             get_executor().submit(process_pdf_background, doc_id)
             count += 1
     return {"message": f"Reprocessing {count} document(s)"}
+
+
+@router.post("/api/documents/{doc_id}/reprocess-field/{field_name}")
+def reprocess_field(doc_id: str, field_name: str):
+    if field_name not in FIELD_NAMES:
+        raise HTTPException(status_code=400, detail=f"Unsupported field: {field_name}")
+
+    doc = get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    page_num = get_crop_page(field_name)
+    img_bytes = get_page_image(doc_id, page_num)
+    if not img_bytes:
+        raise HTTPException(status_code=404, detail="Aligned page not found in database")
+
+    nparr = np.frombuffer(img_bytes, np.uint8)
+    aligned_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if aligned_img is None:
+        raise HTTPException(status_code=500, detail="Failed to decode aligned page")
+
+    # Check cached Azure full-page result first (avoids repeat API call)
+    _conf_scores = doc.get("confidence_scores") or {}
+    _azure_cache = _conf_scores.get("_azure_cache") or {}
+    _page_key = "page_1" if field_name in __import__('app.ocr', fromlist=['ROIS_P1']).ROIS_P1 else "page_2"
+    _cached = _azure_cache.get(_page_key, {}).get(field_name)
+    if _cached and _cached[0] and _cached[1] > 0:
+        norm_val, is_valid = get_normalizer(field_name)[0](_cached[0])
+        if is_valid and norm_val:
+            print(f"⟳ reprocess_field {field_name}: using cached Azure result '{norm_val}' conf={_cached[1]:.3f}")
+            new_confidence = _cached[1]
+            result = type('obj', (object,), {'text': norm_val, 'confidence': _cached[1], 'engine_name': 'azure_cached'})()
+            # Fall through to update logic below
+        else:
+            result = None
+    else:
+        result = None
+
+    if result is None:
+        crop = extract_crop(aligned_img, field_name)
+        if crop is None or crop.size == 0:
+            raise HTTPException(status_code=404, detail="Crop region not found")
+        h, w = crop.shape[:2]
+        if h > 10 and w > 10:
+            up = cv2.resize(crop, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
+            gray = cv2.cvtColor(up, cv2.COLOR_BGR2GRAY)
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            enhanced = clahe.apply(gray)
+            crop = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+        router = get_router()
+        result = router.recognize_field(crop, field_name, route_override=['easyocr', 'trocr'], sequential=True)
+        normalizer_fn = get_normalizer(field_name)[0]
+        norm_val, is_valid = normalizer_fn(result.text)
+        new_confidence = result.confidence if is_valid else 0.0
+
+    print(f"⟳ reprocess_field {field_name}: engine={result.engine_name} raw='{result.text}' norm='{norm_val}' valid={is_valid} conf={result.confidence:.3f}")
+
+    old_conf_scores = doc.get("confidence_scores") or {}
+    old_ocr_confs = old_conf_scores.get("ocr") or {}
+
+    # Accept any valid non-empty result — parseable data matters more than confidence
+    if not norm_val:
+        return {
+            "field_name": field_name,
+            "value": doc.get(field_name) or doc.get("academic_scores", {}).get(field_name, ""),
+            "engine": result.engine_name,
+            "confidence": 0,
+            "updated": False,
+            "message": "No parseable data from any engine"
+        }
+
+    old_form = doc
+    if field_name in SCORE_FIELDS:
+        academic = dict(old_form.get("academic_scores") or {})
+        academic[field_name] = norm_val
+        academic_scores = academic
+    else:
+        academic_scores = old_form.get("academic_scores") or {}
+
+    roll_number = norm_val if field_name == "roll_number" else (old_form.get("roll_number") or "")
+    class_val = norm_val if field_name == "class" else (old_form.get("class") or "")
+    dob = norm_val if field_name == "dob" else (old_form.get("dob") or "")
+    gender = norm_val if field_name == "gender" else (old_form.get("gender") or "")
+
+    new_ocr_confs = dict(old_ocr_confs)
+    new_ocr_confs[field_name] = new_confidence
+    conf_scores = dict(old_conf_scores)
+    conf_scores["ocr"] = new_ocr_confs
+
+    insert_or_update_form_data(
+        doc_id=doc_id,
+        roll_number=roll_number,
+        class_val=class_val,
+        dob=dob,
+        gender=gender,
+        consent=old_form.get("consent") or "Unanswered",
+        responses=old_form.get("responses") or {},
+        academic_scores=academic_scores,
+        remarks=old_form.get("remarks") or "",
+        confidence_scores=conf_scores,
+        verified=0
+    )
+
+    notify_sse("document_updated", {"doc_id": doc_id, "status": doc["status"]})
+
+    return {
+        "field_name": field_name,
+        "value": norm_val,
+        "engine": result.engine_name,
+        "confidence": new_confidence,
+        "valid": is_valid,
+        "updated": True
+    }
 
 
 @router.get("/api/documents/{doc_id}/history")

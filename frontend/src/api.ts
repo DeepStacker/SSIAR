@@ -89,11 +89,14 @@ export interface BatchFolderResponse {
 
 export const api = {
   // Upload scanned PDFs
-  uploadFiles: async (files: File[], autoVerify?: boolean): Promise<any> => {
+  uploadFiles: async (files: File[], autoVerify?: boolean, split?: boolean): Promise<any> => {
     const formData = new FormData();
     files.forEach(file => formData.append("files", file));
-    const params = autoVerify ? "?auto_verify=true" : "";
-    const response = await fetch(`${API_BASE}/upload${params}`, {
+    const params = new URLSearchParams();
+    if (autoVerify) params.set("auto_verify", "true");
+    if (split) params.set("split", "true");
+    const qs = params.toString();
+    const response = await fetch(`${API_BASE}/upload${qs ? '?' + qs : ''}`, {
       method: "POST",
       body: formData,
     });
@@ -179,6 +182,25 @@ export const api = {
     });
     if (!response.ok) {
       throw new Error("Failed to reprocess document");
+    }
+    return response.json();
+  },
+
+  // Reprocess a single field — re-runs OCR on just that field's crop
+  reprocessField: async (docId: string, fieldName: string): Promise<{
+    field_name: string;
+    value: string;
+    confidence: number;
+    valid: boolean;
+    updated: boolean;
+    message?: string;
+  }> => {
+    const response = await fetch(`${API_BASE}/documents/${docId}/reprocess-field/${fieldName}`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to reprocess field");
     }
     return response.json();
   },

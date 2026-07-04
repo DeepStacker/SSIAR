@@ -1,11 +1,13 @@
 import json
 import asyncio
+import os
 import cv2
 import numpy as np
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response, FileResponse, StreamingResponse
 from app.database import get_page_image
 from app.crops import extract_crop, get_crop_page
+from app.config import TEMP_DIR
 from app.sse import subscribe, unsubscribe
 
 router = APIRouter()
@@ -16,8 +18,13 @@ def serve_crop(doc_id: str, filename: str):
     crop_name = filename.replace('.png', '')
     page_num = get_crop_page(crop_name)
     img_bytes = get_page_image(doc_id, page_num)
+
+    # Fallback: old documents may still have crops on filesystem
     if not img_bytes:
-        raise HTTPException(status_code=404, detail="Aligned page not found in database")
+        legacy_path = os.path.join(os.path.dirname(TEMP_DIR), "processed", doc_id, filename)
+        if os.path.exists(legacy_path):
+            return FileResponse(legacy_path)
+        raise HTTPException(status_code=404, detail="Crop not found")
 
     nparr = np.frombuffer(img_bytes, np.uint8)
     aligned_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -29,6 +36,9 @@ def serve_crop(doc_id: str, filename: str):
 
     crop = extract_crop(aligned_img, crop_name)
     if crop is None or crop.size == 0:
+        legacy_path = os.path.join(os.path.dirname(TEMP_DIR), "processed", doc_id, filename)
+        if os.path.exists(legacy_path):
+            return FileResponse(legacy_path)
         raise HTTPException(status_code=404, detail="Crop region not found")
 
     _, buf = cv2.imencode('.png', crop)

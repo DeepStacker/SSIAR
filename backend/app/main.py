@@ -1,7 +1,13 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.middleware import MaxBodySizeMiddleware
-from app.database import init_db
+from app.database import init_db, get_db_connection
 from app.services.processing import init_templates, start_cleanup_thread
 
 app = FastAPI(title="SSIAR SDQ Digitization API")
@@ -32,3 +38,12 @@ def startup_event():
     init_db()
     init_templates()
     start_cleanup_thread()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE documents SET status = 'failed', escalation_level = 'level_4' WHERE status = 'processing'")
+    stalled = cursor.rowcount
+    conn.commit()
+    conn.close()
+    if stalled:
+        print(f"Marked {stalled} stalled document(s) as failed (server restarted while processing)")

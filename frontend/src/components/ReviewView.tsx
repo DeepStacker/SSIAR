@@ -6,6 +6,7 @@ import { api } from '../api';
 import { SdqGrid } from './SdqGrid';
 import { ConsentRemarks } from './ConsentRemarks';
 import { ZoomPopup } from './ZoomPopup';
+import { useToast } from '../context/ToastContext';
 
 interface Props {
   doc: Document;
@@ -28,8 +29,35 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty, onDeta
   const [fieldAccepted, setFieldAccepted] = useState<Record<string, boolean>>({});
   const [flashField, setFlashField] = useState<string | null>(null);
   const [zoomImg, setZoomImg] = useState<ZoomImage | null>(null);
+  const [reprocessingField, setReprocessingField] = useState<string | null>(null);
   const rollRef = useRef<HTMLInputElement>(null);
   const origValuesRef = useRef<Record<string, string>>({});
+  const { show } = useToast();
+
+  const handleReprocessField = async (key: string) => {
+    setReprocessingField(key);
+    try {
+      const result = await api.reprocessField(doc.id, key);
+      if (result.updated && result.value) {
+        const newConfScores = { ...details.confidence_scores };
+        newConfScores.ocr = { ...(newConfScores.ocr || {}), [key]: result.confidence };
+        const updatedField = (k: string) =>
+          k === 'roll_number' ? { roll_number: result.value }
+          : k === 'class' ? { class: result.value }
+          : k === 'dob' ? { dob: result.value }
+          : k === 'gender' ? { gender: result.value }
+          : { academic_scores: { ...academic, [k]: result.value } };
+        onDetailsChange({ ...details, ...updatedField(key), confidence_scores: newConfScores });
+        show(result.message || `Updated to "${result.value}"`, 'success');
+      } else {
+        show(result.message || 'Kept existing value (higher confidence)', 'success');
+      }
+    } catch (e: any) {
+      show(e.message || 'Field reprocess failed', 'error');
+    } finally {
+      setReprocessingField(null);
+    }
+  };
 
   const conf = details.confidence_scores?.ocr || {};
   const checkboxConf = details.confidence_scores?.checkbox || {};
@@ -118,7 +146,13 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty, onDeta
           </span>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button className="btn btn-secondary" style={{ fontSize: '12px', padding: '6px 12px' }}
-              onClick={() => setFieldAccepted(Object.fromEntries(mainFields.map(f => [f.key, isHighConf(f.key)])))}>
+              onClick={() => {
+                const next = { ...fieldAccepted };
+                for (const f of mainFields) {
+                  if (isHighConf(f.key)) next[f.key] = true;
+                }
+                setFieldAccepted(next);
+              }}>
               Accept High-Conf ({mainFields.filter(f => isHighConf(f.key)).length})
             </button>
             <button onClick={onVerify} className="btn btn-primary" style={{ fontSize: '14px', padding: '8px 20px' }} disabled={saving}>
@@ -225,6 +259,13 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty, onDeta
                   </div>
                   <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                     <span style={{ fontSize: '14px', fontWeight: '700', color: confColor, minWidth: '36px', textAlign: 'right' }}>{Math.round(confidence * 100)}%</span>
+                    {reprocessingField === f.key ? (
+                      <Loader2 size={16} className="animate-spin" style={{ color: 'var(--accent-cyan)' }} />
+                    ) : (
+                      <button onClick={() => handleReprocessField(f.key)}
+                        title="Re-run OCR on this field"
+                        className="btn btn-secondary" style={{ padding: '3px 5px', fontSize: '11px', minWidth: '24px', height: '24px', opacity: 0.6 }}>⟳</button>
+                    )}
                     {accepted ? (
                       <Check size={20} style={{ color: 'var(--accent-emerald)' }} />
                     ) : (

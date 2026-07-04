@@ -53,7 +53,7 @@ P2_Y_RANGES = [
 
 def split_pdf_to_images(pdf_path, output_dir):
     """
-    Renders PDF pages to 300 DPI images.
+    Renders PDF pages to 300 DPI images on disk.
     Returns a list of image file paths.
     """
     os.makedirs(output_dir, exist_ok=True)
@@ -69,6 +69,24 @@ def split_pdf_to_images(pdf_path, output_dir):
         img_paths.append(out_path)
         
     return img_paths
+
+
+def render_pdf_to_arrays(pdf_bytes):
+    """
+    Renders PDF pages to 300 DPI numpy arrays (no disk I/O).
+    Returns a list of (image_array, file_path) tuples.
+    """
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    results = []
+    for i in range(len(doc)):
+        page = doc[i]
+        mat = fitz.Matrix(ZOOM, ZOOM)
+        pix = page.get_pixmap(matrix=mat)
+        arr = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+        arr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+        results.append(arr)
+    doc.close()
+    return results
 
 # ==========================================
 # Step 1: Image Classification
