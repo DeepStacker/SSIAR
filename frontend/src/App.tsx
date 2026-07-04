@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, FileText, Clock, AlertTriangle, Check, X } from 'lucide-react';
 import type { Document, DocumentDetails, QueueStatus, TabType, SortKey, ReportFormat } from './api';
 import { api } from './api';
-import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { Header } from './components/Header';
 import { StatCards } from './components/StatCards';
@@ -76,10 +76,11 @@ function AppInner() {
       if (qs) setQueueStatus(qs);
     } catch (err) {
       console.error(err);
+      show("Failed to load documents from backend", 'error');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [show]);
 
   // SSE + fallback
   useEffect(() => {
@@ -260,13 +261,6 @@ function AppInner() {
     catch { show("Upload failed", 'error'); }
     finally { setUploading(false); }
   };
-
-  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.length) return;
-    await handleUpload(Array.from(e.target.files));
-    e.target.value = '';
-  };
-
   // Bulk selection
   const toggleDashDoc = (id: string) => {
     setSelectedDashDocs(prev => {

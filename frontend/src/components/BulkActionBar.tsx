@@ -2,7 +2,6 @@ import React from 'react';
 import { Check, RotateCcw, Trash2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { api } from '../api';
-import { Document } from '../api';
 
 interface Props {
   selectedCount: number;

@@ -1,7 +1,6 @@
 import React from 'react';
 import { Search, Clock, AlertTriangle, Check, X, Eye, Download, RotateCcw, Trash2, ChevronUp, Loader2 } from 'lucide-react';
 import { Document, TabType, SortKey } from '../api';
-import { api } from '../api';
 import { BulkActionBar } from './BulkActionBar';
 
 interface Props {

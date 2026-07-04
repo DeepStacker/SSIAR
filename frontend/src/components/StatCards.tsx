@@ -1,5 +1,4 @@
 import React from 'react';
-import { FileText, Clock, AlertTriangle, Check, X } from 'lucide-react';
 import { StatCardItem, EscBreakdown, TabType } from '../api';
 
 interface Props {

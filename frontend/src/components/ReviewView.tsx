@@ -25,7 +25,7 @@ interface Props {
 
 const CONF_THRESHOLD = 0.8;
 
-export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty, onDetailsChange, onDirtyChange, reviewIndex, totalReview, onClose, onVerify, onReprocess, onNext, saving }) => {
+export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detailsDirty, onDetailsChange, onDirtyChange, reviewIndex, totalReview, onClose, onVerify, onReprocess, onNext, saving }) => {
   const [fieldAccepted, setFieldAccepted] = useState<Record<string, boolean>>({});
   const [flashField, setFlashField] = useState<string | null>(null);
   const [zoomImg, setZoomImg] = useState<ZoomImage | null>(null);

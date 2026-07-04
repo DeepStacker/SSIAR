@@ -10,11 +10,11 @@ interface ToastContextType {
   show: (message: string, type?: 'success' | 'error') => void;
 }
 
-const ToastContext = createContext<ToastContextType>({ toast: null, show: () => {} });
+const ToastContext = createContext<ToastContextType>({ toast: null, show: (_msg) => {} });
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toast, setToast] = useState<Toast | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const show = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     if (timer.current) clearTimeout(timer.current);

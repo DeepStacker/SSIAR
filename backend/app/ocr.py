@@ -614,98 +614,57 @@ class OCRRouter:
         return list(self._engine_order)
 
     def recognize_field(self, crop, field_name: str, route_override: list = None, sequential: bool = False) -> OCREngineResult:
-        route = route_override if route_override is not None else FIELD_ENGINE_ROUTES.get(field_name, DEFAULT_ENGINE_ROUTE)
-        normalizer_fn = get_normalizer(field_name)[0]
-
-        candidates = [name for name in route if name in self._engines]
-        if not candidates:
-            return OCREngineResult("", 0.0, "none")
-
-        # Sequential mode: try engines one at a time, return first valid parseable result
-        if sequential:
-            results: list[OCREngineResult] = []
-            for engine_name in candidates:
-                engine = self._engines[engine_name]
-                result = self._safe_recognize(engine, crop, field_name)
-                if result and result.text:
-                    norm_val, is_valid = normalizer_fn(result.text)
-                    result.text = norm_val
-                    print(f"  seq {engine_name}: raw='{result.text}' valid={is_valid} conf={result.confidence:.3f}")
-                    if is_valid and norm_val:
-                        return result
-                    results.append(result)
-                else:
-                    print(f"  seq {engine_name}: empty/no result")
-            return self._consensus(results, field_name)
-
-        # Parallel mode: run all engines, take first good result
-        futures = {}
-        for engine_name in candidates:
-            engine = self._engines[engine_name]
-            future = self._executor.submit(self._safe_recognize, engine, crop, field_name)
-            futures[future] = engine_name
-
-        results: list[OCREngineResult] = []
-        deadline = time.monotonic() + ENGINE_TIMEOUT
-        try:
-            for future in as_completed(futures, timeout=ENGINE_TIMEOUT):
-                engine_name = futures[future]
-                try:
-                    result = future.result(timeout=2)
-                    if result is None or not result.text:
-                        continue
-                    norm_val, is_valid = normalizer_fn(result.text)
-                    result.text = norm_val
-                    results.append(result)
-                    if is_valid and result.confidence > 0.7:
-                        for f in futures:
-                            if not f.done():
-                                f.cancel()
-                        return result
-                except Exception:
-                    pass
-                if time.monotonic() >= deadline:
-                    break
-        except FuturesTimeoutError:
-            pass
-
-        result = self._consensus(results, field_name)
-        for f in futures:
-            if not f.done():
-                f.cancel()
-        return result
-
-    def _safe_recognize(self, engine, crop, field_name) -> Optional[OCREngineResult]:
-        try:
-            return engine.recognize(crop, field_name)
-        except Exception as e:
-            print(f"Engine {engine.name} error on {field_name}: {e}")
-            return None
-
-    def _consensus(self, results: list, field_name: str) -> OCREngineResult:
-        if not results:
-            return OCREngineResult("", 0.0, "none")
-        if len(results) == 1:
-            return results[0]
-
-        normalizer_fn = get_normalizer(field_name)[0]
-
-        valid = [r for r in results if normalizer_fn(r.text)[1]]
-        if not valid:
-            return max(results, key=lambda r: r.confidence)
-
-        if len(valid) == 1:
-            return valid[0]
-
-        agreement = all(r.text == valid[0].text for r in valid)
-        if agreement:
-            best = max(valid, key=lambda r: r.confidence)
-            best.confidence = max(best.confidence, 0.85)
-            return best
-
-        best = max(valid, key=lambda r: r.confidence)
-        best.confidence = min(best.confidence, 0.5)
-        return best
+        from app.modules import FieldType, FIELD_TYPE_MAP, RecognitionResult
+        from app.modules.digit_engine import get_digit_engine
+        from app.modules.recognition import get_recognition_router
+        from app.modules.consensus import compute_consensus
+        from app.modules.validation import validate_field
+        
+        field_type = FIELD_TYPE_MAP.get(field_name, FieldType.PRINTED_TEXT)
+        rec_results = []
+        
+        # 1. Run local Digit CNN if handwritten digits
+        if field_type == FieldType.HANDWRITTEN_DIGITS:
+            digit_engine = get_digit_engine()
+            cnn_res = digit_engine.predict_number(crop)
+            norm_val, is_valid = validate_field(field_name, cnn_res.text)[0:2]
+            rec_results.append(RecognitionResult(
+                text=cnn_res.text,
+                confidence=cnn_res.confidence,
+                engine="digit_cnn",
+                field_name=field_name,
+                is_valid=is_valid,
+                normalized=norm_val
+            ))
+            
+        # 2. Run EasyOCR / other routers
+        router = get_recognition_router()
+        # If route_override is provided, filter allowed engines, otherwise use defaults
+        allowed = route_override if route_override is not None else ['easyocr']
+        for name in allowed:
+            plugin = router.get_plugin(name)
+            if plugin:
+                res = plugin.recognize(crop, field_name)
+                if res:
+                    norm_val, is_valid = validate_field(field_name, res.text)[0:2]
+                    rec_results.append(RecognitionResult(
+                        text=res.text,
+                        confidence=res.confidence,
+                        engine=name,
+                        field_name=field_name,
+                        is_valid=is_valid,
+                        normalized=norm_val
+                    ))
+                    
+        # 3. Vote consensus
+        consensus = compute_consensus(field_name, rec_results, field_type)
+        
+        # Return converted OCREngineResult
+        return OCREngineResult(
+            text=consensus.text,
+            confidence=consensus.weight,
+            engine_name="consensus"
+        )
 
 _router = None
 

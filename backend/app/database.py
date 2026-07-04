@@ -89,6 +89,16 @@ def init_db():
         version INTEGER PRIMARY KEY
     )
     """)
+
+    # Azure Crop Cache table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS azure_crop_cache (
+        crop_hash TEXT PRIMARY KEY,
+        recognized_text TEXT,
+        confidence REAL,
+        saved_at TEXT
+    )
+    """)
     
     _run_migrations(cursor)
     
@@ -299,51 +309,51 @@ def get_corrections_log():
     return [dict(row) for row in rows]
 
 def delete_document(doc_id):
+    from app.modules.storage import delete_document_disk
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
     conn.commit()
     conn.close()
+    delete_document_disk(doc_id)
 
 def bulk_delete_documents(doc_ids):
+    from app.modules.storage import delete_document_disk
     conn = get_db_connection()
     cursor = conn.cursor()
     placeholders = ",".join("?" * len(doc_ids))
     cursor.execute(f"DELETE FROM documents WHERE id IN ({placeholders})", doc_ids)
     conn.commit()
     conn.close()
+    for doc_id in doc_ids:
+        delete_document_disk(doc_id)
     return cursor.rowcount
 
 def store_pdf(doc_id, pdf_bytes):
+    from app.modules.storage import store_pdf_disk
+    # Avoid writing binary data to SQLite. Set column to NULL and store on disk.
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE documents SET pdf_data = ? WHERE id = ?", (pdf_bytes, doc_id))
+    cursor.execute("UPDATE documents SET pdf_data = NULL WHERE id = ?", (doc_id,))
     conn.commit()
     conn.close()
+    store_pdf_disk(doc_id, pdf_bytes)
 
 def get_pdf(doc_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT pdf_data FROM documents WHERE id = ?", (doc_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return row["pdf_data"] if row else None
+    from app.modules.storage import get_pdf_disk
+    return get_pdf_disk(doc_id)
 
 def store_page_image(doc_id, page_num, image_bytes):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    now_str = datetime.now().isoformat()
-    cursor.execute("""
-        INSERT OR REPLACE INTO page_images (doc_id, page_num, image_data, created_at)
-        VALUES (?, ?, ?, ?)
-    """, (doc_id, page_num, image_bytes, now_str))
-    conn.commit()
-    conn.close()
+    import cv2
+    import numpy as np
+    from app.modules.storage import store_aligned_page_disk
+    
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if image is not None:
+        store_aligned_page_disk(doc_id, page_num, image)
 
 def get_page_image(doc_id, page_num):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT image_data FROM page_images WHERE doc_id = ? AND page_num = ?", (doc_id, page_num))
-    row = cursor.fetchone()
-    conn.close()
-    return row["image_data"] if row else None
+    from app.modules.storage import get_aligned_page_disk
+    return get_aligned_page_disk(doc_id, page_num)
+

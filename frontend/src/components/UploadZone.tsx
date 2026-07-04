@@ -1,6 +1,5 @@
 import React, { useRef } from 'react';
 import { Upload, Loader2, RotateCcw } from 'lucide-react';
-import { api } from '../api';
 
 interface Props {
   uploading: boolean;

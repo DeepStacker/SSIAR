@@ -1,8 +1,15 @@
 from app.pipeline import P1_Y_RANGES, P2_Y_RANGES, COLS_X_PTS, ZOOM
 from app.ocr import ROIS_P1, ROIS_P2, ROIS_REMARKS
 
-
 def extract_crop(aligned_img, crop_name):
+    # Try dynamic ROI extraction first
+    from app.modules.roi import extract_dynamic_roi
+    page_num = get_crop_page(crop_name)
+    dynamic_crop = extract_dynamic_roi(aligned_img, crop_name, page_num)
+    if dynamic_crop is not None and dynamic_crop.size > 0:
+        return dynamic_crop
+
+    # Fallback to static coordinates if dynamic extraction fails
     if crop_name in ROIS_P1 or crop_name in ROIS_P2:
         all_rois = {**ROIS_P1, **ROIS_P2}
         x0, y0, x1, y1 = all_rois[crop_name]
@@ -34,7 +41,6 @@ def extract_crop(aligned_img, crop_name):
             y0, y1 = P2_Y_RANGES[idx]
         else:
             return None
-        cx1 = int((COLS_X_PTS[0] + 2.5) * ZOOM)
         cx3 = int((COLS_X_PTS[-1] + 2.5) * ZOOM)
         row_x_start = int(230 * ZOOM)
         row_x_end = cx3 + 70
@@ -51,18 +57,18 @@ def extract_crop(aligned_img, crop_name):
 
 
 def get_crop_page(crop_name):
-    if crop_name in ROIS_P1 or crop_name == "consent":
+    if crop_name in ("roll_number", "class", "dob", "gender", "consent", "aligned_p1"):
         return 1
-    if crop_name in ROIS_P2 or crop_name == "remarks":
+    if crop_name in ("math_pct", "science_pct", "language_pct", "rank", "remarks", "aligned_p2"):
         return 2
     if crop_name.startswith("q"):
         try:
             q_num = int(crop_name[1:])
+            if 1 <= q_num <= 12:
+                return 1
+            elif 13 <= q_num <= 25:
+                return 2
         except ValueError:
-            return 1
-        return 2 if q_num >= 13 else 1
-    if crop_name == "aligned_p1":
-        return 1
-    if crop_name == "aligned_p2":
-        return 2
-    return 1
+            pass
+    return None
+

@@ -11,7 +11,7 @@ interface Props {
   onZoom: (img: ZoomImage | null) => void;
 }
 
-export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, multiTicks, onChange, onZoom }) => {
+export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, multiTicks: _multiTicks, onChange, onZoom }) => {
   const getCheckboxConf = (q: string): 'high' | 'medium' | 'low' => {
     const c = checkboxConf[q];
     if (c === 'low_confidence' || c === 'low') return 'low';
@@ -57,7 +57,7 @@ export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, multi
                 <span style={{ fontSize: '24px', fontWeight: '800', color: cellColor, flexShrink: 0, minWidth: '30px', textAlign: 'center' }}>
                   {(() => {
                     const r = responses[q];
-                    if (r === undefined || r === -1 || r === '—') return '—';
+                    if (r === undefined || r === -1) return '—';
                     if (Array.isArray(r)) {
                       const f = r.filter(x => x > 0);
                       return f.length > 0 ? f.join(',') : '—';
