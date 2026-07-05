@@ -7,7 +7,7 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.middleware import MaxBodySizeMiddleware
-from app.database import init_db, get_db_connection
+from app.database import init_db, get_db_connection, put_conn, USE_POSTGRES
 from app.services.processing import init_templates, start_cleanup_thread
 
 app = FastAPI(title="SSIAR SDQ Digitization API")
@@ -21,7 +21,6 @@ app.add_middleware(
 )
 app.add_middleware(MaxBodySizeMiddleware)
 
-# Register routers
 from app.routes.documents import router as documents_router
 from app.routes.upload import router as upload_router
 from app.routes.export import router as export_router
@@ -42,10 +41,22 @@ def startup_event():
     start_cleanup_thread()
 
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE documents SET status = 'failed', escalation_level = 'level_4' WHERE status = 'processing'")
-    stalled = cursor.rowcount
-    conn.commit()
-    conn.close()
-    if stalled:
-        print(f"Marked {stalled} stalled document(s) as failed (server restarted while processing)")
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE documents SET status = 'failed', escalation_level = 'level_4' WHERE status = 'processing'"
+        )
+        stalled = cur.rowcount
+        conn.commit()
+        if stalled:
+            print(f"Marked {stalled} stalled document(s) as failed (server restarted while processing)")
+    finally:
+        put_conn(conn)
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    if USE_POSTGRES:
+        from app.database import _pool
+        if _pool:
+            _pool.closeall()

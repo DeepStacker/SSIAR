@@ -1,46 +1,13 @@
 services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ssiar
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ssiar_secret}
-      POSTGRES_DB: ssiar
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./shared/templates:/shared/templates:ro
-      - ./shared/metadata:/shared/metadata:ro
-      - ./shared/database:/shared/database
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ssiar"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
   app:
     build: ./backend
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+psycopg2://ssiar:${POSTGRES_PASSWORD:-ssiar_secret}@db:5432/ssiar
       AZURE_DOC_INTELLIGENCE_ENDPOINT: ${AZURE_DOC_INTELLIGENCE_ENDPOINT:?err}
       AZURE_DOC_INTELLIGENCE_KEY: ${AZURE_DOC_INTELLIGENCE_KEY:?err}
-      R2_ENDPOINT: ${R2_ENDPOINT:-}
-      R2_ACCESS_KEY: ${R2_ACCESS_KEY:-}
-      R2_SECRET_KEY: ${R2_SECRET_KEY:-}
-      R2_BUCKET: ${R2_BUCKET:-ssiar-files}
-      MAX_WORKERS: ${MAX_WORKERS:-8}
+      MAX_WORKERS: ${MAX_WORKERS:-4}
       SURYA_ENABLED: "0"
     volumes:
-      - ./shared/templates:/app/shared/templates:ro
-      - ./shared/metadata:/app/shared/metadata:ro
-      - processed_data:/app/shared/processed
-      - uploads_data:/app/shared/uploads
-    depends_on:
-      db:
-        condition: service_healthy
+      - /data/shared:/app/shared
     restart: unless-stopped
-
-volumes:
-  pgdata:
-  processed_data:
-  uploads_data:

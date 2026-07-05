@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Tuple, Optional, Any, Dict
 from concurrent.futures import ThreadPoolExecutor, Future
-from app.database import DB_PATH, get_db_connection
+from app.database import get_db_connection
 
 # Sentinel for failed Azure page analysis — prevents repeated retries for every field
 _AZURE_PAGE_FAILED = object()

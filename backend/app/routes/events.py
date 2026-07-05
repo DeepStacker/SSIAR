@@ -9,8 +9,9 @@ from fastapi.responses import Response, FileResponse, StreamingResponse
 from app.database import get_page_image
 from app.image.crops import extract_crop, get_crop_page
 from app.config import TEMP_DIR
-from app.image.storage import PROCESSED_DIR
+from app.image.storage import PROCESSED_DIR, get_roi_file, get_page_image_file
 from app.sse import subscribe, unsubscribe
+from app.config import R2_PUBLIC_URL, use_r2
 
 router = APIRouter()
 
@@ -18,23 +19,19 @@ router = APIRouter()
 @router.get("/api/crops/{doc_id}/{filename}")
 def serve_crop(doc_id: str, filename: str):
     crop_name = filename.replace('.png', '')
-    
-    # Fast path: serve pre-stored ROI crop directly (avoids full-page decode + re-extraction)
-    roi_path = PROCESSED_DIR / doc_id / f"roi_{crop_name}.jpg"
-    if roi_path.exists():
-        return FileResponse(str(roi_path), media_type="image/jpeg")
-    
-    # Fast path: serve pre-stored aligned page directly
-    if crop_name in ("aligned_p1", "aligned_p2"):
-        page_num = 1 if crop_name == "aligned_p1" else 2
-        page_path = PROCESSED_DIR / doc_id / f"page_{page_num}.jpg"
-        if page_path.exists():
-            return FileResponse(str(page_path), media_type="image/jpeg")
-    
+
+    if use_r2() and R2_PUBLIC_URL:
+        redirect_url = f"{R2_PUBLIC_URL}/rois/{doc_id}/roi_{crop_name}.jpg"
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=redirect_url)
+
+    roi_bytes = get_roi_file(doc_id, crop_name)
+    if roi_bytes:
+        return Response(content=roi_bytes, media_type="image/jpeg")
+
     page_num = get_crop_page(crop_name)
     img_bytes = get_page_image(doc_id, page_num)
 
-    # Fallback: old documents may still have crops on filesystem
     if not img_bytes:
         legacy_path = os.path.join(os.path.dirname(TEMP_DIR), "processed", doc_id, filename)
         if os.path.exists(legacy_path):
@@ -59,10 +56,19 @@ def serve_crop(doc_id: str, filename: str):
 
 @router.get("/api/pages/{doc_id}/{page_num}")
 def serve_page(doc_id: str, page_num: int):
-    """Serves the full aligned page image directly from disk."""
+    if use_r2() and R2_PUBLIC_URL:
+        redirect_url = f"{R2_PUBLIC_URL}/pages/{doc_id}/page_{page_num}.jpg"
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=redirect_url)
+
     page_path = PROCESSED_DIR / doc_id / f"page_{page_num}.jpg"
     if page_path.exists():
         return FileResponse(str(page_path), media_type="image/jpeg")
+
+    img_bytes = get_page_image_file(doc_id, page_num)
+    if img_bytes:
+        return Response(content=img_bytes, media_type="image/jpeg")
+
     raise HTTPException(status_code=404, detail="Page not found")
 
 

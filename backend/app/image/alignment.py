@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import os
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Dict, Tuple, Optional
 
 # Standard Template Dimensions
 TEMPLATE_W = 2483
