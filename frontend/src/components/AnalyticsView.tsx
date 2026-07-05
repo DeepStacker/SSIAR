@@ -31,7 +31,7 @@ interface SummaryData {
   data_completeness: number;
   processing_trend: Array<{ date: string; count: number }>;
   processed_today: number;
-  pending_review?: number;
+  needs_review?: number;
 }
 
 interface DemographicsData {
@@ -52,12 +52,12 @@ interface QuestionnaireData {
 interface AcademicData {
   averages: Record<string, number>;
   top_vs_bottom_difficulties: { low_difficulty_group_academic: number; high_difficulty_group_academic: number } | null;
-  class_averages: Array<{ class: string; Mathematics: number; Science: number; Language: number; Hindi: number }>;
+  class_averages: Array<{ class: string; Mathematics: number; Science: number; Language: number }>;
   [key: string]: any;
 }
 
 interface CorrelationsData {
-  correlation_matrix: Array<{ domain: string; "Math %": number; "Science %": number; "Language %": number; "Hindi %": number; Rank: number }>;
+  correlation_matrix: Array<{ domain: string; "Math %": number; "Science %": number; "Language %": number; Rank: number }>;
   [key: string]: any;
 }
 
@@ -238,10 +238,10 @@ const escalationBadgeColors: Record<string, string> = {
 };
 
 const escalationLabels: Record<string, string> = {
-  level_1: 'Level 1',
-  level_2: 'Level 2',
-  level_3: 'Level 3',
-  level_4: 'Level 4',
+  level_1: 'L1 · Clean',
+  level_2: 'L2 · Field warning',
+  level_3: 'L3 · Alignment',
+  level_4: 'L4 · Poor quality / failed',
 };
 
 export function AnalyticsView({ onBack, classFilter, genderFilter, onClassFilterChange, onGenderFilterChange }: AnalyticsViewProps) {
@@ -347,7 +347,7 @@ data$gender <- as.factor(data$gender)
 data$class_clean <- as.factor(data$class_clean)
 
 # Compute Correlation Matrix
-numeric_cols <- data[, c("score_prosocial", "score_emotional", "score_conduct", "score_hyperactivity", "score_peer", "math_pct", "science_pct", "language_pct", "hindi_pct")]
+numeric_cols <- data[, c("score_prosocial", "score_emotional", "score_conduct", "score_hyperactivity", "score_peer", "math_pct", "science_pct", "language_pct")]
 cor_matrix <- cor(numeric_cols, use="complete.obs", method="pearson")
 print(cor_matrix)
 
@@ -375,8 +375,7 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
     "  score_total_difficulties \"Total Difficulties Score (SDQ)\"\n" +
     "  math_pct \"Mathematics Score (%)\"\n" +
     "  science_pct \"Science Score (%)\"\n" +
-    "  language_pct \"Language Score (%)\"\n" +
-    "  hindi_pct \"Hindi Score (%)\".\n";
+    "  language_pct \"Language Score (%)\".\n";
 
   return (
     <div className="flex flex-col gap-6 w-full">
@@ -538,10 +537,10 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                       </Card>
                       <Card size="sm">
                         <CardContent>
-                          <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Throughput (forms/min)</span>
+                          <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Throughput (forms/min, {(summary as any).throughput_window_days || 14}d)</span>
                           <h3 className="text-3xl font-extrabold text-[var(--text-primary)] mt-1.5">
-                            {summary.processing_trend && summary.processing_trend.length > 1
-                              ? (summary.processing_trend.reduce((a: number, b: any) => a + b.count, 0) / summary.processing_trend.length / 1440 * 60).toFixed(1)
+                            {(summary as any).throughput_forms_per_min != null
+                              ? (summary as any).throughput_forms_per_min.toFixed(4)
                               : '—'}
                           </h3>
                         </CardContent>
@@ -1018,9 +1017,9 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
     const headers = ['Subject', 'Average'];
     const rows = Object.entries(academic.averages || {}).map(([k, v]) => [k, String(v ?? '')]);
     rows.push([]);
-    rows.push(['Class', 'Mathematics', 'Science', 'Language', 'Hindi']);
+    rows.push(['Class', 'Mathematics', 'Science', 'Language']);
     (academic.class_averages || []).forEach((r: any) => 
-      rows.push([r.class, String(r.Mathematics ?? ''), String(r.Science ?? ''), String(r.Language ?? ''), r.Hindi != null ? String(r.Hindi) : ''])
+      rows.push([r.class, String(r.Mathematics ?? ''), String(r.Science ?? ''), String(r.Language ?? '')])
     );
     exportToCsv(headers, rows, 'academic_averages.csv');
   }} className="text-xs font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
@@ -1058,7 +1057,7 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                             <div className="h-[180px] w-full">
                               <ResponsiveContainer width="100%" height="100%">
                                 <BarChart
-                                  data={['Mathematics', 'Science', 'Language', 'Hindi'].filter(s => academic.class_averages[0][s] !== undefined).map(subject => {
+                                  data={['Mathematics', 'Science', 'Language'].filter(s => academic.class_averages[0][s] !== undefined).map(subject => {
                                     const vals = academic.class_averages.map((r: any) => r[subject]).filter((v: number) => v != null);
                                     return {
                                       subject,
@@ -1071,7 +1070,7 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                                   <YAxis domain={[0, 100]} stroke="var(--text-muted)" fontSize={10} />
                                   <Tooltip contentStyle={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--color-border)', color: '#fff' }} formatter={(v) => `${v}%`} />
                                   <Bar dataKey="average" radius={[4,4,0,0]} name="Class Average">
-                                    {['Mathematics', 'Science', 'Language', 'Hindi'].filter(s => academic.class_averages[0][s] !== undefined).map((_, idx) => (
+                                    {['Mathematics', 'Science', 'Language'].filter(s => academic.class_averages[0][s] !== undefined).map((_, idx) => (
                                       <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                                     ))}
                                   </Bar>
@@ -1120,7 +1119,6 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                             <TableHead>Mathematics</TableHead>
                             <TableHead>Science</TableHead>
                             <TableHead>Language</TableHead>
-                            {academic.class_averages && academic.class_averages[0]?.Hindi !== undefined && <TableHead>Hindi</TableHead>}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1130,7 +1128,6 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                               <TableCell><ScoreBand value={row.Mathematics || 0} /></TableCell>
                               <TableCell><ScoreBand value={row.Science || 0} /></TableCell>
                               <TableCell><ScoreBand value={row.Language || 0} /></TableCell>
-                              {row.Hindi !== undefined && <TableCell><ScoreBand value={row.Hindi || 0} /></TableCell>}
                             </TableRow>
                           ))}
                         </TableBody>

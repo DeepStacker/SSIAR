@@ -4,7 +4,9 @@ import type { Document, DocumentDetails, QueueStatus, TabType, SortKey, ReportFo
 import { api, clearApiCache } from './api';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { Header } from './components/Header';
+import { LoginPage } from './components/LoginPage';
 import { StatCards } from './components/StatCards';
 import { UploadZone } from './components/UploadZone';
 import { DocumentTable } from './components/DocumentTable';
@@ -121,9 +123,11 @@ function AppInner() {
             const parsed = JSON.parse(event.data);
             const { event: eventType, data } = parsed;
             if (eventType === 'document_updated' && data?.doc_id) {
+              clearApiCache();
               api.getDocumentDetails(data.doc_id)
                 .then(updated => {
                   setDocuments(prev => prev.map(d => d.id === data.doc_id ? { ...d, ...updated } : d));
+                  setSelectedDoc(prev => prev?.id === data.doc_id ? { ...prev, ...updated } as Document : prev);
                 })
                 .catch(() => {});
               api.getQueueStatus().then(qs => setQueueStatus(qs)).catch(() => {});
@@ -146,8 +150,8 @@ function AppInner() {
     };
     connect();
     const fallback = setInterval(() => {
-      if (!es || es.readyState === EventSource.CLOSED) loadAll();
-    }, 30000);
+      if (!es || es.readyState !== EventSource.OPEN) { clearApiCache(); loadAll(); }
+    }, 15000);
     return () => { es?.close(); if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(fallback); };
   }, [loadAll]);
 
@@ -522,11 +526,11 @@ function AppInner() {
           <>
             <StatCards
               statCards={[
-                { label: 'Total', value: documents.length, color: 'var(--accent-cyan)', icon: FileText },
-                { label: 'Processing', value: processing.length, color: 'var(--accent-violet)', icon: Clock, pulse: processing.length > 0 },
-                { label: 'Needs Review', value: needsReview.length, color: 'var(--accent-amber)', icon: AlertTriangle },
-                { label: 'Verified', value: verified.length, color: 'var(--accent-emerald)', icon: Check },
-                { label: 'Failed', value: failed.length, color: 'var(--accent-rose)', icon: X },
+                { label: 'Total', value: queueStatus?.total ?? documents.length, color: 'var(--accent-cyan)', icon: FileText },
+                { label: 'Processing', value: queueStatus?.processing ?? processing.length, color: 'var(--accent-violet)', icon: Clock, pulse: (queueStatus?.processing ?? processing.length) > 0 },
+                { label: 'Needs Review', value: queueStatus?.needs_review ?? needsReview.length, color: 'var(--accent-amber)', icon: AlertTriangle },
+                { label: 'Verified', value: queueStatus?.verified ?? verified.length, color: 'var(--accent-emerald)', icon: Check },
+                { label: 'Failed', value: queueStatus?.failed ?? failed.length, color: 'var(--accent-rose)', icon: X },
               ]}
               escBreakdown={escBreakdown}
               onTabClick={setActiveTab}
@@ -573,12 +577,22 @@ function AppInner() {
   );
 }
 
+function AppAuthGate() {
+  const { token } = useAuth();
+  if (!token) {
+    return <LoginPage />;
+  }
+  return <AppInner />;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
-      <ToastProvider>
-        <AppInner />
-      </ToastProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <AppAuthGate />
+        </ToastProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

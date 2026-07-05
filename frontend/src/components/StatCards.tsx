@@ -32,9 +32,9 @@ export const StatCards: React.FC<Props> = ({ statCards, escBreakdown, onTabClick
       <Card className="mb-5">
         <CardContent className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
           <span>Level 1 (Clean): <b style={{ color: 'var(--accent-emerald)' }}>{escBreakdown.level_1}</b></span>
-          <span>Level 2 (OCR): <b style={{ color: 'var(--accent-amber)' }}>{escBreakdown.level_2}</b></span>
-          <span>Level 3 (Mismatch): <b style={{ color: 'var(--accent-rose)' }}>{escBreakdown.level_3}</b></span>
-          <span>Level 4 (Damaged): <b style={{ color: 'var(--accent-rose)' }}>{escBreakdown.level_4}</b></span>
+          <span>Level 2 (Field warning): <b style={{ color: 'var(--accent-amber)' }}>{escBreakdown.level_2}</b></span>
+          <span>Level 3 (Alignment): <b style={{ color: 'var(--accent-rose)' }}>{escBreakdown.level_3}</b></span>
+          <span>Level 4 (Poor quality / failed): <b style={{ color: 'var(--accent-rose)' }}>{escBreakdown.level_4}</b></span>
         </CardContent>
       </Card>
     )}

@@ -18,7 +18,7 @@ class AzureBillingManager:
         self._init_cache_table()
         self.full_page_results: Dict[Tuple[str, int], Any] = {}
         self._page_futures: Dict[Tuple[str, int], Future] = {}
-        self._page_executor = ThreadPoolExecutor(max_workers=2)
+        self._page_executor = ThreadPoolExecutor(max_workers=4)
 
     def _init_cache_table(self):
         """Initializes the Azure crop cache table in SQLite."""
@@ -174,11 +174,8 @@ class AzureBillingManager:
 
     def pre_analyze_pages(self, doc_id: str, aligned_p1: np.ndarray, aligned_p2: Optional[np.ndarray] = None, skip: bool = False):
         """
-        Pre-fires Azure full-page analysis for both pages in parallel.
-        If skip=True, does nothing (caller determined Azure is not needed).
-        Results are cached in full_page_results and available for subsequent field lookups.
-        BLOCKS until both pages finish — avoids race conditions from parallel field threads
-        all trying to call Azure simultaneously.
+        Submits Azure full-page analysis for both pages in parallel (non-blocking).
+        Results are resolved lazily when _get_page_result is called for each page.
         """
         if skip:
             return
@@ -186,40 +183,41 @@ class AzureBillingManager:
         if "pytest" in sys.modules:
             return
 
-        futs = {}
         key1 = (doc_id, 1)
-        if key1 not in self.full_page_results:
-            futs[key1] = self._page_executor.submit(
+        if key1 not in self.full_page_results and key1 not in self._page_futures:
+            self._page_futures[key1] = self._page_executor.submit(
                 self._call_azure_page, aligned_p1, 1, doc_id
             )
         
         if aligned_p2 is not None:
             key2 = (doc_id, 2)
-            if key2 not in self.full_page_results:
-                futs[key2] = self._page_executor.submit(
-                self._call_azure_page, aligned_p2, 2, doc_id
+            if key2 not in self.full_page_results and key2 not in self._page_futures:
+                self._page_futures[key2] = self._page_executor.submit(
+                    self._call_azure_page, aligned_p2, 2, doc_id
                 )
-        
-        # Wait for both pages to complete and cache eagerly
-        # This prevents race conditions where parallel field threads all call Azure
-        for key, fut in futs.items():
-            try:
-                result = fut.result(timeout=40)
-                self.full_page_results[key] = result if result is not None else _AZURE_PAGE_FAILED
-            except Exception as e:
-                print(f"AzureBillingManager: Page analysis for {key} failed: {e}")
-                self.full_page_results[key] = _AZURE_PAGE_FAILED
 
     def _get_page_result(self, doc_id: str, page_num: int, aligned_page_img: np.ndarray, field_name: str) -> Optional[Any]:
-        """Gets the Azure full-page result from cache. Falls back to a fresh call if uncached."""
+        """Gets the Azure full-page result. Waits for pending future if pre_analyze was called."""
         key = (doc_id, page_num)
         
-        # Fast path: check in-memory cache (eagerly filled by pre_analyze_pages)
+        # Fast path: already cached
         if key in self.full_page_results:
             cached = self.full_page_results[key]
             if cached is _AZURE_PAGE_FAILED:
                 return None
             return cached
+        
+        # Wait for pending future from pre_analyze_pages (first field on this page triggers the wait)
+        if key in self._page_futures:
+            fut = self._page_futures.pop(key)
+            try:
+                result = fut.result(timeout=40)
+                self.full_page_results[key] = result if result is not None else _AZURE_PAGE_FAILED
+                return result
+            except Exception as e:
+                print(f"AzureBillingManager: Page analysis for {key} failed: {e}")
+                self.full_page_results[key] = _AZURE_PAGE_FAILED
+                return None
         
         # Cold path: no pre-analyze was done — call Azure synchronously
         result = self._call_azure_page(aligned_page_img, page_num, doc_id)
@@ -233,23 +231,26 @@ class AzureBillingManager:
         aligned_page_img: np.ndarray,
         page_num: int,
         roi_rect: Tuple[float, float, float, float],
-        crop: np.ndarray
+        crop: np.ndarray,
+        skip_cache: bool = False
     ) -> Optional[Tuple[str, float]]:
         """
         Retrieves OCR text and confidence for a specific ROI field from Azure.
         Uses crop-level SQLite cache first, then full-page memory cache.
         Calls Azure DI on the entire aligned page if a cache miss occurs.
+        Set skip_cache=True during first-pass processing to avoid 25+ useless DB queries.
         """
         import sys
         if "pytest" in sys.modules:
             return None
 
-        # 1. Check local crop cache first
-        cached = self.get_cached_result(crop)
-        if cached is not None:
-            return cached
+        # 1. Check local crop cache first (skip on first pass to avoid 25+ useless SELECTs)
+        if not skip_cache:
+            cached = self.get_cached_result(crop)
+            if cached is not None:
+                return cached
 
-        # 2. Get full page result (from pre-fired future or fresh call)
+        # 2. Get full page result (from non-blocking future or fresh call)
         azure_result = self._get_page_result(doc_id, page_num, aligned_page_img, field_name)
 
         if azure_result is None:

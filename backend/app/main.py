@@ -21,12 +21,14 @@ app.add_middleware(
 )
 app.add_middleware(MaxBodySizeMiddleware)
 
+from app.routes.auth import router as auth_router
 from app.routes.documents import router as documents_router
 from app.routes.upload import router as upload_router
 from app.routes.export import router as export_router
 from app.routes.events import router as events_router
 from app.routes.analytics import router as analytics_router
 
+app.include_router(auth_router)
 app.include_router(documents_router)
 app.include_router(upload_router)
 app.include_router(export_router)

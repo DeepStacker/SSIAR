@@ -2,14 +2,16 @@ import os
 import uuid
 import asyncio
 from typing import List
-from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Request
+from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Request, Depends
 import fitz
 from app.config import TEMP_DIR, MAX_UPLOAD_SIZE
 from app.database import insert_document, store_pdf
 from app.image.pdf import classify_document, ZOOM
 from app.services.processing import get_executor, process_pdf_background
+from app.sse import notify as notify_sse
+from app.auth import require_auth, get_current_user_id
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_auth)])
 
 
 def _classify_pdf(pdf_bytes: bytes) -> dict:
@@ -43,9 +45,11 @@ DEFAULT_CLASSIFICATION = {"type": "scanned", "dpi": 300, "pages": 1, "is_color":
 
 def _queue_single_pdf(pdf_bytes: bytes, filename: str, auto_verify: bool, pages: int = 1) -> str:
     doc_id = str(uuid.uuid4())
+    user_id = get_current_user_id()
     cls = {**DEFAULT_CLASSIFICATION, "pages": pages}
-    insert_document(doc_id, filename, "processing", classification=cls, escalation_level="level_1")
+    insert_document(doc_id, filename, "processing", classification=cls, escalation_level="level_1", user_id=user_id)
     store_pdf(doc_id, pdf_bytes)
+    notify_sse("document_updated", {"doc_id": doc_id, "status": "processing"}, user_id=user_id)
     get_executor().submit(process_pdf_background, doc_id, auto_verify)
     return doc_id
 
@@ -101,6 +105,7 @@ async def upload_files(
         result = await loop.run_in_executor(None, _process_upload_sync, content, file.filename, auto_verify, split)
         doc_ids.extend(result)
 
+    doc_ids = [d for d in doc_ids if d]
     return {"message": f"Successfully uploaded {len(doc_ids)} file(s)", "document_ids": doc_ids, "auto_verify": auto_verify}
 
 
@@ -146,7 +151,7 @@ def batch_process_folder(payload: dict):
             if os.path.exists(temp_pdf):
                 os.remove(temp_pdf)
 
-        insert_document(doc_id, filename, "processing", classification=classification, escalation_level="level_1")
+        insert_document(doc_id, filename, "processing", classification=classification, escalation_level="level_1", user_id=get_current_user_id())
         store_pdf(doc_id, pdf_bytes)
         queued.append({"doc_id": doc_id, "filename": filename})
         get_executor().submit(process_pdf_background, doc_id, auto_verify)

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Moon, Sun, Printer } from 'lucide-react';
+import { Moon, Sun, Printer, LogOut } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { ViewMode } from '../api';
 import { Button } from '@/components/ui/button';
 
@@ -11,11 +12,15 @@ interface Props {
 
 export const Header: React.FC<Props> = ({ view, onViewChange }) => {
   const { dark, toggle } = useTheme();
+  const { email, logout } = useAuth();
 
   return (
     <header className="flex items-center justify-between border-b pb-5 mb-8">
       <div className="flex items-center gap-3">
         <img src="/logo.png" alt="SSIAR" className="h-8 w-auto" />
+        {email && (
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{email}</span>
+        )}
       </div>
       <nav aria-label="Main navigation" className="flex items-center gap-1">
         <Button
@@ -49,6 +54,9 @@ export const Header: React.FC<Props> = ({ view, onViewChange }) => {
         )}
         <Button variant="outline" size="icon" onClick={toggle} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
           {dark ? <Sun size={14} /> : <Moon size={14} />}
+        </Button>
+        <Button variant="outline" size="icon" onClick={logout} aria-label="Sign out" title="Sign out">
+          <LogOut size={14} />
         </Button>
       </nav>
     </header>

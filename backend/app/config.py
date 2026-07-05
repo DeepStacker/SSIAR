@@ -5,12 +5,22 @@ from dotenv import load_dotenv
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=_env_path, override=True)
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# In Docker (WORKDIR=/app): __file__ = /app/app/config.py → parent.parent = /app
+# Locally:  __file__ = .../backend/app/config.py → parent.parent.parent = project root
+_docker_candidate = Path(__file__).resolve().parent.parent
+_local_candidate = Path(__file__).resolve().parent.parent.parent
+if (_local_candidate / "shared" / "templates" / "template_p1.png").exists():
+    BASE_DIR = _local_candidate
+elif (_docker_candidate / "shared" / "templates" / "template_p1.png").exists():
+    BASE_DIR = _docker_candidate
+else:
+    BASE_DIR = _docker_candidate
+
 TEMPLATES_DIR = str(BASE_DIR / "shared" / "templates")
 TEMP_DIR = str(BASE_DIR / "shared" / "temp")
 TEMPLATE_PDF = str(BASE_DIR / "Research Questionnaire Pre HINDI.docx.pdf")
 
-MAX_UPLOAD_SIZE = 200 * 1024 * 1024
+MAX_UPLOAD_SIZE = 300 * 1024 * 1024
 PROCESSING_TIMEOUT = 300
 TEMP_TTL_HOURS = 24
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", str(min(16, os.cpu_count() or 4))))

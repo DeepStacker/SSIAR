@@ -1,46 +1,38 @@
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000/api";
 
+const getToken = (): string | null => localStorage.getItem('ssiar_token');
+
+const authHeaders = (): Record<string, string> => {
+  const token = getToken();
+  return token ? { "Authorization": `Bearer ${token}` } : {};
+};
+
 // ── Simple TTL cache for GET requests ──
-interface CacheEntry { data: unknown; timestamp: number }
+interface CacheEntry { data: unknown; expiresAt: number }
 const cache = new Map<string, CacheEntry>()
 const DEFAULT_TTL = 30_000 // 30 seconds
 
-const cacheKey = (url: string) => url
-
-const cacheGet = <T>(key: string): T | null => {
-  const entry = cache.get(key)
-  if (!entry) return null
-  if (Date.now() - entry.timestamp > DEFAULT_TTL) {
-    cache.delete(key)
-    return null
-  }
-  return entry.data as T
-}
-
-const cacheSet = (key: string, data: unknown) => {
-  cache.set(key, { data, timestamp: Date.now() })
-}
-
-const isGetUrl = (url: string) => {
-  const u = url.replace(API_BASE, '')
-  // Don't cache SSE, export, crop, page URLs
-  if (u.includes('/events') || u.includes('/export') || u.includes('/crops/') || u.includes('/pages/')) return false
-  return true
+const getTtl = (url: string) => {
+  if (url.includes('/queue-status')) return 3_000
+  if (url.includes('/documents/')) return 3_000
+  return DEFAULT_TTL
 }
 
 const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
-  const cached = cacheGet<T>(cacheKey(url))
-  if (cached !== null && (!options || options.method === undefined || options.method === 'GET')) {
-    return cached
+  const key = url
+  const entry = cache.get(key)
+  if (entry && entry.expiresAt > Date.now() && (!options || options.method === undefined || options.method === 'GET')) {
+    return entry.data as T
   }
-  const response = await fetch(url, options)
+  const headers: Record<string, string> = { ...authHeaders(), ...(options?.headers as Record<string, string> || {}) }
+  const response = await fetch(url, { ...options, headers })
   if (!response.ok) {
     const err = await response.json().catch(() => ({}))
     throw new Error(err.detail || `Request failed: ${response.status}`)
   }
   const data = await response.json()
   if (!options || options.method === undefined || options.method === 'GET') {
-    if (isGetUrl(url)) cacheSet(cacheKey(url), data)
+    cache.set(key, { data, expiresAt: Date.now() + getTtl(url) })
   }
   return data as T
 }
@@ -143,8 +135,10 @@ export const api = {
     if (autoVerify) params.set("auto_verify", "true");
     if (split) params.set("split", "true");
     const qs = params.toString();
+    const headers = authHeaders();
     const response = await fetch(`${API_BASE}/upload${qs ? '?' + qs : ''}`, {
       method: "POST",
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -158,7 +152,7 @@ export const api = {
   batchProcessFolder: async (folderPath: string, autoVerify?: boolean): Promise<BatchFolderResponse> => {
     const response = await fetch(`${API_BASE}/batch/process-folder`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ folder_path: folderPath, auto_verify: autoVerify ?? false }),
     });
     if (!response.ok) {
@@ -194,7 +188,7 @@ export const api = {
   ): Promise<any> => {
     const response = await fetch(`${API_BASE}/documents/${docId}/verify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
     if (!response.ok) {
@@ -207,6 +201,7 @@ export const api = {
   deleteDocument: async (docId: string): Promise<any> => {
     const response = await fetch(`${API_BASE}/documents/${docId}`, {
       method: "DELETE",
+      headers: authHeaders(),
     });
     if (!response.ok) {
       throw new Error("Failed to delete document");
@@ -218,6 +213,7 @@ export const api = {
   reprocessDocument: async (docId: string): Promise<any> => {
     const response = await fetch(`${API_BASE}/documents/${docId}/reprocess`, {
       method: "POST",
+      headers: authHeaders(),
     });
     if (!response.ok) {
       throw new Error("Failed to reprocess document");
@@ -236,6 +232,7 @@ export const api = {
   }> => {
     const response = await fetch(`${API_BASE}/documents/${docId}/reprocess-field/${fieldName}`, {
       method: "POST",
+      headers: authHeaders(),
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
@@ -248,7 +245,7 @@ export const api = {
   bulkDelete: async (docIds: string[]): Promise<any> => {
     const response = await fetch(`${API_BASE}/documents/bulk-delete`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ doc_ids: docIds }),
     });
     if (!response.ok) throw new Error("Bulk delete failed");
@@ -258,7 +255,7 @@ export const api = {
   bulkVerify: async (docIds: string[]): Promise<any> => {
     const response = await fetch(`${API_BASE}/documents/bulk-verify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ doc_ids: docIds }),
     });
     if (!response.ok) throw new Error("Bulk verify failed");
@@ -268,7 +265,7 @@ export const api = {
   bulkReprocess: async (docIds: string[]): Promise<any> => {
     const response = await fetch(`${API_BASE}/documents/bulk-reprocess`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ doc_ids: docIds }),
     });
     if (!response.ok) throw new Error("Bulk reprocess failed");
@@ -384,7 +381,10 @@ export const api = {
   },
 
   // #32: SSE event source URL
-  getEventsUrl: (): string => `${API_BASE}/events`
+  getEventsUrl: (): string => {
+    const token = getToken();
+    return `${API_BASE}/events${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  }
 };
 
 export type ViewMode = 'dashboard' | 'reporting' | 'analytics';

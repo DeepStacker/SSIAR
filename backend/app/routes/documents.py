@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.database import (
     get_document, get_all_documents, delete_document as db_delete,
     bulk_delete_documents, update_document_status, insert_or_update_form_data,
@@ -12,25 +12,21 @@ from app.image.roi import ROIS_P1_POINTS, ROIS_P2_POINTS, ROIS_REMARKS_POINTS
 from app.schemas import VerifyDataRequest, BulkRequest
 from app.services.processing import get_executor, process_pdf_background
 from app.sse import notify as notify_sse
+from app.auth import require_auth, get_current_user_id
 
 FIELD_NAMES = {"roll_number", "class", "dob", "gender", "math_pct", "science_pct", "language_pct", "rank"}
 SCORE_FIELDS = {"math_pct", "science_pct", "language_pct", "rank"}
 MAX_TEXT_LEN = 32
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_auth)])
 
 
 def _clean_field(value: str | None) -> str | None:
-    """Truncate and clean obviously garbage OCR values to prevent dashboard bloat."""
+    """Strip whitespace from OCR values. (Truncation removed — caused analytics/class-filter mismatches.)"""
     if not value or not isinstance(value, str):
         return value
     stripped = value.strip()
-    if not stripped:
-        return value
-    # Truncate extremely long strings (garbage OCR)
-    if len(stripped) > MAX_TEXT_LEN:
-        return stripped[:MAX_TEXT_LEN] + "…"
-    return stripped
+    return stripped if stripped else value
 
 
 def _clean_doc(doc: dict) -> dict:
@@ -106,8 +102,11 @@ def verify_document(doc_id: str, payload: VerifyDataRequest):
         verified=1
     )
 
-    update_document_status(doc_id, "verified", "level_1")
-    notify_sse("document_updated", {"doc_id": doc_id, "status": "verified", "escalation_level": "level_1"})
+    # Preserve original escalation_level from processing — human verification confirms data
+    # accuracy but does NOT change scan quality / alignment. Keeps Level 1 = truly clean scans.
+    original_escalation = doc.get("escalation_level", "level_1")
+    update_document_status(doc_id, "verified", original_escalation)
+    notify_sse("document_updated", {"doc_id": doc_id, "status": "verified", "escalation_level": original_escalation}, user_id=get_current_user_id())
     return {"message": "Form successfully verified"}
 
 
@@ -118,14 +117,14 @@ def remove_document(doc_id: str):
         raise HTTPException(status_code=404, detail="Document not found")
 
     db_delete(doc_id)
-    notify_sse("document_deleted", {"doc_id": doc_id})
+    notify_sse("document_deleted", {"doc_id": doc_id}, user_id=get_current_user_id())
     return {"message": "Document deleted successfully"}
 
 
 @router.post("/api/documents/bulk-delete")
 def bulk_delete(payload: BulkRequest):
     count = bulk_delete_documents(payload.doc_ids)
-    notify_sse("documents_bulk_deleted", {"count": count})
+    notify_sse("documents_bulk_deleted", {"count": count}, user_id=get_current_user_id())
     return {"message": f"Deleted {count} document(s)"}
 
 
@@ -137,7 +136,7 @@ def bulk_verify(payload: BulkRequest):
         if doc and doc["status"] != "verified":
             update_document_status(doc_id, "verified", "level_1")
             count += 1
-    notify_sse("documents_bulk_verified", {"count": count})
+    notify_sse("documents_bulk_verified", {"count": count}, user_id=get_current_user_id())
     return {"message": f"Verified {count} document(s)"}
 
 
@@ -151,7 +150,7 @@ def reprocess_document(doc_id: str):
         raise HTTPException(status_code=400, detail="Original PDF data not found in database")
     update_document_status(doc_id, "processing")
     get_executor().submit(process_pdf_background, doc_id)
-    notify_sse("document_updated", {"doc_id": doc_id, "status": "processing"})
+    notify_sse("document_updated", {"doc_id": doc_id, "status": "processing"}, user_id=get_current_user_id())
     return {"message": "Reprocessing started", "doc_id": doc_id}
 
 
@@ -261,7 +260,7 @@ def reprocess_field(doc_id: str, field_name: str):
         verified=0
     )
 
-    notify_sse("document_updated", {"doc_id": doc_id, "status": doc["status"]})
+    notify_sse("document_updated", {"doc_id": doc_id, "status": doc["status"]}, user_id=get_current_user_id())
 
     return {
         "field_name": field_name,
@@ -289,6 +288,7 @@ def fetch_corrections_log():
 
 @router.get("/api/queue-status")
 def queue_status():
+    from app.services.processing import get_worker_count
     docs = get_all_documents()
     levels = {"level_1": 0, "level_2": 0, "level_3": 0, "level_4": 0}
     for d in docs:
@@ -302,5 +302,5 @@ def queue_status():
         "verified": len([d for d in docs if d["status"] == "verified"]),
         "failed": len([d for d in docs if d["status"] == "failed"]),
         "by_escalation": levels,
-        "workers": get_executor()._max_workers
+        "workers": get_worker_count()
     }

@@ -8,11 +8,11 @@ from pathlib import Path
 
 from app.config import (
     R2_ENDPOINT, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, use_r2,
+    BASE_DIR as CFG_BASE_DIR,
 )
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-UPLOADS_DIR = BASE_DIR / "shared" / "uploads"
-PROCESSED_DIR = BASE_DIR / "shared" / "processed"
+UPLOADS_DIR = CFG_BASE_DIR / "shared" / "uploads"
+PROCESSED_DIR = CFG_BASE_DIR / "shared" / "processed"
 
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(PROCESSED_DIR, exist_ok=True)

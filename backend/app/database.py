@@ -36,7 +36,7 @@ if USE_POSTGRES:
 
 else:
     import sqlite3
-    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    from app.config import BASE_DIR as CFG_BASE_DIR
 
     _local = threading.local()
 
@@ -50,7 +50,7 @@ else:
                 _local.conn = None
         db_path = os.environ.get(
             "SQLITE_PATH",
-            str(BASE_DIR / "shared" / "database" / "ssiar.db")
+            str(CFG_BASE_DIR / "shared" / "database" / "ssiar.db")
         )
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -76,13 +76,22 @@ def init_db():
         cur = conn.cursor()
         if USE_POSTGRES:
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS documents (
                     id TEXT PRIMARY KEY,
                     filename TEXT NOT NULL,
                     status TEXT NOT NULL,
                     classification TEXT,
                     escalation_level TEXT DEFAULT 'level_1',
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    user_id TEXT REFERENCES users(id)
                 )
             """)
             cur.execute("""
@@ -141,13 +150,22 @@ def init_db():
             """)
         else:
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS documents (
                     id TEXT PRIMARY KEY,
                     filename TEXT NOT NULL,
                     status TEXT NOT NULL,
                     classification TEXT,
                     escalation_level TEXT DEFAULT 'level_1',
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    user_id TEXT REFERENCES users(id)
                 )
             """)
             cur.execute("""
@@ -227,21 +245,44 @@ def _run_migrations(cursor):
             cursor.execute("ALTER TABLE documents ADD COLUMN escalation_level TEXT DEFAULT 'level_1'")
         except Exception:
             pass
+    if "user_id" not in columns:
+        try:
+            cursor.execute("ALTER TABLE documents ADD COLUMN user_id TEXT REFERENCES users(id)")
+        except Exception:
+            pass
+
+    # Create default admin user for backward compatibility with existing docs
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        import hashlib, os, secrets
+        default_id = "default_admin"
+        default_email = "admin@ssiar.local"
+        salt = os.urandom(16)
+        dk = hashlib.pbkdf2_hmac("sha256", b"admin123", salt, 100_000)
+        pw_hash = salt.hex() + ":" + dk.hex()
+        cursor.execute(
+            "INSERT OR IGNORE INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+            (default_id, default_email, pw_hash, __import__("datetime").datetime.now().isoformat())
+        )
+        cursor.execute("UPDATE documents SET user_id = ? WHERE user_id IS NULL", (default_id,))
 
 
 def insert_document(doc_id: str, filename: str, status: str = "processing",
                     classification: Optional[dict] = None,
-                    escalation_level: str = "level_1"):
+                    escalation_level: str = "level_1",
+                    user_id: Optional[str] = None):
+    from app.auth import get_current_user_id
+    uid = user_id or get_current_user_id()
     conn = get_db_connection()
     try:
         cur = conn.cursor()
         now_str = datetime.now().isoformat()
         class_json = json.dumps(classification) if classification else None
         cur.execute(
-            "INSERT INTO documents (id, filename, status, classification, escalation_level, created_at) VALUES (%s, %s, %s, %s, %s, %s)"
+            "INSERT INTO documents (id, filename, status, classification, escalation_level, created_at, user_id) VALUES (%s, %s, %s, %s, %s, %s, %s)"
             if USE_POSTGRES else
-            "INSERT INTO documents (id, filename, status, classification, escalation_level, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (doc_id, filename, status, class_json, escalation_level, now_str)
+            "INSERT INTO documents (id, filename, status, classification, escalation_level, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (doc_id, filename, status, class_json, escalation_level, now_str, uid)
         )
         conn.commit()
     finally:
@@ -322,24 +363,24 @@ def insert_or_update_form_data(doc_id: str, roll_number: str, class_val: str,
         row = cur.fetchone()
 
         if row:
-            if verified == 1:
-                cur.execute(
-                    "SELECT roll_number, class, dob, gender, consent, responses, academic_scores, remarks FROM form_data WHERE document_id = %s"
-                    if USE_POSTGRES else
-                    "SELECT roll_number, class, dob, gender, consent, responses, academic_scores, remarks FROM form_data WHERE document_id = ?",
-                    (doc_id,)
-                )
-                old = cur.fetchone()
-                if old:
-                    old_d = dict(old)
-                    _log_edit(cur, doc_id, "roll_number", old_d.get("roll_number"), roll_number)
-                    _log_edit(cur, doc_id, "class", old_d.get("class"), class_val)
-                    _log_edit(cur, doc_id, "dob", old_d.get("dob"), dob)
-                    _log_edit(cur, doc_id, "gender", old_d.get("gender"), gender)
-                    _log_edit(cur, doc_id, "consent", old_d.get("consent"), consent)
-                    _log_edit(cur, doc_id, "responses", old_d.get("responses"), resp_json)
-                    _log_edit(cur, doc_id, "academic_scores", old_d.get("academic_scores"), acad_json)
-                    _log_edit(cur, doc_id, "remarks", old_d.get("remarks"), remarks)
+            # Always capture dirty-field diffs (audit trail for both verified and unverified updates)
+            cur.execute(
+                "SELECT roll_number, class, dob, gender, consent, responses, academic_scores, remarks FROM form_data WHERE document_id = %s"
+                if USE_POSTGRES else
+                "SELECT roll_number, class, dob, gender, consent, responses, academic_scores, remarks FROM form_data WHERE document_id = ?",
+                (doc_id,)
+            )
+            old = cur.fetchone()
+            if old:
+                old_d = dict(old)
+                _log_edit(cur, doc_id, "roll_number", old_d.get("roll_number"), roll_number)
+                _log_edit(cur, doc_id, "class", old_d.get("class"), class_val)
+                _log_edit(cur, doc_id, "dob", old_d.get("dob"), dob)
+                _log_edit(cur, doc_id, "gender", old_d.get("gender"), gender)
+                _log_edit(cur, doc_id, "consent", old_d.get("consent"), consent)
+                _log_edit(cur, doc_id, "responses", old_d.get("responses"), resp_json)
+                _log_edit(cur, doc_id, "academic_scores", old_d.get("academic_scores"), acad_json)
+                _log_edit(cur, doc_id, "remarks", old_d.get("remarks"), remarks)
 
             if qual_json:
                 cur.execute(
@@ -368,6 +409,8 @@ def insert_or_update_form_data(doc_id: str, roll_number: str, class_val: str,
 
 
 def get_document(doc_id: str) -> Optional[dict]:
+    from app.auth import get_current_user_id
+    uid = get_current_user_id()
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
@@ -375,13 +418,13 @@ def get_document(doc_id: str) -> Optional[dict]:
             """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
                f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
                f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
-               FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = %s"""
+               FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = %s AND d.user_id = %s"""
             if USE_POSTGRES else
             """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
                f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
                f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
-               FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = ?""",
-            (doc_id,)
+               FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = ? AND d.user_id = ?""",
+            (doc_id, uid) if uid else (doc_id,)
         )
         row = cur.fetchone()
         if row:
@@ -398,16 +441,44 @@ def get_document(doc_id: str) -> Optional[dict]:
         put_conn(conn)
 
 
+def document_exists_by_filename(filename: str) -> bool:
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM documents WHERE filename = %s"
+            if USE_POSTGRES else
+            "SELECT COUNT(*) FROM documents WHERE filename = ?",
+            (filename,)
+        )
+        count = cur.fetchone()[0]
+        return count > 0
+    finally:
+        put_conn(conn)
+
+
 def get_all_documents() -> list:
+    from app.auth import get_current_user_id
+    uid = get_current_user_id()
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
-        cur.execute(
-            """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
-               f.roll_number, f.class, f.dob, f.gender, f.consent, f.verified_by_human
-               FROM documents d LEFT JOIN form_data f ON d.id = f.document_id
-               ORDER BY d.created_at DESC"""
-        )
+        if uid:
+            cur.execute(
+                """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+                   f.roll_number, f.class, f.dob, f.gender, f.consent, f.verified_by_human
+                   FROM documents d LEFT JOIN form_data f ON d.id = f.document_id
+                   WHERE d.user_id = ?
+                   ORDER BY d.created_at DESC""",
+                (uid,)
+            )
+        else:
+            cur.execute(
+                """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+                   f.roll_number, f.class, f.dob, f.gender, f.consent, f.verified_by_human
+                   FROM documents d LEFT JOIN form_data f ON d.id = f.document_id
+                   ORDER BY d.created_at DESC"""
+            )
         rows = cur.fetchall()
         results = []
         for r in rows:
@@ -449,14 +520,23 @@ def get_corrections_log() -> list:
 
 
 def delete_document(doc_id: str):
+    from app.auth import get_current_user_id
     from app.image.storage import delete_document_files
+    uid = get_current_user_id()
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        cur.execute(
-            "DELETE FROM documents WHERE id = %s" if USE_POSTGRES else
-            "DELETE FROM documents WHERE id = ?", (doc_id,)
-        )
+        if uid:
+            cur.execute(
+                "DELETE FROM documents WHERE id = %s AND user_id = %s" if USE_POSTGRES else
+                "DELETE FROM documents WHERE id = ? AND user_id = ?",
+                (doc_id, uid)
+            )
+        else:
+            cur.execute(
+                "DELETE FROM documents WHERE id = %s" if USE_POSTGRES else
+                "DELETE FROM documents WHERE id = ?", (doc_id,)
+            )
         conn.commit()
     finally:
         put_conn(conn)
@@ -464,12 +544,17 @@ def delete_document(doc_id: str):
 
 
 def bulk_delete_documents(doc_ids: list) -> int:
+    from app.auth import get_current_user_id
     from app.image.storage import delete_document_files
+    uid = get_current_user_id()
     conn = get_db_connection()
     try:
         cur = conn.cursor()
         placeholders = ",".join("%s" if USE_POSTGRES else "?" for _ in doc_ids)
-        cur.execute(f"DELETE FROM documents WHERE id IN ({placeholders})", doc_ids)
+        if uid:
+            cur.execute(f"DELETE FROM documents WHERE id IN ({placeholders}) AND user_id = ?", [*doc_ids, uid])
+        else:
+            cur.execute(f"DELETE FROM documents WHERE id IN ({placeholders})", doc_ids)
         conn.commit()
         count = cur.rowcount
     finally:

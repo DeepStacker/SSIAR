@@ -6,12 +6,12 @@ import threading
 import shutil
 import cv2
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from app.config import TEMPLATES_DIR, TEMP_DIR, TEMPLATE_PDF, PROCESSING_TIMEOUT, TEMP_TTL_HOURS, MAX_WORKERS
 from app.database import (
-    update_document_status, insert_or_update_form_data, get_pdf, store_page_image
+    update_document_status, insert_or_update_form_data, get_pdf, store_page_image, get_db_connection, put_conn
 )
 from app.image.pdf import (
     render_pdf_to_arrays, detect_consent, ZOOM
@@ -33,6 +33,11 @@ _executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
 def get_executor() -> ThreadPoolExecutor:
     return _executor
+
+
+def get_worker_count() -> int:
+    """Public accessor for the processing worker pool size."""
+    return _executor._max_workers
 
 def init_templates():
     p1_path = os.path.join(TEMPLATES_DIR, "template_p1.png")
@@ -160,8 +165,6 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
         if AzureOCRPlugin().is_available():
             billing_manager.pre_analyze_pages(doc_id, aligned_p1_raw, aligned_p2_raw)
 
-        FIELD_WORKERS = min(4, len(all_text_fields)) if len(all_text_fields) > 1 else 1
-
         def _get_roi_rect(field_name: str):
             if field_name in ROIS_P1_POINTS:
                 return ROIS_P1_POINTS[field_name], 1
@@ -198,7 +201,8 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
                     aligned_page_img=raw_page,
                     page_num=az_page_num,
                     roi_rect=roi_rect,
-                    crop=crop
+                    crop=crop,
+                    skip_cache=True
                 )
                 if azure_res:
                     az_text, az_conf = azure_res
@@ -216,20 +220,17 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
             )
             return field_name, az_text, fused_conf, "valid" if az_valid else "invalid"
 
-        with ThreadPoolExecutor(max_workers=FIELD_WORKERS) as field_executor:
-            field_futures = {field_executor.submit(_process_one_field, fn): fn for fn in all_text_fields}
-            for future in as_completed(field_futures):
-                fn = field_futures[future]
-                try:
-                    field_name, norm_val, fused_conf, valid_str = future.result(timeout=60)
-                    fields_data[field_name] = norm_val
-                    fields_confidence[field_name] = fused_conf
-                    fields_validation[field_name] = valid_str
-                except (TimeoutError, Exception) as e:
-                    print(f"Field {fn} timed out or failed: {e}")
-                    fields_data[fn] = ""
-                    fields_confidence[fn] = 0.01
-                    fields_validation[fn] = "invalid"
+        for fn in all_text_fields:
+            try:
+                field_name, norm_val, fused_conf, valid_str = _process_one_field(fn)
+                fields_data[field_name] = norm_val
+                fields_confidence[field_name] = fused_conf
+                fields_validation[field_name] = valid_str
+            except Exception as e:
+                print(f"Field {fn} failed: {e}")
+                fields_data[fn] = ""
+                fields_confidence[fn] = 0.01
+                fields_validation[fn] = "invalid"
 
         # 9. Cross-Field Consistency Checks
         cross_ok, cross_penalty, cross_reason = check_cross_field_consistency(fields_data)
@@ -301,12 +302,35 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
             verified=1 if status == "verified" else 0
         )
 
+        # Read user_id from document for targeted SSE notification
+        _uid = None
+        try:
+            _conn = get_db_connection()
+            _cur = _conn.cursor()
+            _cur.execute("SELECT user_id FROM documents WHERE id = ?", (doc_id,))
+            _row = _cur.fetchone()
+            _uid = _row[0] if _row else None
+            put_conn(_conn)
+        except Exception:
+            pass
+
         update_document_status(doc_id, status, escalation_level)
         print(f"Finished processing document: {doc_id} -> Status: {status} [Escalation: {escalation_level}]")
-        notify_sse("document_updated", {"doc_id": doc_id, "status": status, "escalation_level": escalation_level})
+        notify_sse("document_updated", {"doc_id": doc_id, "status": status, "escalation_level": escalation_level}, user_id=_uid)
 
     except Exception as e:
         import traceback
         traceback.print_exc()
+        # Read user_id for SSE notification
+        _uid = None
+        try:
+            _conn = get_db_connection()
+            _cur = _conn.cursor()
+            _cur.execute("SELECT user_id FROM documents WHERE id = ?", (doc_id,))
+            _row = _cur.fetchone()
+            _uid = _row[0] if _row else None
+            put_conn(_conn)
+        except Exception:
+            pass
         update_document_status(doc_id, "failed", "level_4")
-        notify_sse("document_updated", {"doc_id": doc_id, "status": "failed", "escalation_level": "level_4"})
+        notify_sse("document_updated", {"doc_id": doc_id, "status": "failed", "escalation_level": "level_4"}, user_id=_uid)

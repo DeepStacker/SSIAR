@@ -2,7 +2,6 @@ import cv2
 import fitz
 import numpy as np
 import os
-from pathlib import Path
 from typing import Tuple, List, Dict, Any
 
 from app.image.preprocessing import assess_image_quality, select_and_apply_preprocessing
@@ -128,8 +127,8 @@ def align_page(img_path, page_num):
         raise ValueError(f"Could not load image: {img_path}")
         
     # Load template image
-    base_dir = Path(__file__).resolve().parent.parent.parent.parent
-    templates_dir = os.path.join(base_dir, "shared", "templates")
+    from app.config import BASE_DIR as CFG_BASE_DIR
+    templates_dir = os.path.join(str(CFG_BASE_DIR), "shared", "templates")
     template_path = os.path.join(templates_dir, f"template_p{page_num}.png")
     
     template = cv2.imread(template_path)

@@ -4,15 +4,16 @@ import sqlite3
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import StreamingResponse
 import io
 
 from datetime import date
 
 from app.database import get_db_connection
+from app.auth import require_auth, get_current_user_id
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(prefix="/api/analytics", tags=["analytics"], dependencies=[Depends(require_auth)])
 
 METADATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "shared", "metadata", "sdq_metadata.json")
 
@@ -35,19 +36,24 @@ def calculate_cronbach_alpha(df: pd.DataFrame, items: List[str]) -> float:
     alpha = (k / (k - 1)) * (1.0 - (item_variances / total_variance))
     return float(max(0.0, min(1.0, alpha)))
 
-def get_processed_data(class_filter=None, gender_filter=None, date_from=None, date_to=None) -> pd.DataFrame:
-    """Retrieves verified form data and parses scores, domains, and demographics."""
+def get_processed_data(class_filter=None, gender_filter=None, date_from=None, date_to=None, statuses=("verified",)) -> pd.DataFrame:
+    """Retrieves form data for the given statuses (default: verified only) and parses scores, domains, and demographics."""
+    uid = get_current_user_id()
     conn = get_db_connection()
-    # Fetch verified documents with their form data
-    query = """
+    # Build status placeholders for IN clause
+    placeholders = ",".join("?" for _ in statuses)
+    query = f"""
         SELECT fd.document_id, fd.roll_number, fd.class, fd.dob, fd.gender, fd.consent, 
                fd.responses, fd.academic_scores, fd.remarks, fd.quality_report, d.status
         FROM form_data fd
         JOIN documents d ON fd.document_id = d.id
-        WHERE d.status = 'verified'
+        WHERE d.status IN ({placeholders})
     """
-    params = []
+    params = list(statuses)
 
+    if uid:
+        query += " AND d.user_id = ?"
+        params.append(uid)
     if class_filter:
         query += " AND fd.class = ?"
         params.append(class_filter)
@@ -96,11 +102,8 @@ def get_processed_data(class_filter=None, gender_filter=None, date_from=None, da
             acad = {}
             
         cleaned_acad = {}
-        for subject in ["math_pct", "science_pct", "language_pct", "hindi_pct", "rank"]:
+        for subject in ["math_pct", "science_pct", "language_pct", "rank"]:
             val = acad.get(subject, "")
-            # Hindi percentage fallback if not present
-            if subject == "hindi_pct" and not val:
-                val = acad.get("hindi", "")
             
             if val is not None and str(val).strip():
                 # Strip '%' if present
@@ -201,9 +204,14 @@ def get_summary_stats(
         cursor = conn.cursor()
         
         # Build filter conditions
+        uid = get_current_user_id()
         doc_filters = []
         doc_params = []
         fd_join = ""
+        
+        if uid:
+            doc_filters.append("d.user_id = ?")
+            doc_params.append(uid)
         
         if class_filter or gender:
             fd_join = " LEFT JOIN form_data fd ON d.id = fd.document_id"
@@ -240,9 +248,12 @@ def get_summary_stats(
         cursor.execute(f"SELECT COUNT(*) FROM documents d{fd_join} WHERE 1=1 AND " + " AND ".join(today_filters), today_params)
         processed_today = cursor.fetchone()[0]
         
-        # 3. Quality & Processing metrics — only verified documents
-        quality_filters = ["d.status = 'verified'"]
+        # 3. Quality & Processing metrics — verified + needs_review (all reviewed docs)
+        quality_filters = ["d.status IN ('verified', 'needs_review')"]
         quality_params = []
+        if uid:
+            quality_filters.append("d.user_id = ?")
+            quality_params.append(uid)
         if class_filter:
             quality_filters.append("fd.class = ?")
             quality_params.append(class_filter)
@@ -289,26 +300,39 @@ def get_summary_stats(
         trend_rows = cursor.fetchall()
         processing_trend = [{"date": r[0], "count": r[1]} for r in trend_rows]
         processing_trend.reverse()
-        
+
+        # Throughput: forms per minute across the trend window (default 14 days)
+        trend_window_days = max(1, len(processing_trend))
+        trend_total = sum(d["count"] for d in processing_trend) if processing_trend else 0
+        throughput_forms_per_min = round(trend_total / (trend_window_days * 24 * 60), 4) if trend_total else 0.0
+
         conn.close()
         
-        # 5. Completeness & Accuracy
+        # 5. Completeness & Accuracy — computed over required demographics + academic scores only
+        # (NOT q1..q25 since some questions may legitimately be unanswered)
         df = get_processed_data(class_filter=class_filter, gender_filter=gender, date_from=date_from, date_to=date_to)
         completeness = 100.0
         if not df.empty:
-            total_cells = df.shape[0] * df.shape[1]
-            missing_cells = df.isna().sum().sum()
-            completeness = ((total_cells - missing_cells) / total_cells) * 100.0
+            required_cols = ["roll_number", "class_clean", "gender", "math_pct", "science_pct", "language_pct", "rank"]
+            available_required = [c for c in required_cols if c in df.columns]
+            if available_required:
+                sub = df[available_required]
+                total_cells = sub.shape[0] * sub.shape[1]
+                missing_cells = sub.isna().sum().sum()
+                completeness = ((total_cells - missing_cells) / total_cells) * 100.0
+            else:
+                completeness = 0.0
             
         return {
             "total_forms": total_forms,
             "verified_forms": verified_count,
-            "pending_review": pending_count,
             "needs_review": pending_count,
             "processed_today": processed_today,
             "average_confidence": round(avg_confidence * 100, 1),
             "data_completeness": round(completeness, 1),
-            "processing_trend": processing_trend
+            "processing_trend": processing_trend,
+            "throughput_forms_per_min": throughput_forms_per_min,
+            "throughput_window_days": trend_window_days
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analytics summary failed: {str(e)}")
@@ -463,18 +487,14 @@ def get_academic_analytics(
                 "top_vs_bottom_difficulties": {}
             }
             
-        subjects = ["math_pct", "science_pct", "language_pct", "hindi_pct"]
-        subject_labels = {"math_pct": "Mathematics", "science_pct": "Science", "language_pct": "Language", "hindi_pct": "Hindi"}
+        subjects = ["math_pct", "science_pct", "language_pct"]
+        subject_labels = {"math_pct": "Mathematics", "science_pct": "Science", "language_pct": "Language"}
         
         averages = {}
         for sub in subjects:
             if sub in df.columns:
-                if sub == "hindi_pct":
-                    sub_df = pd.to_numeric(df[sub], errors='coerce').dropna()
-                    averages[subject_labels[sub]] = round(float(sub_df.mean()), 1) if not sub_df.empty else None
-                else:
-                    sub_df = df[sub].dropna()
-                    averages[subject_labels[sub]] = round(float(sub_df.mean()), 1) if not sub_df.empty else 0.0
+                sub_df = df[sub].dropna()
+                averages[subject_labels[sub]] = round(float(sub_df.mean()), 1) if not sub_df.empty else 0.0
                 
         # Class splits
         class_averages = []
@@ -484,12 +504,8 @@ def get_academic_analytics(
             row = {"class": c}
             for sub in subjects:
                 if sub in c_df.columns:
-                    if sub == "hindi_pct":
-                        sub_df = pd.to_numeric(c_df[sub], errors='coerce').dropna()
-                        row[subject_labels[sub]] = round(float(sub_df.mean()), 1) if not sub_df.empty else None
-                    else:
-                        sub_df = c_df[sub].dropna()
-                        row[subject_labels[sub]] = round(float(sub_df.mean()), 1) if not sub_df.empty else 0.0
+                    sub_df = c_df[sub].dropna()
+                    row[subject_labels[sub]] = round(float(sub_df.mean()), 1) if not sub_df.empty else 0.0
             class_averages.append(row)
             
         # Top 10% vs Bottom 10% averages
@@ -583,12 +599,11 @@ def get_correlations_analytics(
             "score_peer": "Peer Difficulty"
         }
         
-        subjects = ["math_pct", "science_pct", "language_pct", "hindi_pct", "rank"]
+        subjects = ["math_pct", "science_pct", "language_pct", "rank"]
         subject_labels = {
             "math_pct": "Math %",
             "science_pct": "Science %",
             "language_pct": "Language %",
-            "hindi_pct": "Hindi %",
             "rank": "Rank"
         }
         
@@ -684,34 +699,77 @@ def get_processing_analytics(
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        uid = get_current_user_id()
+
         # Processed today — per-hour breakdown
         today_str = date.today().isoformat()
-        cursor.execute("""
-            SELECT substr(created_at, 12, 2) as hour, COUNT(*) as count
-            FROM documents
-            WHERE created_at LIKE ?
-            GROUP BY hour
-            ORDER BY hour
-        """, (f"{today_str}%",))
+        if uid:
+            cursor.execute("""
+                SELECT substr(created_at, 12, 2) as hour, COUNT(*) as count
+                FROM documents
+                WHERE created_at LIKE ? AND user_id = ?
+                GROUP BY hour
+                ORDER BY hour
+            """, (f"{today_str}%", uid))
+        else:
+            cursor.execute("""
+                SELECT substr(created_at, 12, 2) as hour, COUNT(*) as count
+                FROM documents
+                WHERE created_at LIKE ?
+                GROUP BY hour
+                ORDER BY hour
+            """, (f"{today_str}%",))
+
         hourly = cursor.fetchall()
         hourly_breakdown = [{"hour": f"{r[0]}:00", "count": r[1]} for r in hourly]
 
-        # Escalation level (quality) distribution
-        cursor.execute("""
-            SELECT fd.escalation_level, COUNT(*) as count
-            FROM form_data fd
-            JOIN documents d ON fd.document_id = d.id
-            WHERE d.status = 'verified'
-            GROUP BY fd.escalation_level
-        """)
+        # Escalation level distribution across ALL documents (escalation_level lives on documents, NOT form_data)
+        if uid:
+            cursor.execute("""
+                SELECT escalation_level, COUNT(*) as count
+                FROM documents
+                WHERE user_id = ?
+                GROUP BY escalation_level
+            """, (uid,))
+        else:
+            cursor.execute("""
+                SELECT escalation_level, COUNT(*) as count
+                FROM documents
+                GROUP BY escalation_level
+            """)
         escalation_rows = cursor.fetchall()
-        escalation_dist = [{"level": r[0] or "unknown", "count": r[1]} for r in escalation_rows]
+        # Ensure all four levels are present even if zero
+        level_counts = {"level_1": 0, "level_2": 0, "level_3": 0, "level_4": 0}
+        for r in escalation_rows:
+            lev = r[0] or "level_1"
+            if lev in level_counts:
+                level_counts[lev] = r[1]
+        escalation_dist = [{"level": k, "count": v} for k, v in level_counts.items()]
+
+        # Status distribution for context (so frontend can show scope)
+        if uid:
+            cursor.execute("""
+                SELECT status, COUNT(*) as count
+                FROM documents
+                WHERE user_id = ?
+                GROUP BY status
+            """, (uid,))
+        else:
+            cursor.execute("""
+                SELECT status, COUNT(*) as count
+                FROM documents
+                GROUP BY status
+            """)
+        status_rows = cursor.fetchall()
+        status_counts = {r[0]: r[1] for r in status_rows}
 
         conn.close()
 
         return {
             "hourly_breakdown": hourly_breakdown,
-            "escalation_distribution": escalation_dist
+            "escalation_distribution": escalation_dist,
+            "status_distribution": status_counts,
+            "scope": "all_documents"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Processing analytics failed: {str(e)}")
@@ -756,16 +814,27 @@ def _is_garbage_value(field: str, value: str) -> str | None:
 
 
 def _collect_garbage_docs() -> list:
+    uid = get_current_user_id()
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT d.id, d.filename, d.status, d.escalation_level,
-               f.roll_number, f.class, f.dob, f.gender
-        FROM documents d
-        LEFT JOIN form_data f ON d.id = f.document_id
-        WHERE d.status IN ('needs_review', 'verified')
-        ORDER BY d.created_at DESC
-    """)
+    if uid:
+        cursor.execute("""
+            SELECT d.id, d.filename, d.status, d.escalation_level,
+                   f.roll_number, f.class, f.dob, f.gender
+            FROM documents d
+            LEFT JOIN form_data f ON d.id = f.document_id
+            WHERE d.status IN ('needs_review', 'verified') AND d.user_id = ?
+            ORDER BY d.created_at DESC
+        """, (uid,))
+    else:
+        cursor.execute("""
+            SELECT d.id, d.filename, d.status, d.escalation_level,
+                   f.roll_number, f.class, f.dob, f.gender
+            FROM documents d
+            LEFT JOIN form_data f ON d.id = f.document_id
+            WHERE d.status IN ('needs_review', 'verified')
+            ORDER BY d.created_at DESC
+        """)
     rows = cursor.fetchall()
     conn.close()
 
@@ -797,18 +866,53 @@ def get_data_quality(
     date_to: str = None,
 ):
     try:
+        uid = get_current_user_id()
         garbage = _collect_garbage_docs()
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM documents WHERE status = 'needs_review'")
+        if uid:
+            cursor.execute("SELECT COUNT(*) FROM documents WHERE status = 'needs_review' AND user_id = ?", (uid,))
+        else:
+            cursor.execute("SELECT COUNT(*) FROM documents WHERE status = 'needs_review'")
         needs_review = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM documents")
+        if uid:
+            cursor.execute("SELECT COUNT(*) FROM documents WHERE user_id = ?", (uid,))
+        else:
+            cursor.execute("SELECT COUNT(*) FROM documents")
         total = cursor.fetchone()[0]
+
+        # Count partial forms (verified docs missing any of the 25 SDQ responses)
+        partial_forms = 0
+        try:
+            if uid:
+                cursor.execute("""
+                    SELECT responses FROM form_data fd
+                    JOIN documents d ON fd.document_id = d.id
+                    WHERE d.status IN ('verified', 'needs_review') AND d.user_id = ?
+                """, (uid,))
+            else:
+                cursor.execute("""
+                    SELECT responses FROM form_data fd
+                    JOIN documents d ON fd.document_id = d.id
+                    WHERE d.status IN ('verified', 'needs_review')
+                """)
+            for row in cursor.fetchall():
+                try:
+                    resp = json.loads(row[0]) if row[0] else {}
+                    answered = sum(1 for v in resp.values() if v not in (None, "", "nan"))
+                    if answered < 25:
+                        partial_forms += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         conn.close()
         return {
             "total_documents": total,
             "needs_review": needs_review,
             "documents_with_issues": len(garbage),
+            "partial_forms": partial_forms,
             "issues": garbage[:50],
         }
     except Exception as e:
@@ -823,15 +927,24 @@ def get_per_field_confidence(
     date_to: str = None,
 ):
     try:
+        uid = get_current_user_id()
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT fd.confidence_scores
-            FROM form_data fd
-            JOIN documents d ON fd.document_id = d.id
-            WHERE d.status = 'verified'
-        """)
+        if uid:
+            cursor.execute("""
+                SELECT fd.confidence_scores
+                FROM form_data fd
+                JOIN documents d ON fd.document_id = d.id
+                WHERE d.status IN ('verified', 'needs_review') AND d.user_id = ?
+            """, (uid,))
+        else:
+            cursor.execute("""
+                SELECT fd.confidence_scores
+                FROM form_data fd
+                JOIN documents d ON fd.document_id = d.id
+                WHERE d.status IN ('verified', 'needs_review')
+            """)
         rows = cursor.fetchall()
 
         field_confs: Dict[str, list] = {}
@@ -873,18 +986,20 @@ def export_research_data(
     date_from: str = None,
     date_to: str = None,
     columns: str = Query(None, alias="columns"),
+    include_needs_review: bool = Query(False, description="Include needs_review docs alongside verified"),
 ):
     try:
-        df = get_processed_data(class_filter=class_filter, gender_filter=gender, date_from=date_from, date_to=date_to)
+        statuses = ("verified", "needs_review") if include_needs_review else ("verified",)
+        df = get_processed_data(class_filter=class_filter, gender_filter=gender, date_from=date_from, date_to=date_to, statuses=statuses)
         if df.empty:
-            raise HTTPException(status_code=400, detail="No verified form data to export.")
+            raise HTTPException(status_code=400, detail="No form data to export. (Use include_needs_review=true to also export needs_review docs.)")
             
         # Columns to include
         meta = load_metadata()
         q_cols = [item["question_id"] for item in meta] if meta else []
         dom_cols = [f"score_{d.lower()}" for d in ["prosocial", "emotional", "conduct", "hyperactivity", "peer", "total_difficulties"]]
         dom_cols = [c for c in dom_cols if c in df.columns]
-        acad_cols = ["math_pct", "science_pct", "language_pct", "hindi_pct", "rank"]
+        acad_cols = ["math_pct", "science_pct", "language_pct", "rank"]
         acad_cols = [c for c in acad_cols if c in df.columns]
         
         export_cols = ["roll_number", "class_clean", "gender", "age", "consent"] + q_cols + dom_cols + acad_cols

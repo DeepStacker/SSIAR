@@ -2,10 +2,9 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Upload, Loader2, RotateCcw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { api } from '@/api';
 import { useToast } from '@/context/ToastContext';
 
-const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_MB = 300;
 
 interface Props {
   uploading: boolean;
@@ -41,7 +40,6 @@ export const UploadZone: React.FC<Props> = ({
     setUploadingFilename(files[0].name);
     setLocalUploading(true);
     try {
-      await api.uploadFiles(files, autoVerify, splitPages);
       onUpload(files);
     } catch (err) {
       show(err instanceof Error ? err.message : 'Upload failed', 'error');
