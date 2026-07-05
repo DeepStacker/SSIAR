@@ -64,6 +64,7 @@ def verify_document(doc_id: str, payload: VerifyDataRequest):
     ocr_conf = conf_scores.get("ocr", {})
     prep_modes = conf_scores.get("preprocessing_modes", {})
 
+    # SDQ form has Math, Science, Language only — no Hindi field
     fields_to_compare = {
         "roll_number": payload.roll_number,
         "class": payload.class_val,

@@ -267,6 +267,11 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
             store_page_image(doc_id, 2, aligned_p2_bytes)
 
         # Structure form data JSONs
+        # Note: Only math_pct, science_pct, language_pct are extracted because
+        # the SDQ form only has Math, Science, and Language subjects (no Hindi).
+        # The ROI coordinates in roi.py define exactly 3 subject percentage fields.
+        # If a Hindi field is added to the form in the future, a new ROI point,
+        # a validation entry, and extraction logic here would be needed.
         academic_scores = {
             "math_pct": fields_data.get("math_pct", ""),
             "science_pct": fields_data.get("science_pct", ""),

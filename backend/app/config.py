@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from backend/ directory (alongside this file: backend/app/config.py -> backend/.env)
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=_env_path, override=True)
 
@@ -11,10 +10,26 @@ TEMPLATES_DIR = str(BASE_DIR / "shared" / "templates")
 TEMP_DIR = str(BASE_DIR / "shared" / "temp")
 TEMPLATE_PDF = str(BASE_DIR / "Research Questionnaire Pre HINDI.docx.pdf")
 
-MAX_UPLOAD_SIZE = 200 * 1024 * 1024  # 200 MB (for merged PDFs with many pages)
+MAX_UPLOAD_SIZE = 200 * 1024 * 1024
 PROCESSING_TIMEOUT = 300
 TEMP_TTL_HOURS = 24
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", str(min(16, os.cpu_count() or 4))))
+
+# Database
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    f"sqlite:///{BASE_DIR / 'shared' / 'database' / 'ssiar.db'}"
+)
+
+# R2 / S3-compatible object storage (optional — falls back to local disk if not set)
+R2_ENDPOINT = os.environ.get("R2_ENDPOINT", "")
+R2_ACCESS_KEY = os.environ.get("R2_ACCESS_KEY", "")
+R2_SECRET_KEY = os.environ.get("R2_SECRET_KEY", "")
+R2_BUCKET = os.environ.get("R2_BUCKET", "ssiar-files")
+R2_PUBLIC_URL = os.environ.get("R2_PUBLIC_URL", "")
+
+def use_r2() -> bool:
+    return bool(R2_ENDPOINT and R2_ACCESS_KEY and R2_SECRET_KEY)
 
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)

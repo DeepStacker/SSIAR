@@ -8,6 +8,14 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 
+const tabConfig: { key: TabType; label: string; icon: React.ReactNode | null }[] = [
+  { key: 'all', label: 'All', icon: null },
+  { key: 'processing', label: 'Processing', icon: <Clock size={12} /> },
+  { key: 'needs_review', label: 'Review', icon: <AlertTriangle size={12} /> },
+  { key: 'verified', label: 'Verified', icon: <Check size={12} /> },
+  { key: 'failed', label: 'Failed', icon: <X size={12} /> },
+];
+
 interface Props {
   documents: Document[];
   activeTab: TabType;
@@ -25,12 +33,16 @@ interface Props {
   onReprocess: (doc: Document) => void;
   onDelete: (doc: Document) => void;
   onBulkDone: () => void;
+  onBulkVerify?: (docIds: string[]) => void;
+  onBulkReprocess?: (docIds: string[]) => void;
+  onBulkDelete?: (docIds: string[]) => void;
 }
 
 export const DocumentTable: React.FC<Props> = ({
   documents, activeTab, onTabChange, searchQuery, onSearchChange,
   sortKey, sortDir, onSortChange, selectedIds, onToggleSelect, onToggleSelectAll,
   onOpenDoc, onDownloadReport, onReprocess, onDelete, onBulkDone,
+  onBulkVerify, onBulkReprocess, onBulkDelete,
 }) => {
   const needsReview = documents.filter(d => d.status === 'needs_review');
   const verified = documents.filter(d => d.status === 'verified');
@@ -57,22 +69,22 @@ export const DocumentTable: React.FC<Props> = ({
     });
   })();
 
-  const tabs: { key: TabType; label: string; icon: React.ReactNode; count: number }[] = [
-    { key: 'all', label: 'All', icon: null, count: documents.length },
-    { key: 'processing', label: 'Processing', icon: <Clock size={12} />, count: processing.length },
-    { key: 'needs_review', label: 'Review', icon: <AlertTriangle size={12} />, count: needsReview.length },
-    { key: 'verified', label: 'Verified', icon: <Check size={12} />, count: verified.length },
-    { key: 'failed', label: 'Failed', icon: <X size={12} />, count: failed.length },
-  ];
+  const counts: Record<string, number> = {
+    all: documents.length,
+    processing: processing.length,
+    needs_review: needsReview.length,
+    verified: verified.length,
+    failed: failed.length,
+  };
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b">
         <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as TabType)}>
           <TabsList variant="line">
-            {tabs.map(tab => (
+            {tabConfig.map(tab => (
               <TabsTrigger key={tab.key} value={tab.key}>
-                {tab.icon} {tab.label} ({tab.count})
+                {tab.icon} {tab.label} ({counts[tab.key]})
               </TabsTrigger>
             ))}
           </TabsList>
@@ -84,7 +96,8 @@ export const DocumentTable: React.FC<Props> = ({
         </div>
       </div>
 
-      <BulkActionBar selectedCount={selectedIds.size} docIds={Array.from(selectedIds)} onDone={onBulkDone} />
+      <BulkActionBar selectedCount={selectedIds.size} docIds={Array.from(selectedIds)} onDone={onBulkDone}
+        onBulkVerify={onBulkVerify} onBulkReprocess={onBulkReprocess} onBulkDelete={onBulkDelete} />
 
       <div className="max-h-[500px] overflow-y-auto">
         {filtered.length === 0 ? (
@@ -102,7 +115,8 @@ export const DocumentTable: React.FC<Props> = ({
               <TableRow>
                 <TableHead className="w-8">
                   <input type="checkbox" checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                    onChange={onToggleSelectAll} className="accent-violet-500" />
+                    onChange={onToggleSelectAll} className="accent-violet-500"
+                    aria-label={selectedIds.size === filtered.length ? "Deselect all documents" : "Select all documents"} />
                 </TableHead>
                 <SortTh label="Filename" sortKey="filename" current={sortKey} dir={sortDir} onSort={onSortChange} />
                 <SortTh label="Roll Number" sortKey="roll_number" current={sortKey} dir={sortDir} onSort={onSortChange} />
@@ -115,10 +129,12 @@ export const DocumentTable: React.FC<Props> = ({
             <TableBody>
               {filtered.map(doc => (
                 <TableRow key={doc.id} onClick={() => onOpenDoc(doc)}
+                  tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpenDoc(doc); }}
                   className="cursor-pointer" style={{ opacity: doc.status === 'processing' ? 0.7 : 1 }}>
                   <TableCell onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={selectedIds.has(doc.id)}
-                      onChange={() => onToggleSelect(doc.id)} className="accent-violet-500" />
+                      onChange={() => onToggleSelect(doc.id)} className="accent-violet-500"
+                      aria-label={`Select ${doc.filename || doc.id}`} />
                   </TableCell>
                   <TableCell className="font-medium text-sm">{doc.filename}</TableCell>
                   <TableCell>{doc.roll_number || '—'}</TableCell>
@@ -157,7 +173,9 @@ export const DocumentTable: React.FC<Props> = ({
 const SortTh: React.FC<{ label: string; sortKey: SortKey; current: SortKey; dir: 'asc' | 'desc'; onSort: (k: SortKey) => void; right?: boolean }> = ({ label, sortKey, current, dir, onSort, right }) => {
   const isActive = current === sortKey;
   return (
-    <TableHead onClick={() => onSort(sortKey)} className={`cursor-pointer select-none${right ? ' text-right' : ''}`}>
+    <TableHead onClick={() => onSort(sortKey)} role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter') onSort(sortKey); }}
+      className={`cursor-pointer select-none${right ? ' text-right' : ''}`}>
       {label} {isActive && <ChevronUp size={12} className={`inline-block align-middle${dir === 'desc' ? ' rotate-180' : ''}`} />}
     </TableHead>
   );

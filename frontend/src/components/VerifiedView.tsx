@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Check, Loader2, Save } from 'lucide-react';
+import { Check, Download, Loader2, Save } from 'lucide-react';
 import { Document, DocumentDetails, ZoomImage } from '../api';
 import { api } from '../api';
+import { exportToCsv } from '../lib/utils';
 import { DocHeader } from './DocHeader';
 import { ZoomPopup } from './ZoomPopup';
 import { PageViewer } from './PageViewer';
@@ -148,11 +149,31 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
     }
   };
 
+  const handleExport = () => {
+    exportToCsv(
+      ['Field', 'Value'],
+      [
+        ['Roll Number', details.roll_number || ''],
+        ['Class', details.class || ''],
+        ['DOB', details.dob || ''],
+        ['Gender', details.gender || ''],
+        ['Math %', String(details.academic_scores?.math_pct ?? '')],
+        ['Science %', String(details.academic_scores?.science_pct ?? '')],
+        ['Language %', String(details.academic_scores?.language_pct ?? '')],
+        ['Rank', String(details.academic_scores?.rank ?? '')],
+      ],
+      `${doc.filename.replace(/\.\w+$/, '')}_verified.csv`
+    );
+  };
+
   return (
     <div className="app-container">
       <DocHeader title="SSIAR — Verified View" onClose={onClose} />
 
       <div className="flex justify-end gap-2 px-5 py-3">
+        <Button variant="outline" size="sm" onClick={handleExport}>
+          <Download size={14} /> Export
+        </Button>
         <Button variant="outline" size="sm" onClick={() => setPageViewer(1)}>
           Page 1
         </Button>
@@ -209,7 +230,7 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
                       style={{
                         padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
                         border: '1px solid',
-                        background: (details.consent || 'Unanswered') === c ? 'rgba(16,185,129,0.15)' : 'rgba(0,0,0,0.1)',
+                        background: (details.consent || 'Unanswered') === c ? 'rgba(from var(--accent-emerald) r g b / 0.15)' : 'var(--bg-highlight)',
                         borderColor: (details.consent || 'Unanswered') === c ? 'var(--accent-emerald)' : 'var(--color-border)',
                         color: (details.consent || 'Unanswered') === c ? 'var(--accent-emerald)' : 'var(--text-secondary)',
                       }}>{c}</button>
@@ -221,7 +242,7 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
                 <div className="flex items-center gap-2 py-1">
                   <textarea
                     className="w-full text-sm px-2 py-1 resize-y rounded"
-                    style={{ height: '50px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--text-primary)' }}
+                    style={{ height: '50px', background: 'var(--bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--text-primary)' }}
                     value={details.remarks || ''} onChange={e => {
                       if (onDetailsChange) onDetailsChange({ ...details, remarks: e.target.value });
                     }} />
@@ -245,8 +266,8 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
                 return (
                   <div key={q} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg"
                     style={{
-                      background: isMulti ? 'rgba(168,85,247,0.08)' : 'rgba(0,0,0,0.08)',
-                      border: `1px solid ${isMulti ? 'rgba(168,85,247,0.25)' : 'transparent'}`,
+                      background: isMulti ? 'rgba(from var(--accent-violet) r g b / 0.08)' : 'var(--bg-highlight)',
+                      border: `1px solid ${isMulti ? 'rgba(from var(--accent-violet) r g b / 0.25)' : 'transparent'}`,
                     }}>
                     <div className="w-6 text-xs font-bold shrink-0" style={{ color: 'var(--text-muted)' }}>Q{qi}</div>
                     <div ref={el => { cropRefs.current[`sdq_${q}`] = el; }} className="leading-none"
@@ -261,10 +282,10 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
                         onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     </div>
                     <span className="text-sm font-bold min-w-[24px] text-center"
-                      style={{ color: isMulti ? '#a855f7' : 'var(--text-primary)' }}>
+                      style={{ color: isMulti ? 'var(--accent-violet)' : 'var(--text-primary)' }}>
                       {Array.isArray(raw) ? raw.filter((x: number) => x > 0).join(',') || '—' : raw || '—'}
                     </span>
-                    {isMulti && <span className="ml-0.5 text-xs" style={{ color: '#a855f7' }}>✦</span>}
+                    {isMulti && <span className="ml-0.5 text-xs" style={{ color: 'var(--accent-violet)' }}>✦</span>}
                   </div>
                 );
               })}

@@ -8,13 +8,22 @@ interface Props {
 export const ZoomPopup: React.FC<Props> = ({ zoom }) => {
   if (!zoom) return null;
   return (
-    <div style={{
-      position: 'fixed', left: zoom.x + 20, top: zoom.y - 80, zIndex: 99999,
-      boxShadow: '0 8px 40px rgba(0,0,0,0.8)', borderRadius: '10px', overflow: 'hidden',
-      border: '2px solid var(--accent-violet)', pointerEvents: 'none',
-      transform: 'translateY(-50%)',
-    }}>
-      <img src={zoom.src} alt="" style={{ width: '440px', maxHeight: '180px', objectFit: 'contain', background: 'rgba(0,0,0,0.4)', display: 'block' }} />
+    <div
+      className="fixed pointer-events-none z-[99999] overflow-hidden rounded-[10px]"
+      style={{
+        left: zoom.x + 20,
+        top: zoom.y - 80,
+        transform: 'translateY(-50%)',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.8)',
+        border: '2px solid var(--accent-violet)',
+      }}
+    >
+      <img
+        src={zoom.src}
+        alt=""
+        className="block w-[440px] max-h-[180px] object-contain"
+        style={{ background: 'rgba(0,0,0,0.4)' }}
+      />
     </div>
   );
 };

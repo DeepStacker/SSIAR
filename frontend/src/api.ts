@@ -1,4 +1,51 @@
-const API_BASE = "http://localhost:8000/api";
+export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000/api";
+
+// ── Simple TTL cache for GET requests ──
+interface CacheEntry { data: unknown; timestamp: number }
+const cache = new Map<string, CacheEntry>()
+const DEFAULT_TTL = 30_000 // 30 seconds
+
+const cacheKey = (url: string) => url
+
+const cacheGet = <T>(key: string): T | null => {
+  const entry = cache.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.timestamp > DEFAULT_TTL) {
+    cache.delete(key)
+    return null
+  }
+  return entry.data as T
+}
+
+const cacheSet = (key: string, data: unknown) => {
+  cache.set(key, { data, timestamp: Date.now() })
+}
+
+const isGetUrl = (url: string) => {
+  const u = url.replace(API_BASE, '')
+  // Don't cache SSE, export, crop, page URLs
+  if (u.includes('/events') || u.includes('/export') || u.includes('/crops/') || u.includes('/pages/')) return false
+  return true
+}
+
+const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
+  const cached = cacheGet<T>(cacheKey(url))
+  if (cached !== null && (!options || options.method === undefined || options.method === 'GET')) {
+    return cached
+  }
+  const response = await fetch(url, options)
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(err.detail || `Request failed: ${response.status}`)
+  }
+  const data = await response.json()
+  if (!options || options.method === undefined || options.method === 'GET') {
+    if (isGetUrl(url)) cacheSet(cacheKey(url), data)
+  }
+  return data as T
+}
+
+export const clearApiCache = () => cache.clear()
 
 export interface Document {
   id: string;
@@ -123,20 +170,12 @@ export const api = {
 
   // List all forms in the queue
   listDocuments: async (): Promise<Document[]> => {
-    const response = await fetch(`${API_BASE}/documents`);
-    if (!response.ok) {
-      throw new Error("Failed to fetch documents list");
-    }
-    return response.json();
+    return fetchJson<Document[]>(`${API_BASE}/documents`)
   },
 
   // Get full data details for a specific form
   getDocumentDetails: async (docId: string): Promise<DocumentDetails> => {
-    const response = await fetch(`${API_BASE}/documents/${docId}`);
-    if (!response.ok) {
-      throw new Error("Failed to fetch document details");
-    }
-    return response.json();
+    return fetchJson<DocumentDetails>(`${API_BASE}/documents/${docId}`)
   },
 
   // Submit verified data back to SQLite
@@ -238,16 +277,12 @@ export const api = {
 
   // #26: Audit trail
   getEditHistory: async (docId: string): Promise<EditHistoryEntry[]> => {
-    const response = await fetch(`${API_BASE}/documents/${docId}/history`);
-    if (!response.ok) throw new Error("Failed to fetch edit history");
-    return response.json();
+    return fetchJson<EditHistoryEntry[]>(`${API_BASE}/documents/${docId}/history`)
   },
 
   // #17: Queue status
   getQueueStatus: async (): Promise<QueueStatus> => {
-    const response = await fetch(`${API_BASE}/queue-status`);
-    if (!response.ok) throw new Error("Failed to fetch queue status");
-    return response.json();
+    return fetchJson<QueueStatus>(`${API_BASE}/queue-status`)
   },
 
   // URL for serving a crop image
@@ -276,53 +311,76 @@ export const api = {
   },
 
   // Analytics endpoints
-  getAnalyticsSummary: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/analytics/summary`);
-    if (!response.ok) throw new Error("Failed to fetch analytics summary");
-    return response.json();
+  getAnalyticsSummary: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+    const params = new URLSearchParams();
+    if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
+    if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
+    const qs = params.toString();
+    return fetchJson(`${API_BASE}/analytics/summary${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsDemographics: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/analytics/demographics`);
-    if (!response.ok) throw new Error("Failed to fetch demographics analytics");
-    return response.json();
+  getAnalyticsDemographics: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+    const params = new URLSearchParams();
+    if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
+    if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
+    const qs = params.toString();
+    return fetchJson(`${API_BASE}/analytics/demographics${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsQuestionnaire: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/analytics/questionnaire`);
-    if (!response.ok) throw new Error("Failed to fetch questionnaire analytics");
-    return response.json();
+  getAnalyticsQuestionnaire: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+    const params = new URLSearchParams();
+    if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
+    if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
+    const qs = params.toString();
+    return fetchJson(`${API_BASE}/analytics/questionnaire${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsAcademic: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/analytics/academic`);
-    if (!response.ok) throw new Error("Failed to fetch academic analytics");
-    return response.json();
+  getAnalyticsAcademic: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+    const params = new URLSearchParams();
+    if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
+    if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
+    const qs = params.toString();
+    return fetchJson(`${API_BASE}/analytics/academic${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsCorrelations: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/analytics/correlations`);
-    if (!response.ok) throw new Error("Failed to fetch correlation analytics");
-    return response.json();
+  getAnalyticsCorrelations: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+    const params = new URLSearchParams();
+    if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
+    if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
+    const qs = params.toString();
+    return fetchJson(`${API_BASE}/analytics/correlations${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsOutliers: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/analytics/outliers`);
-    if (!response.ok) throw new Error("Failed to fetch outliers");
-    return response.json();
+  getAnalyticsOutliers: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+    const params = new URLSearchParams();
+    if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
+    if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
+    const qs = params.toString();
+    return fetchJson(`${API_BASE}/analytics/outliers${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsDataQuality: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/analytics/data-quality`);
-    if (!response.ok) throw new Error("Failed to fetch data quality");
-    return response.json();
+  getAnalyticsDataQuality: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+    const params = new URLSearchParams();
+    if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
+    if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
+    const qs = params.toString();
+    return fetchJson(`${API_BASE}/analytics/data-quality${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsProcessing: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/analytics/processing`);
-    if (!response.ok) throw new Error("Failed to fetch processing analytics");
-    return response.json();
+  getAnalyticsProcessing: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+    const params = new URLSearchParams();
+    if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
+    if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
+    const qs = params.toString();
+    return fetchJson(`${API_BASE}/analytics/processing${qs ? `?${qs}` : ''}`);
   },
-  getPerFieldConfidence: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/analytics/per-field-confidence`);
-    if (!response.ok) throw new Error("Failed to fetch per-field confidence");
-    return response.json();
+  getPerFieldConfidence: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+    const params = new URLSearchParams();
+    if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
+    if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
+    const qs = params.toString();
+    return fetchJson(`${API_BASE}/analytics/per-field-confidence${qs ? `?${qs}` : ''}`);
   },
-  getResearchExportUrl: (format: "csv" | "excel" | "spss"): string => {
-    return `${API_BASE}/analytics/export/${format}`;
+  getResearchExportUrl: (format: "csv" | "excel" | "spss", filters?: { class?: string; gender?: string; columns?: string }): string => {
+    const params = new URLSearchParams();
+    if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
+    if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
+    if (filters?.columns) params.set('columns', filters.columns);
+    const qs = params.toString();
+    return `${API_BASE}/analytics/export/${format}${qs ? `?${qs}` : ''}`;
   },
 
   // #32: SSE event source URL

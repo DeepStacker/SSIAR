@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { ZoomImage } from '../api';
 import { api } from '../api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -7,7 +7,6 @@ interface Props {
   docId: string;
   responses: Record<string, number | number[]>;
   checkboxConf: Record<string, string>;
-  multiTicks: Record<string, number[]>;
   onChange: (responses: Record<string, number | number[]>) => void;
   onZoom: (img: ZoomImage | null) => void;
 }
@@ -23,7 +22,7 @@ const toggleValue = (cur: number | number[] | undefined, v: number): number | nu
   return [cur as number, v];
 };
 
-export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, multiTicks: _multiTicks, onChange, onZoom }) => {
+const SdqGridComponent: React.FC<Props> = ({ docId, responses, checkboxConf, onChange, onZoom }) => {
   const getCheckboxConf = (q: string): 'high' | 'medium' | 'low' => {
     const c = checkboxConf[q];
     if (c === 'low_confidence' || c === 'low') return 'low';
@@ -47,7 +46,7 @@ export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, multi
             const raw = responses[q];
             const isMulti = Array.isArray(raw) && raw.filter(x => x > 0).length > 1;
             const confLevel = getCheckboxConf(q);
-            const cellColor = isMulti ? '#a855f7' : (confLevel === 'high' ? 'var(--accent-emerald)' : confLevel === 'medium' ? 'var(--accent-amber)' : '#f43f5e');
+            const cellColor = isMulti ? 'var(--accent-violet)' : (confLevel === 'high' ? 'var(--accent-emerald)' : confLevel === 'medium' ? 'var(--accent-amber)' : 'var(--accent-rose)');
             const cur = responses[q];
             return (
               <div key={q} className="flex items-center gap-1 p-1.5 rounded-lg"
@@ -59,8 +58,8 @@ export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, multi
                   }
                 }}
                 style={{
-                  background: isMulti ? 'rgba(168,85,247,0.08)' : 'rgba(0,0,0,0.08)',
-                  border: `1px solid ${isMulti ? 'rgba(168,85,247,0.25)' : 'transparent'}`,
+                  background: isMulti ? 'color-mix(in srgb, var(--accent-violet) 8%, transparent)' : 'rgba(0,0,0,0.08)',
+                  border: `1px solid ${isMulti ? 'color-mix(in srgb, var(--accent-violet) 25%, transparent)' : 'transparent'}`,
                 }}>
                 <div className="w-6 text-xs font-bold text-[var(--text-muted)] shrink-0">Q{qi}</div>
                 <img src={api.getCropUrl(docId, `${q}.png`)} alt={q}
@@ -85,7 +84,7 @@ export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, multi
                       }
                       return r;
                     })()}
-                    {isMulti && <span className="ml-0.5 text-[10px]" style={{ color: '#a855f7' }}>✦</span>}
+                    {isMulti && <span className="ml-0.5 text-[10px]" style={{ color: 'var(--accent-violet)' }}>✦</span>}
                   </span>
                   <span className="w-px h-6 bg-[var(--color-border)] shrink-0 inline-block"></span>
                   <div className="flex gap-1 shrink-0">
@@ -113,3 +112,13 @@ export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, multi
     </Card>
   );
 };
+
+const propsAreEqual = (prev: Props, next: Props) => {
+  return prev.docId === next.docId
+    && prev.onChange === next.onChange
+    && prev.onZoom === next.onZoom
+    && JSON.stringify(prev.responses) === JSON.stringify(next.responses)
+    && JSON.stringify(prev.checkboxConf) === JSON.stringify(next.checkboxConf);
+};
+
+export const SdqGrid = memo(SdqGridComponent, propsAreEqual);

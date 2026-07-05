@@ -29,6 +29,7 @@ def build_export(
     all_headers = ["Filename", "Roll Number", "Class", "DOB", "Gender", "Consent"]
     for q in range(1, 26):
         all_headers.append(f"Q{q}")
+    # SDQ form has Math, Science, Language only — no Hindi
     all_headers.extend(["Math Pct", "Science Pct", "Language Pct", "Rank", "Remarks"])
 
     if columns:

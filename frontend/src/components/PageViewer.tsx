@@ -61,13 +61,14 @@ export const PageViewer: React.FC<Props> = ({ docId, pageNum, onClose }) => {
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose, reset]);
 
-  const zoomIn = () => zoomAt(scale * 1.4, 0, 0);
-  const zoomOut = () => zoomAt(scale * 0.7, 0, 0);
+  const zoomIn = useCallback(() => zoomAt(scale * 1.4, 0, 0), [scale, zoomAt]);
+  const zoomOut = useCallback(() => zoomAt(scale / 1.4, 0, 0), [scale, zoomAt]);
 
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
+      role="dialog" aria-modal="true" aria-label="Page viewer"
       onClick={onClose}
     >
       <div

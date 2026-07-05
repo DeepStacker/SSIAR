@@ -69,18 +69,18 @@ export const ReportingView: React.FC<Props> = ({
           </h3>
           <div className="flex gap-4 items-end flex-wrap">
             <div>
-              <label className="text-[11px] text-[var(--text-muted)] block mb-1">Date From</label>
-              <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[150px]"
+              <label htmlFor="report-date-from" className="text-[11px] text-[var(--text-muted)] block mb-1">Date From</label>
+              <input id="report-date-from" type="date" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[150px]"
                 value={dateFrom} onChange={e => onDateFromChange(e.target.value)} />
             </div>
             <div>
-              <label className="text-[11px] text-[var(--text-muted)] block mb-1">Date To</label>
-              <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[150px]"
+              <label htmlFor="report-date-to" className="text-[11px] text-[var(--text-muted)] block mb-1">Date To</label>
+              <input id="report-date-to" type="date" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[150px]"
                 value={dateTo} onChange={e => onDateToChange(e.target.value)} />
             </div>
             <div>
-              <label className="text-[11px] text-[var(--text-muted)] block mb-1">Status</label>
-              <select className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[120px]"
+              <label htmlFor="report-status" className="text-[11px] text-[var(--text-muted)] block mb-1">Status</label>
+              <select id="report-status" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[120px]"
                 value={reportStatus} onChange={e => onStatusChange(e.target.value)}>
                 <option value="">All</option>
                 <option value="processing">Processing</option>
@@ -90,13 +90,13 @@ export const ReportingView: React.FC<Props> = ({
               </select>
             </div>
             <div>
-              <label className="text-[11px] text-[var(--text-muted)] block mb-1">Class</label>
-              <input type="text" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[100px]"
+              <label htmlFor="report-class" className="text-[11px] text-[var(--text-muted)] block mb-1">Class</label>
+              <input id="report-class" type="text" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[100px]"
                 value={reportClass} onChange={e => onClassChange(e.target.value)} placeholder="e.g. 10" />
             </div>
             <div>
-              <label className="text-[11px] text-[var(--text-muted)] block mb-1">Format</label>
-              <select className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[100px]"
+              <label htmlFor="report-format" className="text-[11px] text-[var(--text-muted)] block mb-1">Format</label>
+              <select id="report-format" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[100px]"
                 value={reportFormat} onChange={e => onFormatChange(e.target.value as ReportFormat)}>
                 <option value="excel">Excel</option>
                 <option value="csv">CSV</option>

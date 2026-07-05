@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Loader2, FileText, Clock, AlertTriangle, Check, X } from 'lucide-react';
 import type { Document, DocumentDetails, QueueStatus, TabType, SortKey, ReportFormat, ViewMode } from './api';
-import { api } from './api';
+import { api, clearApiCache } from './api';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { Header } from './components/Header';
@@ -17,6 +17,7 @@ import { AnalyticsView } from './components/AnalyticsView';
 import { Toast } from './components/Toast';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { exportToCsv } from './lib/utils';
 
 function AppInner() {
   const { show } = useToast();
@@ -75,6 +76,10 @@ function AppInner() {
   const [reportFormat, setReportFormat] = useState<ReportFormat>('excel');
   const [selectedReportDocs, setSelectedReportDocs] = useState<Set<string>>(new Set());
 
+  // Analytics filters
+  const [analyticsClassFilter, setAnalyticsClassFilter] = useState<string>('all');
+  const [analyticsGenderFilter, setAnalyticsGenderFilter] = useState<string>('all');
+
   const initialLoadDone = useRef(false);
 
   const needsReview = documents.filter(d => d.status === 'needs_review');
@@ -85,6 +90,7 @@ function AppInner() {
 
   // ---- Data loading ----
   const loadAll = useCallback(async () => {
+    clearApiCache()
     setLoading(true);
     try {
       const [docs, qs] = await Promise.all([
@@ -314,6 +320,36 @@ function AppInner() {
     } catch { show("Batch reprocess failed", 'error'); }
   };
 
+  const handleBulkVerify = async (docIds: string[]) => {
+    if (!confirm(`Verify ${docIds.length} selected documents?`)) return;
+    try {
+      await api.bulkVerify(docIds);
+      show(`Verified ${docIds.length} documents`);
+      setSelectedDashDocs(new Set());
+      await loadAll();
+    } catch { show("Bulk verify failed", 'error'); }
+  };
+
+  const handleBulkReprocess = async (docIds: string[]) => {
+    if (!confirm(`Reprocess ${docIds.length} selected documents?`)) return;
+    try {
+      await Promise.all(docIds.map(id => api.reprocessDocument(id)));
+      show(`Reprocessing ${docIds.length} documents`);
+      setSelectedDashDocs(new Set());
+      await loadAll();
+    } catch { show("Bulk reprocess failed", 'error'); }
+  };
+
+  const handleBulkDelete = async (docIds: string[]) => {
+    if (!confirm(`Delete ${docIds.length} selected documents? This cannot be undone.`)) return;
+    try {
+      await api.bulkDelete(docIds);
+      show(`Deleted ${docIds.length} documents`);
+      setSelectedDashDocs(new Set());
+      await loadAll();
+    } catch { show("Bulk delete failed", 'error'); }
+  };
+
   // Upload/batch
   const handleUpload = async (files: File[]) => {
     if (!files.length) return;
@@ -351,9 +387,8 @@ function AppInner() {
   };
 
   // Keyboard
-  const handleKeyRef = useRef<((e: KeyboardEvent) => void) | null>(null);
   useEffect(() => {
-    handleKeyRef.current = (e: KeyboardEvent) => {
+    const handleKey = (e: KeyboardEvent) => {
       if (selectedDoc && selectedDoc.status === 'needs_review' && docDetails) {
         if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); prevDoc(); return; }
         if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); nextDoc(); return; }
@@ -365,10 +400,9 @@ function AppInner() {
       }
       if (e.key === 'Escape') { closeDoc(); }
     };
-    const handler = (e: KeyboardEvent) => handleKeyRef.current?.(e);
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [selectedDoc?.id, docDetails?.id]);
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [selectedDoc, docDetails, prevDoc, nextDoc, handleSkip, handleVerify, closeDoc]);
 
   // Unsaved warning
   useEffect(() => {
@@ -385,7 +419,7 @@ function AppInner() {
   };
 
   // Filtered list
-  const filtered = (() => {
+  const filtered = useMemo(() => {
     const list = activeTab === 'all' ? documents :
       activeTab === 'needs_review' ? needsReview :
       activeTab === 'verified' ? verified :
@@ -403,15 +437,15 @@ function AppInner() {
       const bv = (b[sortKey] || '').toLowerCase();
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
-  })();
+  }, [documents, activeTab, searchQuery, sortKey, sortDir]);
 
-  const reportResults = documents.filter(d => {
+  const reportResults = useMemo(() => documents.filter(d => {
     if (reportStatus && d.status !== reportStatus) return false;
     if (reportClass && d.class !== reportClass) return false;
     if (reportDateFrom && d.created_at && d.created_at.slice(0, 10) < reportDateFrom) return false;
     if (reportDateTo && d.created_at && d.created_at.slice(0, 10) > reportDateTo) return false;
     return true;
-  });
+  }), [documents, reportStatus, reportClass, reportDateFrom, reportDateTo]);
 
   // ---- Render ----
   // Selected doc views
@@ -444,7 +478,7 @@ function AppInner() {
     return (
       <div className="app-container">
         <header className="main-header">
-          <div className="logo"><span>SSIAR</span></div>
+          <div className="logo"><img src="/logo.png" alt="SSIAR" className="h-8 w-auto" /></div>
           <Button variant="outline" size="sm" onClick={closeDoc}>
             Back
           </Button>
@@ -477,7 +511,13 @@ function AppInner() {
             onOpenDoc={handleOpenDoc}
           />
         ) : view === 'analytics' ? (
-          <AnalyticsView onBack={() => setView('dashboard')} />
+          <AnalyticsView 
+            onBack={() => setView('dashboard')}
+            classFilter={analyticsClassFilter}
+            genderFilter={analyticsGenderFilter}
+            onClassFilterChange={setAnalyticsClassFilter}
+            onGenderFilterChange={setAnalyticsGenderFilter}
+          />
         ) : (
           <>
             <StatCards
@@ -509,6 +549,9 @@ function AppInner() {
               onOpenDoc={handleOpenDoc} onDownloadReport={downloadIndividualReport}
               onReprocess={handleReprocessDoc} onDelete={handleDeleteDoc}
               onBulkDone={() => { setSelectedDashDocs(new Set()); loadAll(); }}
+              onBulkVerify={handleBulkVerify}
+              onBulkReprocess={handleBulkReprocess}
+              onBulkDelete={handleBulkDelete}
             />
 
             {loading && (
@@ -517,7 +560,12 @@ function AppInner() {
               </div>
             )}
           </>
+
         )}
+      </div>
+
+      <div className="flex justify-end px-5 pb-4">
+        <img src="/logo2.png" alt="Parent company" className="h-6 w-auto opacity-40" />
       </div>
 
       <Toast />

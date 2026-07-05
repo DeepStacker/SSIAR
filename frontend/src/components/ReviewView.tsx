@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { FileText, Check, Loader2, X, ArrowLeft, ArrowRight, RotateCcw, Hash, Percent, Calendar, User, GraduationCap, ListOrdered } from 'lucide-react';
+import { Check, Loader2, X, ArrowLeft, ArrowRight, RotateCcw, Hash, Percent, Calendar, User, GraduationCap, ListOrdered, Download } from 'lucide-react';
 import { Document, DocumentDetails } from '../api';
 import { ZoomImage } from '../api';
 import { api } from '../api';
+import { exportToCsv } from '../lib/utils';
 import { SdqGrid } from './SdqGrid';
 import { ConsentRemarks } from './ConsentRemarks';
 import { ZoomPopup } from './ZoomPopup';
@@ -15,7 +16,7 @@ import { Input } from '@/components/ui/input';
 interface Props {
   doc: Document;
   details: DocumentDetails;
-  detailsDirty: boolean;
+
   onDetailsChange: (d: DocumentDetails) => void;
   onDirtyChange: (d: boolean) => void;
   reviewIndex: number;
@@ -45,7 +46,7 @@ const KBD = ({ children }: { children: React.ReactNode }) => (
   <kbd style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: '3px', fontSize: '10px', fontFamily: 'inherit', border: '1px solid var(--color-border)' }}>{children}</kbd>
 );
 
-export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detailsDirty, onDetailsChange, onDirtyChange, reviewIndex, totalReview, onClose, onVerify, onReprocess, onNext, onPrev, saving }) => {
+export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onDirtyChange, reviewIndex, totalReview, onClose, onVerify, onReprocess, onNext, onPrev, saving }) => {
   const [fieldAccepted, setFieldAccepted] = useState<Record<string, boolean>>({});
   const [flashField, setFlashField] = useState<string | null>(null);
   const [zoomImg, setZoomImg] = useState<ZoomImage | null>(null);
@@ -113,11 +114,11 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detai
     else onDetailsChange({ ...details, academic_scores: { ...academic, [key]: val } });
   };
 
-  const handleAccept = (key: string) => {
-    setFieldAccepted({ ...fieldAccepted, [key]: true });
+  const handleAccept = useCallback((key: string) => {
+    setFieldAccepted(prev => ({ ...prev, [key]: true }));
     setFlashField(key);
     setTimeout(() => setFlashField(null), 500);
-  };
+  }, [fieldAccepted]);
 
   const focusNextField = useCallback((fi: number) => {
     const next = MAIN_FIELDS[fi + 1];
@@ -223,12 +224,28 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detai
   return (
     <div className="app-container">
       <header className="main-header">
-        <div className="logo"><FileText size={24} /><span>SSIAR — Quick Review</span></div>
+        <div className="logo"><img src="/logo.png" alt="SSIAR" className="h-8 w-auto" /></div>
         <div className="flex items-center gap-2.5">
           <span className="text-[13px] text-[var(--text-muted)]">{reviewIndex + 1} / {totalReview}</span>
           <div className="flex gap-1.5">
             <Button variant="outline" size="sm" onClick={() => setPageViewer(1)}>Page 1</Button>
             <Button variant="outline" size="sm" onClick={() => setPageViewer(2)}>Page 2</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              const headers = ['Field', 'Value', 'Confidence'];
+              const rows = [
+                ['Roll Number', details.roll_number || '', String(Math.round(fieldConf('roll_number') * 100)) + '%'],
+                ['Class', details.class || '', String(Math.round(fieldConf('class') * 100)) + '%'],
+                ['DOB', details.dob || '', String(Math.round(fieldConf('dob') * 100)) + '%'],
+                ['Gender', details.gender || '', String(Math.round(fieldConf('gender') * 100)) + '%'],
+                ['Math %', (details.academic_scores?.math_pct || ''), String(Math.round(fieldConf('math_pct') * 100)) + '%'],
+                ['Science %', (details.academic_scores?.science_pct || ''), String(Math.round(fieldConf('science_pct') * 100)) + '%'],
+                ['Language %', (details.academic_scores?.language_pct || ''), String(Math.round(fieldConf('language_pct') * 100)) + '%'],
+                ['Rank', (details.academic_scores?.rank || ''), '—'],
+              ];
+              exportToCsv(headers, rows, `${doc.filename.replace(/\.\w+$/, '')}_data.csv`);
+            }}>
+              <Download size={14} /> Export
+            </Button>
             <Button variant="outline" size="sm" onClick={onClose}><X size={14} /> Close</Button>
           </div>
         </div>
@@ -338,6 +355,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detai
                           }}>
                           {['M', 'F'].map(g => (
                             <button key={g} onClick={() => { setFieldVal(f.key, g); handleAccept(f.key); focusNextField(fi); }}
+                              aria-pressed={val === g}
                               tabIndex={fi === 0 ? 0 : -1}
                               style={{
                                 padding: '5px 16px', borderRadius: '4px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
@@ -399,7 +417,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detai
                       ) : (
                         <Button variant="outline" size="xs"
                           onClick={() => handleReprocessField(f.key)}
-                          title="Re-run OCR on this field"
+                          aria-label="Re-run OCR on this field"
                           style={{ opacity: 0.6 }}
                           className="min-w-[24px]">⟳</Button>
                       )}
@@ -408,6 +426,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detai
                       ) : (
                         <Button variant="outline" size="xs"
                           onClick={() => handleAccept(f.key)}
+                          aria-label="Accept field value"
                           className="min-w-[24px]">✓</Button>
                       )}
                     </div>

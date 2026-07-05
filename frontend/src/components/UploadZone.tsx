@@ -1,7 +1,11 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Upload, Loader2, RotateCcw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { api } from '@/api';
+import { useToast } from '@/context/ToastContext';
+
+const MAX_FILE_SIZE_MB = 10;
 
 interface Props {
   uploading: boolean;
@@ -20,35 +24,66 @@ export const UploadZone: React.FC<Props> = ({
   uploading, autoVerify, onAutoVerifyChange, splitPages, onSplitPagesChange, onUpload,
   failedCount, onRetryAllFailed, isDragOver, onDragOver,
 }) => {
+  const { show } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const descriptionId = 'upload-description';
+  const [uploadingFilename, setUploadingFilename] = useState<string>('');
+  const [localUploading, setLocalUploading] = useState(false);
+
+  const isUploading = uploading || localUploading;
+
+  useEffect(() => {
+    if (!isUploading) setUploadingFilename('');
+  }, [isUploading]);
+
+  const doUpload = async (files: File[]) => {
+    if (!files.length) return;
+    setUploadingFilename(files[0].name);
+    setLocalUploading(true);
+    try {
+      await api.uploadFiles(files, autoVerify, splitPages);
+      onUpload(files);
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'Upload failed', 'error');
+    } finally {
+      setLocalUploading(false);
+    }
+  };
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     onDragOver(false);
     const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.pdf'));
-    if (files.length) onUpload(files);
+    await doUpload(files);
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length) onUpload(Array.from(e.target.files));
+    if (e.target.files?.length) doUpload(Array.from(e.target.files));
   };
 
   return (
     <Card
-      style={{ padding: '20px', marginBottom: '20px', border: isDragOver ? '2px dashed var(--accent-violet)' : '2px dashed transparent' }}
+      style={{ marginBottom: '20px' }}
+      className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${isDragOver ? 'border-[var(--accent-violet)] bg-[var(--bg-highlight)]' : 'border-[var(--color-border)]'}`}
       onDragOver={e => { e.preventDefault(); onDragOver(true); }}
       onDragLeave={() => onDragOver(false)}
       onDrop={handleDrop}
     >
-      <input ref={fileInputRef} type="file" multiple accept=".pdf" onChange={handleFileInput} style={{ display: 'none' }} />
+      <input ref={fileInputRef} type="file" multiple accept=".pdf" onChange={handleFileInput} style={{ display: 'none' }} aria-describedby={descriptionId} />
       <div className="flex items-center gap-4 flex-wrap">
-        <div onClick={() => fileInputRef.current?.click()} className="cursor-pointer flex items-center gap-2.5 flex-1 min-w-[200px]">
-          <div style={{ background: uploading ? 'rgba(139,92,246,0.1)' : 'rgba(16,185,129,0.1)', padding: '10px', borderRadius: '50%' }}>
-            {uploading ? <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent-violet)' }} /> : <Upload size={22} style={{ color: 'var(--accent-emerald)' }} />}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => fileInputRef.current?.click()}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); }}}
+          className="cursor-pointer flex items-center gap-2.5 flex-1 min-w-[200px]"
+        >
+          <div style={{ background: isUploading ? 'rgba(139,92,246,0.1)' : 'rgba(16,185,129,0.1)', padding: '10px', borderRadius: '50%' }}>
+            {isUploading ? <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent-violet)' }} /> : <Upload size={22} style={{ color: 'var(--accent-emerald)' }} />}
           </div>
           <div>
-            <div className="font-semibold text-sm">Upload or drop PDFs</div>
-            <div className="text-xs text-muted-foreground">Select multiple files for bulk processing</div>
+            <div className="font-semibold text-sm">{isUploading ? `Uploading ${uploadingFilename}...` : 'Upload or drop PDFs'}</div>
+            <div id={descriptionId} className="text-xs text-muted-foreground">{isUploading ? 'Processing...' : 'Select multiple files for bulk processing'}</div>
           </div>
         </div>
         <label className="flex items-center gap-1.5 cursor-pointer text-xs whitespace-nowrap">
@@ -67,6 +102,9 @@ export const UploadZone: React.FC<Props> = ({
           )}
         </div>
       </div>
+      {!isUploading && (
+        <div className="text-xs text-muted-foreground mt-3">Max {MAX_FILE_SIZE_MB}MB per file</div>
+      )}
     </Card>
   );
 };
