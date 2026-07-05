@@ -7,6 +7,7 @@ interface Props {
   docId: string;
   responses: Record<string, number | number[]>;
   checkboxConf: Record<string, string>;
+  multiTicks?: Record<string, number[]>;
   onChange: (responses: Record<string, number | number[]>) => void;
   onZoom: (img: ZoomImage | null) => void;
 }
@@ -118,7 +119,8 @@ const propsAreEqual = (prev: Props, next: Props) => {
     && prev.onChange === next.onChange
     && prev.onZoom === next.onZoom
     && JSON.stringify(prev.responses) === JSON.stringify(next.responses)
-    && JSON.stringify(prev.checkboxConf) === JSON.stringify(next.checkboxConf);
+    && JSON.stringify(prev.checkboxConf) === JSON.stringify(next.checkboxConf)
+    && JSON.stringify(prev.multiTicks) === JSON.stringify(next.multiTicks);
 };
 
 export const SdqGrid = memo(SdqGridComponent, propsAreEqual);

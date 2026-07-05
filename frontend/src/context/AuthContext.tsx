@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { API_BASE } from '../api';
+import React, { createContext, useContext, useState, useCallback } from 'react';
+import { API_BASE, scheduleTokenRefresh } from '../api';
 
 interface AuthState {
   token: string | null;
@@ -57,6 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       const data = await res.json();
       saveState(data.token, data.user_id, data.email);
+      scheduleTokenRefresh();
     } finally {
       setLoading(false);
     }
@@ -76,6 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       const data = await res.json();
       saveState(data.token, data.user_id, data.email);
+      scheduleTokenRefresh();
     } finally {
       setLoading(false);
     }

@@ -43,9 +43,8 @@ def _classify_pdf(pdf_bytes: bytes) -> dict:
 DEFAULT_CLASSIFICATION = {"type": "scanned", "dpi": 300, "pages": 1, "is_color": False}
 
 
-def _queue_single_pdf(pdf_bytes: bytes, filename: str, auto_verify: bool, pages: int = 1) -> str:
+def _queue_single_pdf(pdf_bytes: bytes, filename: str, auto_verify: bool, pages: int = 1, user_id: str | None = None) -> str:
     doc_id = str(uuid.uuid4())
-    user_id = get_current_user_id()
     cls = {**DEFAULT_CLASSIFICATION, "pages": pages}
     insert_document(doc_id, filename, "processing", classification=cls, escalation_level="level_1", user_id=user_id)
     store_pdf(doc_id, pdf_bytes)
@@ -54,7 +53,7 @@ def _queue_single_pdf(pdf_bytes: bytes, filename: str, auto_verify: bool, pages:
     return doc_id
 
 
-def _process_upload_sync(content: bytes, filename: str, auto_verify: bool, split: bool) -> list:
+def _process_upload_sync(content: bytes, filename: str, auto_verify: bool, split: bool, user_id: str | None = None) -> list:
     """Process a single uploaded file (sync, runs in thread). Returns list of doc_ids."""
     doc_ids = []
     if split:
@@ -71,7 +70,7 @@ def _process_upload_sync(content: bytes, filename: str, auto_verify: bool, split
             split_doc.close()
             base = os.path.splitext(filename)[0]
             part_name = f"{base}_p{i//2+1}.pdf"
-            did = _queue_single_pdf(split_bytes, part_name, auto_verify, pages=2)
+            did = _queue_single_pdf(split_bytes, part_name, auto_verify, pages=2, user_id=user_id)
             doc_ids.append(did)
         src_doc.close()
         print(f"Split upload: created {len(doc_ids)} documents from {filename}")
@@ -79,7 +78,7 @@ def _process_upload_sync(content: bytes, filename: str, auto_verify: bool, split
         src_doc = fitz.open(stream=content, filetype="pdf")
         total_pages = len(src_doc)
         src_doc.close()
-        did = _queue_single_pdf(content, filename, auto_verify, pages=total_pages)
+        did = _queue_single_pdf(content, filename, auto_verify, pages=total_pages, user_id=user_id)
         doc_ids.append(did)
     return doc_ids
 
@@ -91,6 +90,7 @@ async def upload_files(
     auto_verify: bool = Query(False, description="Auto-verify high-confidence results"),
     split: bool = Query(False, description="Split merged PDF into 2-page documents"),
 ):
+    user_id = request.state.user_id
     doc_ids = []
     for file in files:
         if not file.filename.lower().endswith(".pdf"):
@@ -102,7 +102,7 @@ async def upload_files(
                 detail=f"File '{file.filename}' exceeds maximum upload size of {MAX_UPLOAD_SIZE // (1024*1024)} MB"
             )
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, _process_upload_sync, content, file.filename, auto_verify, split)
+        result = await loop.run_in_executor(None, _process_upload_sync, content, file.filename, auto_verify, split, user_id)
         doc_ids.extend(result)
 
     doc_ids = [d for d in doc_ids if d]
@@ -111,6 +111,7 @@ async def upload_files(
 
 @router.post("/api/batch/process-folder")
 def batch_process_folder(payload: dict):
+    user_id = get_current_user_id()
     folder_path = payload.get("folder_path", "")
     auto_verify = payload.get("auto_verify", False)
 
@@ -151,7 +152,7 @@ def batch_process_folder(payload: dict):
             if os.path.exists(temp_pdf):
                 os.remove(temp_pdf)
 
-        insert_document(doc_id, filename, "processing", classification=classification, escalation_level="level_1", user_id=get_current_user_id())
+        insert_document(doc_id, filename, "processing", classification=classification, escalation_level="level_1", user_id=user_id)
         store_pdf(doc_id, pdf_bytes)
         queued.append({"doc_id": doc_id, "filename": filename})
         get_executor().submit(process_pdf_background, doc_id, auto_verify)

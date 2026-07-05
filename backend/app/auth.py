@@ -69,4 +69,6 @@ def require_auth(request: Request):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     _auth_local.user_id = payload.get("sub")
     _auth_local.email = payload.get("email")
+    request.state.user_id = payload.get("sub")
+    request.state.email = payload.get("email")
     return payload

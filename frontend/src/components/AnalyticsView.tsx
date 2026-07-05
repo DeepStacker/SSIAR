@@ -32,6 +32,7 @@ interface SummaryData {
   processing_trend: Array<{ date: string; count: number }>;
   processed_today: number;
   needs_review?: number;
+  pending_review?: number;
 }
 
 interface DemographicsData {
@@ -244,7 +245,8 @@ const escalationLabels: Record<string, string> = {
   level_4: 'L4 · Poor quality / failed',
 };
 
-export function AnalyticsView({ onBack, classFilter, genderFilter, onClassFilterChange, onGenderFilterChange }: AnalyticsViewProps) {
+export function AnalyticsView({ onBack, classFilter, genderFilter, ...rest }: AnalyticsViewProps) {
+  void rest.onClassFilterChange; void rest.onGenderFilterChange;
   const [subTab, setSubTab] = useState<SubTab>(() => {
     const params = new URLSearchParams(window.location.search);
     return (params.get('tab') as SubTab) || 'executive';
@@ -1041,7 +1043,7 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                             <PolarAngleAxis dataKey="subject" stroke="var(--text-muted)" fontSize={11} />
                             <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="var(--text-secondary)" fontSize={10} />
                             <Radar name="Class Average" dataKey="score" stroke="var(--accent-violet)" fill="var(--accent-violet)" fillOpacity={0.3}
-                              label={{ value: true, position: 'outside', fill: 'var(--text-primary)', fontSize: 11, formatter: (v: any) => `${v}%` }}
+                              label={{ position: 'outside', fill: 'var(--text-primary)', fontSize: 11, formatter: (v: any) => `${v}%` }}
                             />
                             <Tooltip contentStyle={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--color-border)', color: '#fff' }} />
                           </RadarChart>
@@ -1057,7 +1059,7 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                             <div className="h-[180px] w-full">
                               <ResponsiveContainer width="100%" height="100%">
                                 <BarChart
-                                  data={['Mathematics', 'Science', 'Language'].filter(s => academic.class_averages[0][s] !== undefined).map(subject => {
+                                  data={(['Mathematics', 'Science', 'Language'] as const).filter(s => academic.class_averages[0][s] !== undefined).map(subject => {
                                     const vals = academic.class_averages.map((r: any) => r[subject]).filter((v: number) => v != null);
                                     return {
                                       subject,
@@ -1070,7 +1072,7 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                                   <YAxis domain={[0, 100]} stroke="var(--text-muted)" fontSize={10} />
                                   <Tooltip contentStyle={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--color-border)', color: '#fff' }} formatter={(v) => `${v}%`} />
                                   <Bar dataKey="average" radius={[4,4,0,0]} name="Class Average">
-                                    {['Mathematics', 'Science', 'Language'].filter(s => academic.class_averages[0][s] !== undefined).map((_, idx) => (
+                                    {(['Mathematics', 'Science', 'Language'] as const).filter(s => academic.class_averages[0][s] !== undefined).map((_, idx) => (
                                       <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                                     ))}
                                   </Bar>

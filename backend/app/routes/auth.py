@@ -73,3 +73,12 @@ def login(payload: dict):
 def me(request: Request):
     require_auth(request)
     return {"user_id": get_current_user_id(), "email": get_current_email()}
+
+
+@router.post("/refresh")
+def refresh_token(request: Request):
+    require_auth(request)
+    user_id = get_current_user_id()
+    email = get_current_email()
+    token = create_jwt(user_id, email)
+    return {"token": token, "user_id": user_id, "email": email}

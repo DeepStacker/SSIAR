@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Loader2, FileText, Clock, AlertTriangle, Check, X } from 'lucide-react';
 import type { Document, DocumentDetails, QueueStatus, TabType, SortKey, ReportFormat, ViewMode } from './api';
-import { api, clearApiCache } from './api';
+import { api, clearApiCache, isTokenExpired, clearAuth, scheduleTokenRefresh } from './api';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -19,10 +19,19 @@ import { AnalyticsView } from './components/AnalyticsView';
 import { Toast } from './components/Toast';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { exportToCsv } from './lib/utils';
+
 
 function AppInner() {
   const { show } = useToast();
+
+  useEffect(() => {
+    if (isTokenExpired()) {
+      clearAuth();
+      window.location.href = '/';
+    } else {
+      scheduleTokenRefresh();
+    }
+  }, []);
 
   // Data
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -115,6 +124,7 @@ function AppInner() {
     let es: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     const connect = () => {
+      if (isTokenExpired()) { clearAuth(); window.location.href = '/'; return; }
       try {
         es?.close();
         es = new EventSource(api.getEventsUrl());
@@ -150,6 +160,7 @@ function AppInner() {
     };
     connect();
     const fallback = setInterval(() => {
+      if (isTokenExpired()) { clearAuth(); window.location.href = '/'; return; }
       if (!es || es.readyState !== EventSource.OPEN) { clearApiCache(); loadAll(); }
     }, 15000);
     return () => { es?.close(); if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(fallback); };
@@ -469,7 +480,7 @@ function AppInner() {
     if (docDetails && selectedDoc.status === 'needs_review') {
       return (
         <ReviewView
-          doc={selectedDoc} details={docDetails} detailsDirty={dirty}
+          doc={selectedDoc} details={docDetails}
           onDetailsChange={setDocDetails} onDirtyChange={setDirty}
           reviewIndex={reviewIndex} totalReview={needsReview.length}
           onClose={closeDoc} onVerify={handleVerify}
