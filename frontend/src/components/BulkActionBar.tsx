@@ -1,7 +1,7 @@
-import React from 'react';
 import { Check, RotateCcw, Trash2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { api } from '../api';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   selectedCount: number;
@@ -42,17 +42,17 @@ export const BulkActionBar: React.FC<Props> = ({ selectedCount, docIds, onDone }
   if (!selectedCount) return null;
 
   return (
-    <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-highlight)' }}>
-      <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>{selectedCount} selected</span>
-      <button onClick={handleBulkVerify} className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '12px' }}>
-        <Check size={12} /> Verify
-      </button>
-      <button onClick={handleBulkReprocess} className="btn btn-secondary" style={{ padding: '4px 12px', fontSize: '12px' }}>
-        <RotateCcw size={12} /> Reprocess
-      </button>
-      <button onClick={handleBulkDelete} className="btn btn-danger" style={{ padding: '4px 12px', fontSize: '12px', marginLeft: 'auto' }}>
-        <Trash2 size={12} /> Delete
-      </button>
+    <div className="flex items-center gap-2 px-4 py-2 border-b bg-[var(--bg-highlight)]">
+      <span className="text-sm font-semibold text-[var(--text-primary)]">{selectedCount} selected</span>
+      <Button variant="default" size="sm" onClick={handleBulkVerify}>
+        <Check size={14} /> Verify
+      </Button>
+      <Button variant="outline" size="sm" onClick={handleBulkReprocess}>
+        <RotateCcw size={14} /> Reprocess
+      </Button>
+      <Button variant="destructive" size="sm" onClick={handleBulkDelete} className="ml-auto">
+        <Trash2 size={14} /> Delete
+      </Button>
     </div>
   );
 };

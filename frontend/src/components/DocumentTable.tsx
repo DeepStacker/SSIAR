@@ -2,6 +2,11 @@ import React from 'react';
 import { Search, Clock, AlertTriangle, Check, X, Eye, Download, RotateCcw, Trash2, ChevronUp, Loader2 } from 'lucide-react';
 import { Document, TabType, SortKey } from '../api';
 import { BulkActionBar } from './BulkActionBar';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 
 interface Props {
   documents: Document[];
@@ -61,26 +66,29 @@ export const DocumentTable: React.FC<Props> = ({
   ];
 
   return (
-    <div className="glass" style={{ borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-      <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: '0', alignItems: 'center' }}>
-        {tabs.map(tab => (
-          <button key={tab.key} onClick={() => onTabChange(tab.key)}
-            className={`tab-btn ${activeTab === tab.key ? 'tab-active' : ''}`}>
-            {tab.icon} {tab.label} ({tab.count})
-          </button>
-        ))}
-        <div style={{ marginLeft: 'auto', position: 'relative', width: '180px' }}>
-          <Search size={14} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input type="text" placeholder="Search..." className="form-input" style={{ width: '100%', paddingLeft: '28px', fontSize: '12px' }}
+    <div className="rounded-xl border bg-card overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b">
+        <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as TabType)}>
+          <TabsList variant="line">
+            {tabs.map(tab => (
+              <TabsTrigger key={tab.key} value={tab.key}>
+                {tab.icon} {tab.label} ({tab.count})
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <div className="relative w-[180px] shrink-0">
+          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input type="text" placeholder="Search..." className="w-full pl-7 text-xs"
             value={searchQuery} onChange={e => onSearchChange(e.target.value)} />
         </div>
       </div>
 
       <BulkActionBar selectedCount={selectedIds.size} docIds={Array.from(selectedIds)} onDone={onBulkDone} />
 
-      <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+      <div className="max-h-[500px] overflow-y-auto">
         {filtered.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          <div className="p-10 text-center text-muted-foreground">
             {searchQuery ? 'No matching documents' :
              activeTab === 'processing' ? 'No documents currently processing' :
              activeTab === 'needs_review' ? 'No documents need review' :
@@ -89,86 +97,95 @@ export const DocumentTable: React.FC<Props> = ({
              'No documents. Upload PDFs to get started.'}
           </div>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={{ width: '32px' }}>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8">
                   <input type="checkbox" checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                    onChange={onToggleSelectAll} style={{ accentColor: 'var(--accent-violet)' }} />
-                </th>
+                    onChange={onToggleSelectAll} className="accent-violet-500" />
+                </TableHead>
                 <SortTh label="Filename" sortKey="filename" current={sortKey} dir={sortDir} onSort={onSortChange} />
                 <SortTh label="Roll Number" sortKey="roll_number" current={sortKey} dir={sortDir} onSort={onSortChange} />
-                <th>Class</th>
+                <TableHead>Class</TableHead>
                 <SortTh label="Status" sortKey="status" current={sortKey} dir={sortDir} onSort={onSortChange} />
                 <SortTh label="Date" sortKey="created_at" current={sortKey} dir={sortDir} onSort={onSortChange} right />
-                <th style={{ textAlign: 'right' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filtered.map(doc => (
-                <tr key={doc.id} onClick={() => onOpenDoc(doc)}
-                  style={{ cursor: 'pointer', opacity: doc.status === 'processing' ? 0.7 : 1 }}>
-                  <td onClick={e => e.stopPropagation()}>
+                <TableRow key={doc.id} onClick={() => onOpenDoc(doc)}
+                  className="cursor-pointer" style={{ opacity: doc.status === 'processing' ? 0.7 : 1 }}>
+                  <TableCell onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={selectedIds.has(doc.id)}
-                      onChange={() => onToggleSelect(doc.id)} style={{ accentColor: 'var(--accent-violet)' }} />
-                  </td>
-                  <td style={{ fontWeight: '500', fontSize: '13px' }}>{doc.filename}</td>
-                  <td>{doc.roll_number || '—'}</td>
-                  <td>{doc.class || '—'}</td>
-                  <td>
+                      onChange={() => onToggleSelect(doc.id)} className="accent-violet-500" />
+                  </TableCell>
+                  <TableCell className="font-medium text-sm">{doc.filename}</TableCell>
+                  <TableCell>{doc.roll_number || '—'}</TableCell>
+                  <TableCell>{doc.class || '—'}</TableCell>
+                  <TableCell>
                     {doc.status === 'processing' ? (
-                      <span className="badge badge-processing"><Loader2 size={10} className="animate-spin" /> Processing</span>
+                      <Badge variant="outline"><Loader2 size={10} className="animate-spin" /> Processing</Badge>
                     ) : (
-                      <span className={`badge badge-${doc.status}`}>
+                      <Badge variant={
+                        doc.status === 'needs_review' ? 'secondary' :
+                        doc.status === 'verified' ? 'default' :
+                        doc.status === 'failed' ? 'destructive' : 'outline'
+                      }>
                         {doc.status === 'needs_review' ? 'Needs Review' :
                          doc.status === 'verified' ? 'Verified' :
                          doc.status === 'failed' ? 'Failed' : doc.status}
-                      </span>
+                      </Badge>
                     )}
-                  </td>
-                  <td style={{ textAlign: 'right', fontSize: '12px', color: 'var(--text-muted)' }}>{doc.created_at?.slice(0, 10)}</td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
-                    <ActionBtn doc={doc} onOpen={onOpenDoc} onDownload={onDownloadReport} onReprocess={onReprocess} onDelete={onDelete} />
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground">{doc.created_at?.slice(0, 10)}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                    <div className="inline-flex items-center gap-1.5">
+                      <ActionBtn doc={doc} onOpen={onOpenDoc} onDownload={onDownloadReport} onReprocess={onReprocess} onDelete={onDelete} />
+                    </div>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </div>
     </div>
   );
 };
 
-const SortTh: React.FC<{ label: string; sortKey: SortKey; current: SortKey; dir: 'asc' | 'desc'; onSort: (k: SortKey) => void; right?: boolean }> = ({ label, sortKey, current, dir, onSort, right }) => (
-  <th onClick={() => onSort(sortKey)} style={{ cursor: 'pointer', userSelect: 'none', textAlign: right ? 'right' : 'left' }}>
-    {label} {current === sortKey && <ChevronUp size={12} style={{ transform: dir === 'desc' ? 'rotate(180deg)' : 'none', verticalAlign: 'middle' }} />}
-  </th>
-);
+const SortTh: React.FC<{ label: string; sortKey: SortKey; current: SortKey; dir: 'asc' | 'desc'; onSort: (k: SortKey) => void; right?: boolean }> = ({ label, sortKey, current, dir, onSort, right }) => {
+  const isActive = current === sortKey;
+  return (
+    <TableHead onClick={() => onSort(sortKey)} className={`cursor-pointer select-none${right ? ' text-right' : ''}`}>
+      {label} {isActive && <ChevronUp size={12} className={`inline-block align-middle${dir === 'desc' ? ' rotate-180' : ''}`} />}
+    </TableHead>
+  );
+};
 
 const ActionBtn: React.FC<{ doc: Document; onOpen: (d: Document) => void; onDownload: (d: Document) => void; onReprocess: (d: Document) => void; onDelete: (d: Document) => void }> = ({ doc, onOpen, onDownload, onReprocess, onDelete }) => (
-  <>
-    <button onClick={e => { e.stopPropagation(); onOpen(doc); }}
-      className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '12px', opacity: doc.status === 'processing' ? 0.6 : 1 }} disabled={doc.status === 'processing'}>
+  <span className="inline-flex items-center gap-1.5">
+    <Button variant="default" size="xs" onClick={e => { e.stopPropagation(); onOpen(doc); }}
+      disabled={doc.status === 'processing'} className={doc.status === 'processing' ? 'opacity-60' : ''}>
       {doc.status === 'processing' ? <><Clock size={12} /> Processing</> :
        doc.status === 'verified' ? <><Eye size={12} /> View</> :
        doc.status === 'failed' ? <>Details</> : 'Review'}
-    </button>
+    </Button>
     {(doc.status === 'needs_review' || doc.status === 'verified' || doc.status === 'failed') && (
-      <button onClick={e => { e.stopPropagation(); onDownload(doc); }}
-        className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px', marginLeft: '4px' }} title="Download report">
+      <Button variant="outline" size="icon-xs" onClick={e => { e.stopPropagation(); onDownload(doc); }}
+        title="Download report">
         <Download size={12} />
-      </button>
+      </Button>
     )}
     {(doc.status === 'failed' || doc.status === 'needs_review') && (
-      <button onClick={e => { e.stopPropagation(); onReprocess(doc); }}
-        className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px', marginLeft: '4px' }} title="Reprocess">
+      <Button variant="outline" size="icon-xs" onClick={e => { e.stopPropagation(); onReprocess(doc); }}
+        title="Reprocess">
         <RotateCcw size={12} />
-      </button>
+      </Button>
     )}
-    <button onClick={e => { e.stopPropagation(); onDelete(doc); }}
-      className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px', marginLeft: '4px', color: '#f43f5e' }} title="Delete">
+    <Button variant="outline" size="icon-xs" onClick={e => { e.stopPropagation(); onDelete(doc); }}
+      className="text-rose-500" title="Delete">
       <Trash2 size={12} />
-    </button>
-  </>
+    </Button>
+  </span>
 );

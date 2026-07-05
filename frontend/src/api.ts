@@ -255,6 +255,11 @@ export const api = {
     return `${API_BASE}/crops/${docId}/${filename}`;
   },
 
+  // URL for serving a full aligned page image
+  getPageUrl: (docId: string, pageNum: number): string => {
+    return `${API_BASE}/pages/${docId}/${pageNum}`;
+  },
+
   // #34/#35/#36: Export link helper with filter support
   getExportUrl: (filters: ExportFilters = {}): string => {
     const params = new URLSearchParams();
@@ -270,11 +275,61 @@ export const api = {
     return `${API_BASE}/export?${params.toString()}`;
   },
 
+  // Analytics endpoints
+  getAnalyticsSummary: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/analytics/summary`);
+    if (!response.ok) throw new Error("Failed to fetch analytics summary");
+    return response.json();
+  },
+  getAnalyticsDemographics: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/analytics/demographics`);
+    if (!response.ok) throw new Error("Failed to fetch demographics analytics");
+    return response.json();
+  },
+  getAnalyticsQuestionnaire: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/analytics/questionnaire`);
+    if (!response.ok) throw new Error("Failed to fetch questionnaire analytics");
+    return response.json();
+  },
+  getAnalyticsAcademic: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/analytics/academic`);
+    if (!response.ok) throw new Error("Failed to fetch academic analytics");
+    return response.json();
+  },
+  getAnalyticsCorrelations: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/analytics/correlations`);
+    if (!response.ok) throw new Error("Failed to fetch correlation analytics");
+    return response.json();
+  },
+  getAnalyticsOutliers: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/analytics/outliers`);
+    if (!response.ok) throw new Error("Failed to fetch outliers");
+    return response.json();
+  },
+  getAnalyticsDataQuality: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/analytics/data-quality`);
+    if (!response.ok) throw new Error("Failed to fetch data quality");
+    return response.json();
+  },
+  getAnalyticsProcessing: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/analytics/processing`);
+    if (!response.ok) throw new Error("Failed to fetch processing analytics");
+    return response.json();
+  },
+  getPerFieldConfidence: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/analytics/per-field-confidence`);
+    if (!response.ok) throw new Error("Failed to fetch per-field confidence");
+    return response.json();
+  },
+  getResearchExportUrl: (format: "csv" | "excel" | "spss"): string => {
+    return `${API_BASE}/analytics/export/${format}`;
+  },
+
   // #32: SSE event source URL
   getEventsUrl: (): string => `${API_BASE}/events`
 };
 
-export type ViewMode = 'dashboard' | 'reporting';
+export type ViewMode = 'dashboard' | 'reporting' | 'analytics';
 export type TabType = 'all' | 'needs_review' | 'verified' | 'processing' | 'failed';
 export type SortKey = 'filename' | 'roll_number' | 'status' | 'created_at';
 export type ReportFormat = 'excel' | 'csv';

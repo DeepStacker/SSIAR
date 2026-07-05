@@ -2,6 +2,9 @@ import React from 'react';
 import { Download } from 'lucide-react';
 import { Document, ReportFormat } from '../api';
 import { api } from '../api';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 interface Props {
   documents: Document[];
@@ -45,115 +48,118 @@ export const ReportingView: React.FC<Props> = ({
       doc_ids: docIds,
     });
 
+  const statusBadge = (status: string) => {
+    const map: Record<string, { variant: "default" | "secondary" | "destructive" | "outline", label: string }> = {
+      processing: { variant: "secondary", label: "Processing" },
+      needs_review: { variant: "outline", label: "Needs Review" },
+      verified: { variant: "default", label: "Verified" },
+      failed: { variant: "destructive", label: "Failed" },
+    };
+    const s = map[status] || { variant: "outline" as const, label: status };
+    return <Badge variant={s.variant}>{s.label}</Badge>;
+  };
+
   return (
     <>
-      <div className="glass" style={{ padding: '20px', borderRadius: 'var(--radius-lg)', marginBottom: '20px' }}>
-        <h3 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text-secondary)' }}>
-          <Download size={16} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
-          Reporting & Export
-        </h3>
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Date From</label>
-            <input type="date" className="form-input" style={{ fontSize: '12px', padding: '6px 10px', width: '150px' }}
-              value={dateFrom} onChange={e => onDateFromChange(e.target.value)} />
+      <Card className="mb-5">
+        <CardContent className="p-5">
+          <h3 className="text-base mb-4 text-[var(--text-secondary)] flex items-center gap-1.5">
+            <Download size={16} />
+            Reporting & Export
+          </h3>
+          <div className="flex gap-4 items-end flex-wrap">
+            <div>
+              <label className="text-[11px] text-[var(--text-muted)] block mb-1">Date From</label>
+              <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[150px]"
+                value={dateFrom} onChange={e => onDateFromChange(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-[11px] text-[var(--text-muted)] block mb-1">Date To</label>
+              <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[150px]"
+                value={dateTo} onChange={e => onDateToChange(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-[11px] text-[var(--text-muted)] block mb-1">Status</label>
+              <select className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[120px]"
+                value={reportStatus} onChange={e => onStatusChange(e.target.value)}>
+                <option value="">All</option>
+                <option value="processing">Processing</option>
+                <option value="needs_review">Needs Review</option>
+                <option value="verified">Verified</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] text-[var(--text-muted)] block mb-1">Class</label>
+              <input type="text" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[100px]"
+                value={reportClass} onChange={e => onClassChange(e.target.value)} placeholder="e.g. 10" />
+            </div>
+            <div>
+              <label className="text-[11px] text-[var(--text-muted)] block mb-1">Format</label>
+              <select className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-[100px]"
+                value={reportFormat} onChange={e => onFormatChange(e.target.value as ReportFormat)}>
+                <option value="excel">Excel</option>
+                <option value="csv">CSV</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Date To</label>
-            <input type="date" className="form-input" style={{ fontSize: '12px', padding: '6px 10px', width: '150px' }}
-              value={dateTo} onChange={e => onDateToChange(e.target.value)} />
+          <div className="flex gap-2 mt-4 pt-4 border-t border-[var(--color-border)]">
+            <Button variant="default" size="sm" render={<a href={getExportLink(reportFormat)} />}>
+              <Download size={14} /> Generate {reportFormat.toUpperCase()}
+            </Button>
+            <Button variant="outline" size="sm" render={<a href={getExportLink('excel')} />}>Excel</Button>
+            <Button variant="outline" size="sm" render={<a href={getExportLink('csv')} />}>CSV</Button>
+            <Button variant="outline" size="sm" render={<a href={getExportLink('excel', 'hi')} />}>निर्यात</Button>
+            {selectedReportDocs.size > 0 && (
+              <Button variant="default" size="sm" render={<a href={getExportLink(reportFormat, undefined, Array.from(selectedReportDocs).join(','))} />}>
+                <Download size={14} /> Selected ({selectedReportDocs.size})
+              </Button>
+            )}
           </div>
-          <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Status</label>
-            <select className="form-input" style={{ fontSize: '12px', padding: '6px 10px', width: '120px' }}
-              value={reportStatus} onChange={e => onStatusChange(e.target.value)}>
-              <option value="">All</option>
-              <option value="processing">Processing</option>
-              <option value="needs_review">Needs Review</option>
-              <option value="verified">Verified</option>
-              <option value="failed">Failed</option>
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Class</label>
-            <input type="text" className="form-input" style={{ fontSize: '12px', padding: '6px 10px', width: '100px' }}
-              value={reportClass} onChange={e => onClassChange(e.target.value)} placeholder="e.g. 10" />
-          </div>
-          <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Format</label>
-            <select className="form-input" style={{ fontSize: '12px', padding: '6px 10px', width: '100px' }}
-              value={reportFormat} onChange={e => onFormatChange(e.target.value as ReportFormat)}>
-              <option value="excel">Excel</option>
-              <option value="csv">CSV</option>
-            </select>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
-          <a href={getExportLink(reportFormat)} className="btn btn-primary" style={{ padding: '8px 20px', fontSize: '13px' }}>
-            <Download size={14} /> Generate {reportFormat.toUpperCase()}
-          </a>
-          <a href={getExportLink('excel')} className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px' }}>
-            Excel
-          </a>
-          <a href={getExportLink('csv')} className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px' }}>
-            CSV
-          </a>
-          <a href={getExportLink('excel', 'hi')} className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px' }}>
-            निर्यात
-          </a>
-          {selectedReportDocs.size > 0 && (
-            <a href={getExportLink(reportFormat, undefined, Array.from(selectedReportDocs).join(','))} className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '13px' }}>
-              <Download size={14} /> Selected ({selectedReportDocs.size})
-            </a>
-          )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      <div className="glass" style={{ borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-        <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--text-secondary)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <Card className="overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3 border-b text-sm text-[var(--text-secondary)] font-semibold">
           <input type="checkbox" checked={reportResults.length > 0 && selectedReportDocs.size === reportResults.length}
-            onChange={onToggleSelectAll} style={{ accentColor: 'var(--accent-violet)' }} />
+            onChange={onToggleSelectAll} className="accent-[var(--accent-violet)]" />
           Matching Documents ({reportResults.length})
         </div>
-        <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+        <div className="max-h-[500px] overflow-y-auto">
           {reportResults.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>No documents match the selected filters.</div>
+            <div className="p-10 text-center text-[var(--text-muted)] text-sm">No documents match the selected filters.</div>
           ) : (
-            <table className="data-table">
+            <table className="w-full caption-bottom text-sm">
               <thead>
-                <tr>
-                  <th style={{ width: '30px' }}></th>
-                  <th>Filename</th>
-                  <th>Roll Number</th>
-                  <th>Class</th>
-                  <th>Status</th>
-                  <th>Created</th>
+                <tr className="border-b">
+                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap w-[30px]"></th>
+                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap">Filename</th>
+                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap">Roll Number</th>
+                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap">Class</th>
+                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap">Status</th>
+                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap">Created</th>
                 </tr>
               </thead>
               <tbody>
                 {reportResults.map(doc => (
-                  <tr key={doc.id}
-                    style={{ cursor: 'pointer', background: selectedReportDocs.has(doc.id) ? 'rgba(139,92,246,0.08)' : undefined }}>
-                    <td onClick={e => e.stopPropagation()}>
+                  <tr key={doc.id} className="border-b transition-colors hover:bg-muted/50 cursor-pointer"
+                    style={{ background: selectedReportDocs.has(doc.id) ? 'rgba(139,92,246,0.08)' : undefined }}>
+                    <td className="p-2 align-middle" onClick={e => e.stopPropagation()}>
                       <input type="checkbox" checked={selectedReportDocs.has(doc.id)}
-                        onChange={() => onToggleSelect(doc.id)} style={{ accentColor: 'var(--accent-violet)' }} />
+                        onChange={() => onToggleSelect(doc.id)} className="accent-[var(--accent-violet)]" />
                     </td>
-                    <td onClick={() => onOpenDoc(doc)} style={{ fontWeight: '500', fontSize: '13px' }}>{doc.filename}</td>
-                    <td onClick={() => onOpenDoc(doc)}>{doc.roll_number || '—'}</td>
-                    <td onClick={() => onOpenDoc(doc)}>{doc.class || '—'}</td>
-                    <td onClick={() => onOpenDoc(doc)}><span className={`badge badge-${doc.status}`}>
-                      {doc.status === 'needs_review' ? 'Needs Review' :
-                       doc.status === 'verified' ? 'Verified' :
-                       doc.status === 'failed' ? 'Failed' : doc.status}
-                    </span></td>
-                    <td onClick={() => onOpenDoc(doc)} style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{doc.created_at?.slice(0, 10)}</td>
+                    <td className="p-2 align-middle font-medium text-sm" onClick={() => onOpenDoc(doc)}>{doc.filename}</td>
+                    <td className="p-2 align-middle" onClick={() => onOpenDoc(doc)}>{doc.roll_number || '—'}</td>
+                    <td className="p-2 align-middle" onClick={() => onOpenDoc(doc)}>{doc.class || '—'}</td>
+                    <td className="p-2 align-middle" onClick={() => onOpenDoc(doc)}>{statusBadge(doc.status)}</td>
+                    <td className="p-2 align-middle text-xs text-[var(--text-muted)]" onClick={() => onOpenDoc(doc)}>{doc.created_at?.slice(0, 10)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
         </div>
-      </div>
+      </Card>
     </>
   );
 };

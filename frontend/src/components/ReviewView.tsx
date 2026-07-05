@@ -1,12 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { FileText, Check, Loader2, X, ArrowRight, RotateCcw } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { FileText, Check, Loader2, X, ArrowLeft, ArrowRight, RotateCcw, Hash, Percent, Calendar, User, GraduationCap, ListOrdered } from 'lucide-react';
 import { Document, DocumentDetails } from '../api';
 import { ZoomImage } from '../api';
 import { api } from '../api';
 import { SdqGrid } from './SdqGrid';
 import { ConsentRemarks } from './ConsentRemarks';
 import { ZoomPopup } from './ZoomPopup';
+import { PageViewer } from './PageViewer';
 import { useToast } from '../context/ToastContext';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 
 interface Props {
   doc: Document;
@@ -20,18 +24,39 @@ interface Props {
   onVerify: () => void;
   onReprocess: () => void;
   onNext: () => void;
+  onPrev: () => void;
   saving: boolean;
 }
 
 const CONF_THRESHOLD = 0.8;
 
-export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detailsDirty, onDetailsChange, onDirtyChange, reviewIndex, totalReview, onClose, onVerify, onReprocess, onNext, saving }) => {
+const MAIN_FIELDS = [
+  { key: 'roll_number', label: 'Roll Number', icon: Hash },
+  { key: 'class', label: 'Class', icon: GraduationCap },
+  { key: 'dob', label: 'DOB', icon: Calendar },
+  { key: 'gender', label: 'Gender', icon: User },
+  { key: 'math_pct', label: 'Math %', icon: Percent },
+  { key: 'science_pct', label: 'Science %', icon: Percent },
+  { key: 'language_pct', label: 'Language %', icon: Percent },
+  { key: 'rank', label: 'Rank', icon: ListOrdered },
+];
+
+const KBD = ({ children }: { children: React.ReactNode }) => (
+  <kbd style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: '3px', fontSize: '10px', fontFamily: 'inherit', border: '1px solid var(--color-border)' }}>{children}</kbd>
+);
+
+export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detailsDirty, onDetailsChange, onDirtyChange, reviewIndex, totalReview, onClose, onVerify, onReprocess, onNext, onPrev, saving }) => {
   const [fieldAccepted, setFieldAccepted] = useState<Record<string, boolean>>({});
   const [flashField, setFlashField] = useState<string | null>(null);
   const [zoomImg, setZoomImg] = useState<ZoomImage | null>(null);
   const [reprocessingField, setReprocessingField] = useState<string | null>(null);
+  const [pageViewer, setPageViewer] = useState<1 | 2 | null>(null);
   const rollRef = useRef<HTMLInputElement>(null);
   const origValuesRef = useRef<Record<string, string>>({});
+  const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
+  const cropRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const focusedFieldRef = useRef<string | null>(null);
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { show } = useToast();
 
   const handleReprocessField = async (key: string) => {
@@ -94,6 +119,86 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detai
     setTimeout(() => setFlashField(null), 500);
   };
 
+  const focusNextField = useCallback((fi: number) => {
+    const next = MAIN_FIELDS[fi + 1];
+    if (next) {
+      const el = fieldRefs.current[next.key];
+      if (el) setTimeout(() => el.focus(), 50);
+    }
+  }, []);
+
+  const handleFieldKeyDown = useCallback((e: React.KeyboardEvent, fi: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAccept(MAIN_FIELDS[fi].key);
+      focusNextField(fi);
+    }
+  }, [handleAccept, focusNextField]);
+
+  const showZoomForCrop = useCallback((key: string) => {
+    const el = cropRefs.current[key];
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setZoomImg({
+        src: api.getCropUrl(doc.id, `${key}.png`),
+        x: rect.right + 20,
+        y: rect.top + rect.height / 2,
+      });
+    } else {
+      setZoomImg({ src: api.getCropUrl(doc.id, `${key}.png`), x: 0, y: 0 });
+    }
+  }, [doc.id]);
+
+  const handleCropEnter = useCallback((e: React.MouseEvent, key: string) => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setZoomImg({ src: api.getCropUrl(doc.id, `${key}.png`), x: rect.left + rect.width / 2, y: rect.top });
+  }, [doc.id]);
+
+  const handleCropMove = useCallback((e: React.MouseEvent, key: string) => {
+    setZoomImg({ src: api.getCropUrl(doc.id, `${key}.png`), x: e.clientX, y: e.clientY - 20 });
+  }, [doc.id]);
+
+  const handleCropLeave = useCallback(() => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    leaveTimerRef.current = setTimeout(() => {
+      if (!focusedFieldRef.current) {
+        setZoomImg(null);
+      }
+    }, 80);
+  }, []);
+
+  const handleInputFocus = useCallback((e: React.FocusEvent<HTMLInputElement>, key: string) => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    focusedFieldRef.current = key;
+    showZoomForCrop(key);
+    e.target.select();
+  }, [showZoomForCrop]);
+
+  const handleInputBlur = useCallback(() => {
+    focusedFieldRef.current = null;
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    leaveTimerRef.current = setTimeout(() => {
+      if (!focusedFieldRef.current) {
+        setZoomImg(null);
+      }
+    }, 80);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !pageViewer) {
+        onClose();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        onVerify();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose, onVerify, pageViewer]);
+
   useEffect(() => {
     setTimeout(() => rollRef.current?.focus(), 100);
   }, [doc.id]);
@@ -109,17 +214,6 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detai
     setFieldAccepted(init);
   }, [details.id]);
 
-  const mainFields = [
-    { key: 'roll_number', label: 'Roll Number' },
-    { key: 'class', label: 'Class' },
-    { key: 'dob', label: 'DOB' },
-    { key: 'gender', label: 'Gender' },
-    { key: 'math_pct', label: 'Math %' },
-    { key: 'science_pct', label: 'Science %' },
-    { key: 'language_pct', label: 'Language %' },
-    { key: 'rank', label: 'Rank' },
-  ];
-
   const acceptedCount = Object.values(fieldAccepted).filter(Boolean).length;
   const highConfQCount = Array.from({ length: 25 }, (_, i) => `q${i + 1}`).filter(q => {
     const c = checkboxConf[q];
@@ -130,154 +224,199 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detai
     <div className="app-container">
       <header className="main-header">
         <div className="logo"><FileText size={24} /><span>SSIAR — Quick Review</span></div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{reviewIndex + 1} / {totalReview}</span>
-          <button onClick={onClose} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '13px' }}>
-            <X size={14} /> Close
-          </button>
+        <div className="flex items-center gap-2.5">
+          <span className="text-[13px] text-[var(--text-muted)]">{reviewIndex + 1} / {totalReview}</span>
+          <div className="flex gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => setPageViewer(1)}>Page 1</Button>
+            <Button variant="outline" size="sm" onClick={() => setPageViewer(2)}>Page 2</Button>
+            <Button variant="outline" size="sm" onClick={onClose}><X size={14} /> Close</Button>
+          </div>
         </div>
       </header>
 
-      <div style={{ padding: '20px' }}>
-        <div className="glass" style={{ padding: '12px 20px', borderRadius: 'var(--radius-md)', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-            {doc.filename} — <b style={{ color: 'white' }}>{acceptedCount}/8</b> main fields
-            + <b style={{ color: 'var(--accent-emerald)' }}>{highConfQCount}/25</b> questions auto-verified
-          </span>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-secondary" style={{ fontSize: '12px', padding: '6px 12px' }}
-              onClick={() => {
-                const next = { ...fieldAccepted };
-                for (const f of mainFields) {
-                  if (isHighConf(f.key)) next[f.key] = true;
-                }
-                setFieldAccepted(next);
-              }}>
-              Accept High-Conf ({mainFields.filter(f => isHighConf(f.key)).length})
-            </button>
-            <button onClick={onVerify} className="btn btn-primary" style={{ fontSize: '14px', padding: '8px 20px' }} disabled={saving}>
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-              {saving ? ' Saving...' : ' Save & Next'}
-            </button>
-            <button onClick={onReprocess} className="btn btn-secondary" style={{ fontSize: '12px', padding: '6px 12px', color: 'var(--accent-amber)' }}>
-              <RotateCcw size={14} /> Reprocess
-            </button>
-            <button onClick={onNext} className="btn btn-secondary" style={{ fontSize: '12px', padding: '6px 12px' }}>
-              Skip <ArrowRight size={14} />
-            </button>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', fontSize: '11px', color: 'var(--text-muted)', padding: '0 4px' }}>
-          <span><kbd style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: '3px', fontSize: '10px', fontFamily: 'inherit', border: '1px solid var(--color-border)' }}>Tab</kbd> next field</span>
-          <span><kbd style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: '3px', fontSize: '10px', fontFamily: 'inherit', border: '1px solid var(--color-border)' }}>Enter</kbd> accept field</span>
-          <span><kbd style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: '3px', fontSize: '10px', fontFamily: 'inherit', border: '1px solid var(--color-border)' }}>Ctrl+Enter</kbd> save & next doc</span>
-          <span><kbd style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: '3px', fontSize: '10px', fontFamily: 'inherit', border: '1px solid var(--color-border)' }}>Esc</kbd> close</span>
-        </div>
-
-        <div className="glass" style={{ borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginBottom: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-            {mainFields.map((f, fi) => {
-              const val = getFieldVal(f.key);
-              const accepted = fieldAccepted[f.key];
-              const confidence = fieldConf(f.key);
-              const isClass = f.key === 'class';
-              const isGender = f.key === 'gender';
-              const isPct = f.key === 'math_pct' || f.key === 'science_pct' || f.key === 'language_pct';
-              const isDob = f.key === 'dob';
-              const isRoll = f.key === 'roll_number';
-              const isRank = f.key === 'rank';
-              const confColor = confidence >= 0.9 ? 'var(--accent-emerald)' : confidence >= 0.7 ? 'var(--accent-amber)' : '#f43f5e';
-              const isEdited = val !== '' && origValuesRef.current[f.key] !== undefined && val !== origValuesRef.current[f.key];
-              return (
-                <div key={f.key} className={flashField === f.key ? 'accept-flash' : ''} style={{
-                  display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 18px',
-                  borderRight: fi % 2 === 0 ? '1px solid var(--color-border)' : 'none',
-                  borderBottom: fi < mainFields.length - 2 ? '1px solid var(--color-border)' : 'none',
-                  background: accepted ? 'rgba(16,185,129,0.04)' : isEdited ? 'rgba(245,158,11,0.04)' : 'transparent',
+      <div className="p-5">
+        <Card size="sm" className="mb-4">
+          <CardContent className="flex justify-between items-center !px-5">
+            <span className="text-[13px] text-[var(--text-secondary)]">
+              {doc.filename} — <b className="text-white">{acceptedCount}/8</b> main fields
+              + <b className="text-[var(--accent-emerald)]">{highConfQCount}/25</b> questions auto-verified
+            </span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="text-xs"
+                onClick={() => {
+                  const next = { ...fieldAccepted };
+                  for (const f of MAIN_FIELDS) {
+                    if (isHighConf(f.key)) next[f.key] = true;
+                  }
+                  setFieldAccepted(next);
                 }}>
-                  <div style={{ flexShrink: 0, lineHeight: 0 }}
-                    onMouseEnter={e => {
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                      setZoomImg({ src: api.getCropUrl(doc.id, `${f.key}.png`), x: rect.left + rect.width / 2, y: rect.top });
-                    }}
-                    onMouseMove={e => setZoomImg({ src: api.getCropUrl(doc.id, `${f.key}.png`), x: e.clientX, y: e.clientY - 20 })}
-                    onMouseLeave={() => setZoomImg(null)}>
-                    <img src={api.getCropUrl(doc.id, `${f.key}.png`)} alt={f.label}
-                      style={{ width: '220px', height: '54px', objectFit: 'contain', background: 'rgba(0,0,0,0.3)', borderRadius: '4px', display: 'block', cursor: 'zoom-in' }} />
-                  </div>
-                  <span style={{ fontSize: '15px', whiteSpace: 'nowrap', color: 'var(--text-secondary)', fontWeight: '500' }}>{f.label}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {isClass ? (
-                      <select className={`form-input ${isEdited ? 'field-edited-input' : ''}`} style={{ width: '100%', fontSize: '15px', padding: '6px 10px' }}
-                        value={val} onChange={e => setFieldVal(f.key, e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') handleAccept(f.key); }}>
-                        <option value="">—</option>
-                        {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={String(i + 1)}>{i + 1}</option>)}
-                      </select>
-                    ) : isGender ? (
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        {['M', 'F'].map(g => (
-                          <button key={g} onClick={() => setFieldVal(f.key, g)}
-                            style={{
-                              padding: '5px 16px', borderRadius: '4px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
-                              border: '1px solid',
-                              background: val === g ? 'rgba(139,92,246,0.2)' : 'rgba(0,0,0,0.15)',
-                              borderColor: val === g ? 'var(--accent-violet)' : (isEdited ? 'var(--accent-amber)' : 'var(--color-border)'),
-                              color: val === g ? 'var(--accent-cyan)' : 'var(--text-secondary)',
-                            }}>{g}</button>
-                        ))}
-                      </div>
-                    ) : isPct ? (
-                      <input type="number" min="0" max="100" className={`form-input ${isEdited ? 'field-edited-input' : ''}`}
-                        style={{ width: '100%', fontSize: '15px', padding: '6px 10px', textAlign: 'center', fontWeight: '600' }}
-                        value={val} onChange={e => setFieldVal(f.key, e.target.value)}
-                        onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') handleAccept(f.key); }} />
-                    ) : isRank ? (
-                      <input type="number" min="1" className={`form-input ${isEdited ? 'field-edited-input' : ''}`}
-                        style={{ width: '100%', fontSize: '15px', padding: '6px 10px', fontWeight: '600' }}
-                        value={val} onChange={e => setFieldVal(f.key, e.target.value)}
-                        onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') handleAccept(f.key); }} />
-                    ) : isDob ? (
-                      <input type="text" placeholder="DD/MM/YYYY" className={`form-input ${isEdited ? 'field-edited-input' : ''}`}
-                        style={{ width: '100%', fontSize: '15px', padding: '6px 10px', fontFamily: 'monospace', fontWeight: '600', letterSpacing: '1px' }}
-                        value={val} onChange={e => setFieldVal(f.key, e.target.value)}
-                        onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') handleAccept(f.key); }} />
-                    ) : isRoll ? (
-                      <input ref={rollRef}
-                        className={`form-input ${isEdited ? 'field-edited-input' : ''}`}
-                        style={{ width: '100%', fontSize: '16px', padding: '6px 10px', fontFamily: 'monospace', fontWeight: '700' }}
-                        value={val} onChange={e => setFieldVal(f.key, e.target.value)} placeholder="Roll #"
-                        onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') handleAccept(f.key); }} />
-                    ) : (
-                      <input className={`form-input ${isEdited ? 'field-edited-input' : ''}`}
-                        style={{ width: '100%', fontSize: '15px', padding: '6px 10px' }}
-                        value={val} onChange={e => setFieldVal(f.key, e.target.value)}
-                        onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') handleAccept(f.key); }} />
-                    )}
-                    {isEdited && !accepted && <span style={{ fontSize: '10px', color: 'var(--accent-amber)', marginTop: '2px', display: 'block' }}>✎ edited</span>}
-                  </div>
-                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                    <span style={{ fontSize: '14px', fontWeight: '700', color: confColor, minWidth: '36px', textAlign: 'right' }}>{Math.round(confidence * 100)}%</span>
-                    {reprocessingField === f.key ? (
-                      <Loader2 size={16} className="animate-spin" style={{ color: 'var(--accent-cyan)' }} />
-                    ) : (
-                      <button onClick={() => handleReprocessField(f.key)}
-                        title="Re-run OCR on this field"
-                        className="btn btn-secondary" style={{ padding: '3px 5px', fontSize: '11px', minWidth: '24px', height: '24px', opacity: 0.6 }}>⟳</button>
-                    )}
-                    {accepted ? (
-                      <Check size={20} style={{ color: 'var(--accent-emerald)' }} />
-                    ) : (
-                      <button onClick={() => handleAccept(f.key)}
-                        className="btn btn-secondary" style={{ padding: '3px 7px', fontSize: '12px', minWidth: '24px', height: '24px' }}>✓</button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                Accept High-Conf ({MAIN_FIELDS.filter(f => isHighConf(f.key)).length})
+              </Button>
+              <Button variant="default" onClick={onVerify} disabled={saving}>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {saving ? ' Saving...' : ' Save & Next'}
+              </Button>
+              <Button variant="outline" size="sm" style={{ color: 'var(--accent-amber)' }} onClick={onReprocess}>
+                <RotateCcw size={14} /> Reprocess
+              </Button>
+              <Button variant="outline" size="sm" onClick={onPrev} disabled={reviewIndex === 0}>
+                <ArrowLeft size={14} /> Prev
+              </Button>
+              <Button variant="outline" size="sm" onClick={onNext}>
+                {reviewIndex + 1 < totalReview ? 'Next' : 'Close'} <ArrowRight size={14} />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onNext} style={{ color: 'var(--text-muted)' }}>
+                Skip <ArrowRight size={14} />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="flex gap-4 mb-3 text-[11px] text-[var(--text-muted)] px-1 flex-wrap">
+          <span><KBD>←</KBD><KBD>→</KBD> prev/next doc</span>
+          <span><KBD>S</KBD> skip doc</span>
+          <span><KBD>Tab</KBD> next field</span>
+          <span><KBD>Enter</KBD> accept & advance</span>
+          <span><KBD>M</KBD> <KBD>F</KBD> gender</span>
+          <span><KBD>Y</KBD> <KBD>N</KBD> <KBD>U</KBD> consent</span>
+          <span><KBD>1</KBD><KBD>2</KBD><KBD>3</KBD><KBD>0</KBD> SDQ</span>
+          <span><KBD>⌘↵</KBD> save & next</span>
+          <span><KBD>Esc</KBD> close</span>
         </div>
+
+        <Card className="mb-5 !py-0">
+          <CardContent className="!p-0">
+            <div className="grid grid-cols-2">
+              {MAIN_FIELDS.map((f, fi) => {
+                const val = getFieldVal(f.key);
+                const accepted = fieldAccepted[f.key];
+                const confidence = fieldConf(f.key);
+                const isClass = f.key === 'class';
+                const isGender = f.key === 'gender';
+                const isPct = f.key === 'math_pct' || f.key === 'science_pct' || f.key === 'language_pct';
+                const isDob = f.key === 'dob';
+                const isRoll = f.key === 'roll_number';
+                const isRank = f.key === 'rank';
+                const confColor = confidence >= 0.9 ? 'var(--accent-emerald)' : confidence >= 0.7 ? 'var(--accent-amber)' : '#f43f5e';
+                const isEdited = val !== '' && origValuesRef.current[f.key] !== undefined && val !== origValuesRef.current[f.key];
+                const Icon = f.icon;
+                return (
+                  <div key={f.key} className={`
+                    flex items-center gap-3 px-[18px] py-[10px]
+                    ${flashField === f.key ? 'accept-flash' : ''}
+                    ${fi % 2 === 0 ? 'border-r border-[var(--color-border)]' : ''}
+                    ${fi < MAIN_FIELDS.length - 2 ? 'border-b border-[var(--color-border)]' : ''}
+                    ${accepted ? 'bg-[rgba(16,185,129,0.04)]' : isEdited ? 'bg-[rgba(245,158,11,0.04)]' : ''}
+                  `}>
+                    <div ref={el => { cropRefs.current[f.key] = el; }} className="shrink-0 leading-none"
+                      onMouseEnter={e => handleCropEnter(e, f.key)}
+                      onMouseMove={e => handleCropMove(e, f.key)}
+                      onMouseLeave={handleCropLeave}>
+                      <img src={api.getCropUrl(doc.id, `${f.key}.png`)} alt={f.label}
+                        className="w-[220px] h-[54px] object-contain bg-[rgba(0,0,0,0.3)] rounded block cursor-zoom-in" />
+                    </div>
+                    <span className="text-[15px] whitespace-nowrap text-[var(--text-secondary)] font-medium flex items-center gap-1.5">
+                      <Icon size={14} className="text-[var(--text-muted)]" />
+                      {f.label}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      {isClass ? (
+                        <Input type="number" min="1" max="12"
+                          className={`text-[15px] text-center font-semibold ${isEdited ? 'field-edited-input' : ''}`}
+                          value={val} onChange={e => setFieldVal(f.key, e.target.value)}
+                          onFocus={e => handleInputFocus(e, f.key)}
+                          onBlur={handleInputBlur}
+                          onKeyDown={e => handleFieldKeyDown(e, fi)}
+                          ref={el => { fieldRefs.current[f.key] = el; }}
+                          placeholder="1-12" />
+                      ) : isGender ? (
+                        <div className="flex gap-1.5"
+                          onKeyDown={e => {
+                            if (e.key.toLowerCase() === 'm') { setFieldVal(f.key, 'M'); e.preventDefault(); handleAccept(f.key); focusNextField(fi); }
+                            else if (e.key.toLowerCase() === 'f') { setFieldVal(f.key, 'F'); e.preventDefault(); handleAccept(f.key); focusNextField(fi); }
+                            else handleFieldKeyDown(e, fi);
+                          }}>
+                          {['M', 'F'].map(g => (
+                            <button key={g} onClick={() => { setFieldVal(f.key, g); handleAccept(f.key); focusNextField(fi); }}
+                              tabIndex={fi === 0 ? 0 : -1}
+                              style={{
+                                padding: '5px 16px', borderRadius: '4px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+                                border: '1px solid',
+                                background: val === g ? 'rgba(139,92,246,0.2)' : 'rgba(0,0,0,0.15)',
+                                borderColor: val === g ? 'var(--accent-violet)' : (isEdited ? 'var(--accent-amber)' : 'var(--color-border)'),
+                                color: val === g ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                              }}>{g}</button>
+                          ))}
+                        </div>
+                      ) : isPct ? (
+                        <Input type="number" min="0" max="100"
+                          className={`text-[15px] text-center font-semibold ${isEdited ? 'field-edited-input' : ''}`}
+                          value={val} onChange={e => setFieldVal(f.key, e.target.value)}
+                          onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                          onKeyDown={e => handleFieldKeyDown(e, fi)}
+                          ref={el => { fieldRefs.current[f.key] = el; }} />
+                      ) : isRank ? (
+                        <Input type="number" min="1"
+                          className={`text-[15px] font-semibold ${isEdited ? 'field-edited-input' : ''}`}
+                          value={val} onChange={e => setFieldVal(f.key, e.target.value)}
+                          onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                          onKeyDown={e => handleFieldKeyDown(e, fi)}
+                          ref={el => { fieldRefs.current[f.key] = el; }} />
+                      ) : isDob ? (
+                        <Input type="text" placeholder="DD/MM/YYYY"
+                          className={`text-[15px] font-mono font-semibold tracking-[1px] ${isEdited ? 'field-edited-input' : ''}`}
+                          value={val}
+                          onChange={e => {
+                            const digits = e.target.value.replace(/\D/g, '').slice(0, 8);
+                            let formatted = '';
+                            if (digits.length > 0) formatted = digits.slice(0, 2);
+                            if (digits.length > 2) formatted += '/' + digits.slice(2, 4);
+                            if (digits.length > 4) formatted += '/' + digits.slice(4, 8);
+                            setFieldVal(f.key, formatted);
+                          }}
+                          onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                          onKeyDown={e => { if (e.key === 'Backspace' && val.endsWith('/')) setFieldVal(f.key, val.slice(0, -1)); handleFieldKeyDown(e, fi); }}
+                          ref={el => { fieldRefs.current[f.key] = el; }} />
+                      ) : isRoll ? (
+                        <Input ref={el => { rollRef.current = el; fieldRefs.current[f.key] = el; }}
+                          className={`text-[16px] font-mono font-bold ${isEdited ? 'field-edited-input' : ''}`}
+                          value={val} onChange={e => setFieldVal(f.key, e.target.value)} placeholder="Roll #"
+                          onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                          onKeyDown={e => handleFieldKeyDown(e, fi)} />
+                      ) : (
+                        <Input className={`text-[15px] ${isEdited ? 'field-edited-input' : ''}`}
+                          value={val} onChange={e => setFieldVal(f.key, e.target.value)}
+                          onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                          onKeyDown={e => handleFieldKeyDown(e, fi)}
+                          ref={el => { fieldRefs.current[f.key] = el; }} />
+                      )}
+                      {isEdited && !accepted && <span className="text-[10px] text-[var(--accent-amber)] mt-0.5 block">✎ edited</span>}
+                    </div>
+                    <div className="ml-auto flex items-center gap-2 shrink-0">
+                      <span className="text-[14px] font-bold min-w-[36px] text-right" style={{ color: confColor }}>{Math.round(confidence * 100)}%</span>
+                      {reprocessingField === f.key ? (
+                        <Loader2 size={16} className="animate-spin text-[var(--accent-cyan)]" />
+                      ) : (
+                        <Button variant="outline" size="xs"
+                          onClick={() => handleReprocessField(f.key)}
+                          title="Re-run OCR on this field"
+                          style={{ opacity: 0.6 }}
+                          className="min-w-[24px]">⟳</Button>
+                      )}
+                      {accepted ? (
+                        <Check size={20} className="text-[var(--accent-emerald)]" />
+                      ) : (
+                        <Button variant="outline" size="xs"
+                          onClick={() => handleAccept(f.key)}
+                          className="min-w-[24px]">✓</Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
 
         <SdqGrid docId={doc.id} responses={details.responses || {}} checkboxConf={checkboxConf} multiTicks={multiTicks}
           onChange={newResp => { onDirtyChange(true); onDetailsChange({ ...details, responses: newResp }); }}
@@ -290,6 +429,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, detailsDirty: _detai
       </div>
 
       <ZoomPopup zoom={zoomImg} />
+      {pageViewer && <PageViewer docId={doc.id} pageNum={pageViewer} onClose={() => setPageViewer(null)} />}
     </div>
   );
 };

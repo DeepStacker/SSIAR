@@ -1,0 +1,177 @@
+[
+  {
+    "question_id": "q1",
+    "text_en": "Considerate of other people's feelings",
+    "text_hi": "दूसरों की भावनाओं का ख्याल रखता/रखती है",
+    "domain": "Prosocial",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q2",
+    "text_en": "Restless, overactive, cannot stay still for long",
+    "text_hi": "बेचैन, अत्यधिक सक्रिय, लंबे समय तक स्थिर नहीं रख सकता/सकती",
+    "domain": "Hyperactivity",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q3",
+    "text_en": "Often complains of headaches, stomach-aches or sickness",
+    "text_hi": "अक्सर सिरदर्द, पेट दर्द या बीमारी की शिकायत करता/करती है",
+    "domain": "Emotional",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q4",
+    "text_en": "Shares readily with other children",
+    "text_hi": "अन्य बच्चों के साथ आसानी से चीजें साझा करता/करती है",
+    "domain": "Prosocial",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q5",
+    "text_en": "Often has temper tantrums or hot tempers",
+    "text_hi": "अक्सर गुस्सा करता/करती है या नखरे दिखाता/dikhata है",
+    "domain": "Conduct",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q6",
+    "text_en": "Rather solitary, tends to play alone",
+    "text_hi": "अकेले रहना पसंद करता/करती है, अकेले खेलता/खेलती है",
+    "domain": "Peer",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q7",
+    "text_en": "Generally obedient, usually does what adults request",
+    "text_hi": "आमतौर पर आज्ञाकारी है, बड़ों की बात मानता/मानती है",
+    "domain": "Conduct",
+    "reverse_scored": true
+  },
+  {
+    "question_id": "q8",
+    "text_en": "Many worries, often seems worried",
+    "text_hi": "बहुत चिंता करता/करती है, अक्सर चिंतित दिखाई देता/देती है",
+    "domain": "Emotional",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q9",
+    "text_en": "Helpful if someone is hurt, upset or feeling ill",
+    "text_hi": "किसी के आहत, परेशान या बीमार होने पर मदद करता/करती है",
+    "domain": "Prosocial",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q10",
+    "text_en": "Constantly fidgeting or squirming",
+    "text_hi": "लगातार हाथ-पैर हिलाता/हिलाती है या छटपटाता/छटपटाती है",
+    "domain": "Hyperactivity",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q11",
+    "text_en": "Has at least one good friend",
+    "text_hi": "कम से कम एक अच्छा दोस्त है",
+    "domain": "Peer",
+    "reverse_scored": true
+  },
+  {
+    "question_id": "q12",
+    "text_en": "Often fights with other children or bullies them",
+    "text_hi": "अक्सर दूसरे बच्चों से लड़ता/लड़ती है या उन्हें धमकाता/धमकाती है",
+    "domain": "Conduct",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q13",
+    "text_en": "Often unhappy, down-hearted or tearful",
+    "text_hi": "अक्सर दुखी, उदास या रोने जैसा रहता/रहती है",
+    "domain": "Emotional",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q14",
+    "text_en": "Generally liked by other children",
+    "text_hi": "आमतौर पर अन्य बच्चे उसे पसंद करते हैं",
+    "domain": "Peer",
+    "reverse_scored": true
+  },
+  {
+    "question_id": "q15",
+    "text_en": "Easily distracted, concentration wanders",
+    "text_hi": "आसानी से ध्यान भटक जाता है, एकाग्रता कमजोर है",
+    "domain": "Hyperactivity",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q16",
+    "text_en": "Nervous or clingy in new situations, easily loses confidence",
+    "text_hi": "नई स्थितियों में घबरा जाता/जाती है, आत्मविश्वास जल्दी खो देता/देती है",
+    "domain": "Emotional",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q17",
+    "text_en": "Kind to younger children",
+    "text_hi": "छोटे बच्चों के प्रति दयालु है",
+    "domain": "Prosocial",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q18",
+    "text_en": "Often lies or cheats",
+    "text_hi": "अक्सर झूठ बोलता/बोलती है या धोखा देता/देती है",
+    "domain": "Conduct",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q19",
+    "text_en": "Picked on or bullied by other children",
+    "text_hi": "अन्य बच्चों द्वारा तंग या परेशान किया जाता/जाती है",
+    "domain": "Peer",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q20",
+    "text_en": "Often volunteers to help others",
+    "text_hi": "अक्सर दूसरों की मदद करने के लिए खुद आगे आता/आती है",
+    "domain": "Prosocial",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q21",
+    "text_en": "Thinks things out before acting",
+    "text_hi": "काम करने से पहले सोच-विचार करता/करती है",
+    "domain": "Hyperactivity",
+    "reverse_scored": true
+  },
+  {
+    "question_id": "q22",
+    "text_en": "Steals from home, school or elsewhere",
+    "text_hi": "घर, स्कूल या कहीं और से चोरी करता/करती है",
+    "domain": "Conduct",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q23",
+    "text_en": "Gets on better with adults than with other children",
+    "text_hi": "बच्चों की तुलना में वयस्कों के साथ बेहतर तालमेल रखता/रखती है",
+    "domain": "Peer",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q24",
+    "text_en": "Many fears, easily scared",
+    "text_hi": "बहुत सी चीजों से डरता/डरती है, आसानी से डर जाता/जाती है",
+    "domain": "Emotional",
+    "reverse_scored": false
+  },
+  {
+    "question_id": "q25",
+    "text_en": "Sees tasks through to the end, good attention span",
+    "text_hi": "काम को अंत तक पूरा करता/करती है, ध्यान अवधि अच्छी है",
+    "domain": "Hyperactivity",
+    "reverse_scored": true
+  }
+]

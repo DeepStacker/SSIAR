@@ -1,5 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   title: string;
@@ -8,13 +9,13 @@ interface Props {
 }
 
 export const DocHeader: React.FC<Props> = ({ title, onClose, center }) => (
-  <header className="main-header">
-    <div className="logo" style={{ fontSize: '18px' }}>
+  <header className="flex items-center justify-between border-b pb-5 mb-8">
+    <div className="flex items-center gap-3 text-lg font-extrabold">
       <span>{title}</span>
     </div>
-    {center && <div style={{ flex: 1, textAlign: 'center' }}>{center}</div>}
-    <button onClick={onClose} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '13px' }}>
+    {center && <div className="flex-1 text-center">{center}</div>}
+    <Button variant="outline" size="sm" onClick={onClose}>
       <X size={14} /> Close
-    </button>
+    </Button>
   </header>
 );

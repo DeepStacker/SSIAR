@@ -1,5 +1,7 @@
 import React, { useRef } from 'react';
 import { Upload, Loader2, RotateCcw } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   uploading: boolean;
@@ -32,39 +34,39 @@ export const UploadZone: React.FC<Props> = ({
   };
 
   return (
-    <div className="glass"
-      style={{ padding: '20px', borderRadius: 'var(--radius-lg)', marginBottom: '20px', border: isDragOver ? '2px dashed var(--accent-violet)' : '2px dashed transparent' }}
+    <Card
+      style={{ padding: '20px', marginBottom: '20px', border: isDragOver ? '2px dashed var(--accent-violet)' : '2px dashed transparent' }}
       onDragOver={e => { e.preventDefault(); onDragOver(true); }}
       onDragLeave={() => onDragOver(false)}
       onDrop={handleDrop}
     >
       <input ref={fileInputRef} type="file" multiple accept=".pdf" onChange={handleFileInput} style={{ display: 'none' }} />
-      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div onClick={() => fileInputRef.current?.click()} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '200px' }}>
+      <div className="flex items-center gap-4 flex-wrap">
+        <div onClick={() => fileInputRef.current?.click()} className="cursor-pointer flex items-center gap-2.5 flex-1 min-w-[200px]">
           <div style={{ background: uploading ? 'rgba(139,92,246,0.1)' : 'rgba(16,185,129,0.1)', padding: '10px', borderRadius: '50%' }}>
             {uploading ? <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent-violet)' }} /> : <Upload size={22} style={{ color: 'var(--accent-emerald)' }} />}
           </div>
           <div>
-            <div style={{ fontWeight: '600', fontSize: '14px' }}>Upload or drop PDFs</div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Select multiple files for bulk processing</div>
+            <div className="font-semibold text-sm">Upload or drop PDFs</div>
+            <div className="text-xs text-muted-foreground">Select multiple files for bulk processing</div>
           </div>
         </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
-          <input type="checkbox" checked={autoVerify} onChange={e => onAutoVerifyChange(e.target.checked)} style={{ accentColor: 'var(--accent-violet)' }} />
+        <label className="flex items-center gap-1.5 cursor-pointer text-xs whitespace-nowrap">
+          <input type="checkbox" checked={autoVerify} onChange={e => onAutoVerifyChange(e.target.checked)} className="accent-violet-500" />
           Auto-verify
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
-          <input type="checkbox" checked={splitPages} onChange={e => onSplitPagesChange(e.target.checked)} style={{ accentColor: 'var(--accent-cyan)' }} />
+        <label className="flex items-center gap-1.5 cursor-pointer text-xs whitespace-nowrap">
+          <input type="checkbox" checked={splitPages} onChange={e => onSplitPagesChange(e.target.checked)} className="accent-cyan-500" />
           Split 2-page forms
         </label>
         <div>
           {failedCount > 0 && (
-            <button onClick={onRetryAllFailed} className="btn btn-secondary" style={{ padding: '6px 14px', fontSize: '12px', whiteSpace: 'nowrap', color: '#f43f5e' }}>
+            <Button variant="outline" size="sm" onClick={onRetryAllFailed} className="text-rose-500 whitespace-nowrap">
               <RotateCcw size={14} /> Retry {failedCount}
-            </button>
+            </Button>
           )}
         </div>
       </div>
-    </div>
+    </Card>
   );
 };

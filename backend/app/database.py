@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import json
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -8,13 +9,27 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = str(BASE_DIR / "shared" / "database" / "ssiar.db")
 
+_local = threading.local()
+
 def get_db_connection():
+    conn = getattr(_local, 'conn', None)
+    if conn is not None:
+        try:
+            conn.execute("SELECT 1")
+            # Verify the cached connection still points to the current DB_PATH
+            # (tests can change DB_PATH between test classes)
+            if getattr(_local, 'db_path', None) == DB_PATH:
+                return conn
+        except sqlite3.ProgrammingError:
+            _local.conn = None
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
+    _local.conn = conn
+    _local.db_path = DB_PATH
     return conn
 
 def init_db():
@@ -103,7 +118,6 @@ def init_db():
     _run_migrations(cursor)
     
     conn.commit()
-    conn.close()
     print("Database initialized successfully at:", DB_PATH)
 
 def _run_migrations(cursor):
@@ -129,18 +143,6 @@ def _run_migrations(cursor):
         except sqlite3.OperationalError:
             pass
 
-    # Create page_images table for aligned page BLOBs
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS page_images (
-        doc_id TEXT NOT NULL,
-        page_num INTEGER NOT NULL,
-        image_data BLOB NOT NULL,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (doc_id, page_num),
-        FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
-    )
-    """)
-
 def insert_document(doc_id, filename, status="processing", classification=None, escalation_level="level_1"):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -151,7 +153,7 @@ def insert_document(doc_id, filename, status="processing", classification=None, 
         (doc_id, filename, status, class_json, escalation_level, now_str)
     )
     conn.commit()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
 
 def update_document_status(doc_id, status, escalation_level=None):
     conn = get_db_connection()
@@ -167,7 +169,7 @@ def update_document_status(doc_id, status, escalation_level=None):
             (status, doc_id)
         )
     conn.commit()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
 
 def _log_edit(cursor, doc_id, field_name, old_value, new_value):
     """Record a single field change in the audit trail."""
@@ -188,7 +190,7 @@ def log_correction_data(doc_id, field_name, crop_path, ocr_pred, corrected_val, 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (doc_id, field_name, crop_path, ocr_pred, corrected_val, confidence, mode, now_str))
     conn.commit()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
 
 def insert_or_update_form_data(doc_id, roll_number, class_val, dob, gender, consent, responses, academic_scores, remarks, confidence_scores, quality_report=None, verified=0):
     conn = get_db_connection()
@@ -238,7 +240,7 @@ def insert_or_update_form_data(doc_id, roll_number, class_val, dob, gender, cons
         """, (doc_id, roll_number, class_val, dob, gender, consent, resp_json, acad_json, remarks, conf_json, qual_json, verified, now_str))
         
     conn.commit()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
 
 def get_document(doc_id):
     conn = get_db_connection()
@@ -251,7 +253,7 @@ def get_document(doc_id):
         WHERE d.id = ?
     """, (doc_id,))
     row = cursor.fetchone()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
     if row:
         d = dict(row)
         if d['responses']:
@@ -278,7 +280,7 @@ def get_all_documents():
         ORDER BY d.created_at DESC
     """)
     rows = cursor.fetchall()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
     
     res = []
     for r in rows:
@@ -296,7 +298,7 @@ def get_edit_history(doc_id):
         (doc_id,)
     )
     rows = cursor.fetchall()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
     return [dict(row) for row in rows]
 
 def get_corrections_log():
@@ -305,48 +307,48 @@ def get_corrections_log():
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM corrections_training_data ORDER BY saved_at DESC")
     rows = cursor.fetchall()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
     return [dict(row) for row in rows]
 
 def delete_document(doc_id):
-    from app.modules.storage import delete_document_disk
+    from app.image.storage import delete_document_disk
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
     conn.commit()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
     delete_document_disk(doc_id)
 
 def bulk_delete_documents(doc_ids):
-    from app.modules.storage import delete_document_disk
+    from app.image.storage import delete_document_disk
     conn = get_db_connection()
     cursor = conn.cursor()
     placeholders = ",".join("?" * len(doc_ids))
     cursor.execute(f"DELETE FROM documents WHERE id IN ({placeholders})", doc_ids)
     conn.commit()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
     for doc_id in doc_ids:
         delete_document_disk(doc_id)
     return cursor.rowcount
 
 def store_pdf(doc_id, pdf_bytes):
-    from app.modules.storage import store_pdf_disk
+    from app.image.storage import store_pdf_disk
     # Avoid writing binary data to SQLite. Set column to NULL and store on disk.
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("UPDATE documents SET pdf_data = NULL WHERE id = ?", (doc_id,))
     conn.commit()
-    conn.close()
+    # conn.close()  # thread-local connection pool reuses per thread
     store_pdf_disk(doc_id, pdf_bytes)
 
 def get_pdf(doc_id):
-    from app.modules.storage import get_pdf_disk
+    from app.image.storage import get_pdf_disk
     return get_pdf_disk(doc_id)
 
 def store_page_image(doc_id, page_num, image_bytes):
     import cv2
     import numpy as np
-    from app.modules.storage import store_aligned_page_disk
+    from app.image.storage import store_aligned_page_disk
     
     nparr = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -354,6 +356,6 @@ def store_page_image(doc_id, page_num, image_bytes):
         store_aligned_page_disk(doc_id, page_num, image)
 
 def get_page_image(doc_id, page_num):
-    from app.modules.storage import get_aligned_page_disk
+    from app.image.storage import get_aligned_page_disk
     return get_aligned_page_disk(doc_id, page_num)
 

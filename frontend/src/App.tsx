@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, FileText, Clock, AlertTriangle, Check, X } from 'lucide-react';
-import type { Document, DocumentDetails, QueueStatus, TabType, SortKey, ReportFormat } from './api';
+import type { Document, DocumentDetails, QueueStatus, TabType, SortKey, ReportFormat, ViewMode } from './api';
 import { api } from './api';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
@@ -13,7 +13,10 @@ import { ReviewView } from './components/ReviewView';
 import { VerifiedView } from './components/VerifiedView';
 import { ProcessingView } from './components/ProcessingView';
 import { FailedView } from './components/FailedView';
+import { AnalyticsView } from './components/AnalyticsView';
 import { Toast } from './components/Toast';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 function AppInner() {
   const { show } = useToast();
@@ -46,7 +49,23 @@ function AppInner() {
   const [selectedDashDocs, setSelectedDashDocs] = useState<Set<string>>(new Set());
 
   // View
-  const [view, setView] = useState<'dashboard' | 'reporting'>('dashboard');
+  const [view, setView] = useState<ViewMode>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return (params.get('view') as ViewMode) || 'dashboard';
+  });
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (view === 'dashboard') {
+      url.searchParams.delete('view');
+    } else {
+      url.searchParams.set('view', view);
+    }
+    if (view !== 'analytics') {
+      url.searchParams.delete('tab');
+    }
+    window.history.replaceState({}, '', url.toString());
+  }, [view]);
 
   // Reporting filters
   const [reportDateFrom, setReportDateFrom] = useState('');
@@ -91,7 +110,27 @@ function AppInner() {
       try {
         es?.close();
         es = new EventSource(api.getEventsUrl());
-        es.onmessage = loadAll;
+        es.onmessage = (event) => {
+          try {
+            const parsed = JSON.parse(event.data);
+            const { event: eventType, data } = parsed;
+            if (eventType === 'document_updated' && data?.doc_id) {
+              api.getDocumentDetails(data.doc_id)
+                .then(updated => {
+                  setDocuments(prev => prev.map(d => d.id === data.doc_id ? { ...d, ...updated } : d));
+                })
+                .catch(() => {});
+              api.getQueueStatus().then(qs => setQueueStatus(qs)).catch(() => {});
+            } else if (eventType === 'document_deleted' && data?.doc_id) {
+              setDocuments(prev => prev.filter(d => d.id !== data.doc_id));
+              api.getQueueStatus().then(qs => setQueueStatus(qs)).catch(() => {});
+            } else if (eventType !== 'connected') {
+              loadAll();
+            }
+          } catch {
+            loadAll();
+          }
+        };
         es.onerror = () => {
           es?.close();
           es = null;
@@ -177,6 +216,20 @@ function AppInner() {
     }
   };
 
+  const prevDoc = () => {
+    const list = needsReview;
+    const prev = reviewIndex - 1;
+    if (prev >= 0) {
+      setReviewIndex(prev);
+      loadDocDetails(list[prev]);
+    }
+  };
+
+  const handleSkip = () => {
+    closeDoc();
+    setReviewIndex(0);
+  };
+
   // ---- Actions ----
   const handleVerify = async () => {
     if (!selectedDoc || !docDetails) return;
@@ -194,7 +247,15 @@ function AppInner() {
       });
       setDirty(false);
       show(`Saved ${selectedDoc.filename}`);
-      await loadAll();
+      // In-place update — no full list refresh
+      setDocuments(prev => prev.map(d =>
+        d.id === selectedDoc.id ? { ...d, status: 'verified' as const, verified_by_human: 1 } : d
+      ));
+      setQueueStatus(prev => prev ? {
+        ...prev,
+        needs_review: Math.max(0, prev.needs_review - 1),
+        verified: prev.verified + 1,
+      } : prev);
       nextDoc();
     } catch (err) {
       console.error(err);
@@ -290,16 +351,24 @@ function AppInner() {
   };
 
   // Keyboard
+  const handleKeyRef = useRef<((e: KeyboardEvent) => void) | null>(null);
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { closeDoc(); }
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && selectedDoc?.status === 'needs_review' && docDetails) {
-        handleVerify();
+    handleKeyRef.current = (e: KeyboardEvent) => {
+      if (selectedDoc && selectedDoc.status === 'needs_review' && docDetails) {
+        if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); prevDoc(); return; }
+        if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); nextDoc(); return; }
+        if (e.key === 's' && !e.ctrlKey && !e.metaKey && !(e.target as HTMLElement)?.closest('input,textarea,select')) {
+          e.preventDefault(); handleSkip(); return;
+        }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleVerify(); return; }
+        return;
       }
+      if (e.key === 'Escape') { closeDoc(); }
     };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [selectedDoc, docDetails, handleVerify]);
+    const handler = (e: KeyboardEvent) => handleKeyRef.current?.(e);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedDoc?.id, docDetails?.id]);
 
   // Unsaved warning
   useEffect(() => {
@@ -366,7 +435,7 @@ function AppInner() {
           onDetailsChange={setDocDetails} onDirtyChange={setDirty}
           reviewIndex={reviewIndex} totalReview={needsReview.length}
           onClose={closeDoc} onVerify={handleVerify}
-          onReprocess={handleReprocess} onNext={nextDoc} saving={saving}
+          onReprocess={handleReprocess} onNext={nextDoc} onPrev={prevDoc} saving={saving}
         />
       );
     }
@@ -376,12 +445,14 @@ function AppInner() {
       <div className="app-container">
         <header className="main-header">
           <div className="logo"><span>SSIAR</span></div>
-          <button onClick={closeDoc} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '13px' }}>
+          <Button variant="outline" size="sm" onClick={closeDoc}>
             Back
-          </button>
+          </Button>
         </header>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
-          <Loader2 size={32} className="animate-spin" style={{ color: 'var(--accent-violet)' }} />
+          <Card className="flex flex-col items-center justify-center p-8 min-h-[200px]">
+            <Loader2 size={32} className="animate-spin" style={{ color: 'var(--accent-violet)' }} />
+          </Card>
         </div>
       </div>
     );
@@ -405,6 +476,8 @@ function AppInner() {
             onToggleSelect={toggleReportDoc} onToggleSelectAll={toggleAllReportDocs}
             onOpenDoc={handleOpenDoc}
           />
+        ) : view === 'analytics' ? (
+          <AnalyticsView onBack={() => setView('dashboard')} />
         ) : (
           <>
             <StatCards

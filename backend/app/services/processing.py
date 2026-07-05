@@ -1,40 +1,35 @@
 import os
-os.environ["HF_HUB_OFFLINE"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 import signal
 import time
 import threading
 import shutil
 import cv2
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from app.config import TEMPLATES_DIR, TEMP_DIR, TEMPLATE_PDF, PROCESSING_TIMEOUT, TEMP_TTL_HOURS
+from app.config import TEMPLATES_DIR, TEMP_DIR, TEMPLATE_PDF, PROCESSING_TIMEOUT, TEMP_TTL_HOURS, MAX_WORKERS
 from app.database import (
     update_document_status, insert_or_update_form_data, get_pdf, store_page_image
 )
-from app.pipeline import (
+from app.image.pdf import (
     render_pdf_to_arrays, detect_consent, ZOOM
 )
-from app.modules.storage import store_roi_disk
-from app.modules.preprocessing import assess_image_quality, select_and_apply_preprocessing
-from app.modules.alignment import align_page_hierarchical
-from app.modules.roi import extract_dynamic_roi, ROIS_P1_POINTS, ROIS_P2_POINTS, ROIS_REMARKS_POINTS
-from app.modules.checkbox import detect_checkboxes, CheckboxState
-from app.modules import FieldType, FIELD_TYPE_MAP, RecognitionResult, SDQ_FIELDS
-from app.modules.digit_engine import get_digit_engine
-from app.modules.recognition import get_recognition_router
-from app.modules.consensus import compute_consensus
-from app.modules.validation import validate_field, check_cross_field_consistency
-from app.modules.confidence import fuse_confidence_bayesian
-from app.modules.azure_billing import get_billing_manager
+from app.image.storage import store_roi_disk
+from app.image.preprocessing import assess_image_quality, select_and_apply_preprocessing
+from app.image.alignment import align_page_hierarchical
+from app.image.roi import extract_dynamic_roi, detect_table_lines, ROIS_P1_POINTS, ROIS_P2_POINTS, ROIS_REMARKS_POINTS
+from app.image.checkbox import detect_checkboxes, CheckboxState
+
+from app.validation.fields import validate_field, check_cross_field_consistency
+from app.confidence import fuse_confidence_weighted_product
+from app.ocr.plugin import AzureOCRPlugin
+from app.services.azure import get_billing_manager
+from app.ocr.blank import is_blank_crop
 from app.sse import notify as notify_sse
 
-_executor = ThreadPoolExecutor(max_workers=2)
+_executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
 def get_executor() -> ThreadPoolExecutor:
     return _executor
@@ -103,20 +98,22 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
         p1_temp = cv2.imread(os.path.join(TEMPLATES_DIR, "template_p1.png"))
         p2_temp = cv2.imread(os.path.join(TEMPLATES_DIR, "template_p2.png")) if has_page2 else None
 
+        local_zones_p1 = {}
         if p1_temp is None:
             aligned_p1_raw = cv2.resize(p1_raw, (2483, 3508))
             align_method_p1 = "resize_fallback"
         else:
-            aligned_p1_raw, _, align_method_p1 = align_page_hierarchical(p1_raw, p1_temp)
+            aligned_p1_raw, local_zones_p1, align_method_p1 = align_page_hierarchical(p1_raw, p1_temp)
 
         aligned_p2_raw = None
         align_method_p2 = "none"
+        local_zones_p2 = {}
         if has_page2:
             if p2_temp is None:
                 aligned_p2_raw = cv2.resize(p2_raw, (2483, 3508))
                 align_method_p2 = "resize_fallback"
             else:
-                aligned_p2_raw, _, align_method_p2 = align_page_hierarchical(p2_raw, p2_temp)
+                aligned_p2_raw, local_zones_p2, align_method_p2 = align_page_hierarchical(p2_raw, p2_temp)
 
         # 4. Adaptive Preprocessing (applied on aligned raw images)
         aligned_p1 = select_and_apply_preprocessing(aligned_p1_raw, q_report_p1)
@@ -124,7 +121,7 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
 
         # 5. Extract Checkboxes (consent and q1..q25)
         # Checkboxes are processed using dynamic contour and stroke patterns
-        from app.pipeline import P1_Y_RANGES, P2_Y_RANGES, COLS_X_PTS
+        from app.image.pdf import P1_Y_RANGES, P2_Y_RANGES, COLS_X_PTS
         cb_results_p1 = detect_checkboxes(aligned_p1_raw, 1, P1_Y_RANGES, COLS_X_PTS, ZOOM)
         cb_results_p2 = detect_checkboxes(aligned_p2_raw, 2, P2_Y_RANGES, COLS_X_PTS, ZOOM) if has_page2 else {}
 
@@ -150,181 +147,89 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
         rois_p2 = ["math_pct", "science_pct", "language_pct", "rank", "remarks"] if has_page2 else []
         all_text_fields = rois_p1 + rois_p2
 
-        # Initialize engines
-        digit_engine = get_digit_engine()
-        text_router = get_recognition_router()
         billing_manager = get_billing_manager()
 
-        for field_name in all_text_fields:
-            page = aligned_p1 if field_name in rois_p1 else aligned_p2
-            page_num = 1 if field_name in rois_p1 else 2
-            
-            # Dynamic ROI Extraction with 20% padding
-            crop = extract_dynamic_roi(page, field_name, page_num)
-            if crop is None or crop.size == 0:
-                fields_data[field_name] = ""
-                fields_confidence[field_name] = 0.0
-                fields_validation[field_name] = "invalid"
-                continue
+        # Precompute table lines once per page (avoids 18+ redundant detect_table_lines calls)
+        from app.image.roi import detect_table_lines as _detect_table_lines
+        h_mask_p1, v_mask_p1 = _detect_table_lines(aligned_p1)
+        h_mask_p2 = v_mask_p2 = None
+        if has_page2 and aligned_p2 is not None:
+            h_mask_p2, v_mask_p2 = _detect_table_lines(aligned_p2)
 
-            # Save ROI crop separately on disk (extract from raw page for human readability)
-            raw_page = aligned_p1_raw if field_name in rois_p1 else aligned_p2_raw
-            raw_crop = extract_dynamic_roi(raw_page, field_name, page_num)
-            if raw_crop is not None and raw_crop.size > 0:
-                store_roi_disk(doc_id, field_name, raw_crop)
-            else:
-                store_roi_disk(doc_id, field_name, crop)
+        # Pre-analyze pages with Azure (once per page, then cached — 2 API calls per doc total)
+        if AzureOCRPlugin().is_available():
+            billing_manager.pre_analyze_pages(doc_id, aligned_p1_raw, aligned_p2_raw)
 
-            field_type = FIELD_TYPE_MAP.get(field_name, FieldType.PRINTED_TEXT)
-            rec_results = []
+        FIELD_WORKERS = min(4, len(all_text_fields)) if len(all_text_fields) > 1 else 1
 
-            # Routing based on field classification
-            if field_type == FieldType.HANDWRITTEN_DIGITS:
-                # 1. Run local Digit CNN
-                cnn_res = digit_engine.predict_number(crop)
-                norm_val, is_valid = validate_field(field_name, cnn_res.text)[0:2]
-                rec_results.append(RecognitionResult(
-                    text=cnn_res.text,
-                    confidence=cnn_res.confidence,
-                    engine="digit_cnn",
-                    field_name=field_name,
-                    is_valid=is_valid,
-                    normalized=norm_val,
-                    per_char_confidences=[d.confidence for d in cnn_res.per_digit]
-                ))
+        def _get_roi_rect(field_name: str):
+            if field_name in ROIS_P1_POINTS:
+                return ROIS_P1_POINTS[field_name], 1
+            if field_name in ROIS_P2_POINTS:
+                return ROIS_P2_POINTS[field_name], 2
+            if field_name == "remarks":
+                return ROIS_REMARKS_POINTS["remarks"], 2
+            return None, 0
 
-                # 2. Run EasyOCR as fallback
-                easy_plugin = text_router.get_plugin("easyocr")
-                if easy_plugin:
-                    easy_res = easy_plugin.recognize(crop, field_name)
-                    if easy_res:
-                        norm_val, is_valid = validate_field(field_name, easy_res.text)[0:2]
-                        rec_results.append(RecognitionResult(
-                            text=easy_res.text,
-                            confidence=easy_res.confidence,
-                            engine="easyocr",
-                            field_name=field_name,
-                            is_valid=is_valid,
-                            normalized=norm_val
-                        ))
+        def _process_one_field(field_name: str) -> tuple:
+            is_p1 = field_name in rois_p1
+            page = aligned_p1 if is_p1 else aligned_p2
+            page_num = 1 if is_p1 else 2
+            h_mask = h_mask_p1 if is_p1 else h_mask_p2
+            v_mask = v_mask_p1 if is_p1 else v_mask_p2
+            raw_page = aligned_p1_raw if is_p1 else aligned_p2_raw
 
-            elif field_type == FieldType.PRINTED_TEXT or field_type == FieldType.BINARY:
-                # Layer 1: Fast local OCR plugins (EasyOCR, PaddleOCR)
-                fast_engines = ["easyocr", "paddleocr"]
-                for name in fast_engines:
-                    plugin = text_router.get_plugin(name)
-                    if plugin:
-                        res = plugin.recognize(crop, field_name)
-                        if res:
-                            norm_val, is_valid = validate_field(field_name, res.text)[0:2]
-                            rec_results.append(RecognitionResult(
-                                text=res.text,
-                                confidence=res.confidence,
-                                engine=name,
-                                field_name=field_name,
-                                is_valid=is_valid,
-                                normalized=norm_val
-                            ))
-                
-                # Compute fast local consensus to check if fallback is needed
-                consensus = compute_consensus(field_name, rec_results, field_type)
-                norm_val, is_valid = validate_field(field_name, consensus.text)[0:2]
-                
-                # Layer 2: Heavy local OCR (Surya) only if fast engines failed or returned low confidence
-                if consensus.weight < 0.70 or not is_valid:
-                    surya_plugin = text_router.get_plugin("surya")
-                    if surya_plugin:
-                        surya_res = surya_plugin.recognize(crop, field_name)
-                        if surya_res:
-                            s_norm, s_valid = validate_field(field_name, surya_res.text)[0:2]
-                            rec_results.append(RecognitionResult(
-                                text=surya_res.text,
-                                confidence=surya_res.confidence,
-                                engine="surya",
-                                field_name=field_name,
-                                is_valid=s_valid,
-                                normalized=s_norm
-                            ))
+            crop = extract_dynamic_roi(page, field_name, page_num, h_mask, v_mask)
+            if crop is None or crop.size == 0 or is_blank_crop(crop):
+                return field_name, "", 1.0, "blank"
 
-            elif field_type == FieldType.HANDWRITTEN_WORDS:  # remarks
-                # Use local engine or EasyOCR
-                easy_plugin = text_router.get_plugin("easyocr")
-                if easy_plugin:
-                    easy_res = easy_plugin.recognize(crop, field_name)
-                    if easy_res:
-                        rec_results.append(RecognitionResult(
-                            text=easy_res.text,
-                            confidence=easy_res.confidence,
-                            engine="easyocr",
-                            field_name=field_name,
-                            is_valid=True,
-                            normalized=easy_res.text
-                        ))
+            raw_crop = extract_dynamic_roi(raw_page, field_name, page_num, h_mask, v_mask)
+            store_roi_disk(doc_id, field_name, raw_crop if (raw_crop is not None and raw_crop.size > 0) else crop)
 
-            # Compute local consensus voting
-            consensus = compute_consensus(field_name, rec_results, field_type)
-            norm_val, is_valid = validate_field(field_name, consensus.text)[0:2]
-            
-            # 7. Azure Cost Reduction - Cloud Fallback Last Resort
-            # If local recognition failed, has low confidence (< 0.60), or is invalid, call Azure crop DI
-            if (consensus.weight < 0.60 or not is_valid) and not is_crop_empty(crop):
-                if field_name in ROIS_P1_POINTS:
-                    page_num = 1
-                    aligned_page_img = aligned_p1_raw
-                    roi_rect = ROIS_P1_POINTS[field_name]
-                elif field_name in ROIS_P2_POINTS:
-                    page_num = 2
-                    aligned_page_img = aligned_p2_raw
-                    roi_rect = ROIS_P2_POINTS[field_name]
-                elif field_name in ROIS_REMARKS_POINTS:
-                    page_num = 2
-                    aligned_page_img = aligned_p2_raw
-                    roi_rect = ROIS_REMARKS_POINTS[field_name]
-                else:
-                    page_num = 1
-                    aligned_page_img = aligned_p1_raw
-                    roi_rect = (0.0, 0.0, 0.0, 0.0)
-
+            # Azure-only extraction from cached full-page result (ZERO additional API calls)
+            roi_rect, az_page_num = _get_roi_rect(field_name)
+            az_text = ""
+            az_conf = 0.0
+            az_valid = False
+            if roi_rect is not None:
                 azure_res = billing_manager.recognize_field_with_backoff(
                     doc_id=doc_id,
                     field_name=field_name,
-                    aligned_page_img=aligned_page_img,
-                    page_num=page_num,
+                    aligned_page_img=raw_page,
+                    page_num=az_page_num,
                     roi_rect=roi_rect,
                     crop=crop
                 )
                 if azure_res:
                     az_text, az_conf = azure_res
-                    az_norm, az_valid = validate_field(field_name, az_text)[0:2]
-                    
-                    # Add Azure result to consensus candidates and recompute
-                    rec_results.append(RecognitionResult(
-                        text=az_text,
-                        confidence=az_conf,
-                        engine="azure",
-                        field_name=field_name,
-                        is_valid=az_valid,
-                        normalized=az_norm
-                    ))
-                    consensus = compute_consensus(field_name, rec_results, field_type)
-                    norm_val, is_valid = validate_field(field_name, consensus.text)[0:2]
+                    norm_val, az_valid = validate_field(field_name, az_text)[0:2]
+                    az_text = norm_val
 
-            # 8. Bayesian Confidence Fusion
-            align_method = align_method_p1 if field_name in rois_p1 else align_method_p2
-            img_quality = q_report_p1["quality"] if field_name in rois_p1 else q_report_p2["quality"]
-            
-            fused_conf = fuse_confidence_bayesian(
-                ocr_conf=consensus.weight,
-                is_valid=is_valid,
+            align_method = align_method_p1 if is_p1 else align_method_p2
+            img_quality = q_report_p1["quality"] if is_p1 else q_report_p2["quality"]
+            fused_conf = fuse_confidence_weighted_product(
+                ocr_conf=az_conf,
+                is_valid=az_valid,
                 img_quality=img_quality,
                 alignment_method=align_method,
-                roi_refined=True,
-                consensus_weight=consensus.weight
+                roi_refined=True
             )
+            return field_name, az_text, fused_conf, "valid" if az_valid else "invalid"
 
-            fields_data[field_name] = norm_val
-            fields_confidence[field_name] = fused_conf
-            fields_validation[field_name] = "valid" if is_valid else "invalid"
+        with ThreadPoolExecutor(max_workers=FIELD_WORKERS) as field_executor:
+            field_futures = {field_executor.submit(_process_one_field, fn): fn for fn in all_text_fields}
+            for future in as_completed(field_futures):
+                fn = field_futures[future]
+                try:
+                    field_name, norm_val, fused_conf, valid_str = future.result(timeout=60)
+                    fields_data[field_name] = norm_val
+                    fields_confidence[field_name] = fused_conf
+                    fields_validation[field_name] = valid_str
+                except (TimeoutError, Exception) as e:
+                    print(f"Field {fn} timed out or failed: {e}")
+                    fields_data[fn] = ""
+                    fields_confidence[fn] = 0.01
+                    fields_validation[fn] = "invalid"
 
         # 9. Cross-Field Consistency Checks
         cross_ok, cross_penalty, cross_reason = check_cross_field_consistency(fields_data)
@@ -334,8 +239,10 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
                 fields_confidence[fn] = float(max(0.01, fields_confidence[fn] - cross_penalty))
 
         # 10. Escalation Level Assignment
-        any_invalid = any(v == "invalid" for v in fields_validation.values())
-        any_low_conf = any(c < 0.70 for c in fields_confidence.values())
+        # Core fields gate auto-verify; checkbox flags are informational only
+        CORE_FIELDS = {"roll_number", "class", "dob", "gender"}
+        any_invalid = any(fields_validation.get(f) == "invalid" for f in CORE_FIELDS)
+        any_core_low_conf = any(fields_confidence.get(f, 1) < 0.50 for f in CORE_FIELDS)
         any_cb_ambiguous = any(s in ("partial", "double_mark") for s in cb_confidences.values())
         low_quality = q_report_p1["quality"] < 50 or (has_page2 and q_report_p2["quality"] < 50)
         
@@ -343,12 +250,13 @@ def process_pdf_background(doc_id: str, auto_verify: bool = False):
             escalation_level = "level_4"  # Poor quality scan
         elif align_method_p1 == "resize_fallback" or (has_page2 and align_method_p2 == "resize_fallback"):
             escalation_level = "level_3"  # Alignment issue
-        elif any_invalid or any_low_conf or any_cb_ambiguous or consent_val == "Unanswered":
-            escalation_level = "level_2"  # Data validation warning
+        elif any_invalid or any_core_low_conf:
+            escalation_level = "level_2"  # Core field validation warning
         else:
-            escalation_level = "level_1"  # Perfectly clean
+            escalation_level = "level_1"  # All core fields valid with acceptable confidence
 
-        status = "verified" if (auto_verify and escalation_level == "level_1") else "needs_review"
+        # Auto-verify if core fields are solid (checkbox flags don't block verification)
+        status = "verified" if auto_verify and escalation_level == "level_1" else "needs_review"
 
         # 11. Write results and images to storage (avoiding SQLite blobs!)
         # Save aligned pages as compressed JPEGs to disk

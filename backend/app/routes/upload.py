@@ -6,7 +6,7 @@ from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Request
 import fitz
 from app.config import TEMP_DIR, MAX_UPLOAD_SIZE
 from app.database import insert_document, store_pdf
-from app.pipeline import classify_document, ZOOM
+from app.image.pdf import classify_document, ZOOM
 from app.services.processing import get_executor, process_pdf_background
 
 router = APIRouter()
@@ -38,11 +38,13 @@ def _classify_pdf(pdf_bytes: bytes) -> dict:
             os.remove(temp_pdf)
 
 
-def _queue_single_pdf(pdf_bytes: bytes, filename: str, auto_verify: bool, classification: dict = None) -> str:
+DEFAULT_CLASSIFICATION = {"type": "scanned", "dpi": 300, "pages": 1, "is_color": False}
+
+
+def _queue_single_pdf(pdf_bytes: bytes, filename: str, auto_verify: bool, pages: int = 1) -> str:
     doc_id = str(uuid.uuid4())
-    if classification is None:
-        classification = _classify_pdf(pdf_bytes)
-    insert_document(doc_id, filename, "processing", classification=classification, escalation_level="level_1")
+    cls = {**DEFAULT_CLASSIFICATION, "pages": pages}
+    insert_document(doc_id, filename, "processing", classification=cls, escalation_level="level_1")
     store_pdf(doc_id, pdf_bytes)
     get_executor().submit(process_pdf_background, doc_id, auto_verify)
     return doc_id
@@ -58,12 +60,6 @@ def _process_upload_sync(content: bytes, filename: str, auto_verify: bool, split
         if total < 2 or total % 2 != 0:
             src_doc.close()
             raise ValueError(f"Split requires an even number of pages, got {total}")
-        first_split_doc = fitz.open()
-        first_split_doc.insert_pdf(src_doc, from_page=0, to_page=1)
-        first_bytes = first_split_doc.tobytes()
-        classification = _classify_pdf(first_bytes)
-        classification["pages"] = 2
-        first_split_doc.close()
         for i in range(0, total, 2):
             split_doc = fitz.open()
             split_doc.insert_pdf(src_doc, from_page=i, to_page=i + 1)
@@ -71,12 +67,15 @@ def _process_upload_sync(content: bytes, filename: str, auto_verify: bool, split
             split_doc.close()
             base = os.path.splitext(filename)[0]
             part_name = f"{base}_p{i//2+1}.pdf"
-            did = _queue_single_pdf(split_bytes, part_name, auto_verify, classification)
+            did = _queue_single_pdf(split_bytes, part_name, auto_verify, pages=2)
             doc_ids.append(did)
         src_doc.close()
         print(f"Split upload: created {len(doc_ids)} documents from {filename}")
     else:
-        did = _queue_single_pdf(content, filename, auto_verify)
+        src_doc = fitz.open(stream=content, filetype="pdf")
+        total_pages = len(src_doc)
+        src_doc.close()
+        did = _queue_single_pdf(content, filename, auto_verify, pages=total_pages)
         doc_ids.append(did)
     return doc_ids
 

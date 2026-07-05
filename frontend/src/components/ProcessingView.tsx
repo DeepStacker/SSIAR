@@ -11,10 +11,10 @@ interface Props {
 export const ProcessingView: React.FC<Props> = ({ doc, onClose }) => (
   <div className="app-container">
     <DocHeader title="SSIAR — Quick Review" onClose={onClose} />
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: '16px' }}>
+    <div className="flex items-center justify-center h-[60vh] flex-col gap-4">
       <div className="processing-pulse"><Loader2 size={40} className="animate-spin" style={{ color: 'var(--accent-violet)' }} /></div>
-      <h3 style={{ fontSize: '18px', color: 'var(--text-secondary)' }}>Processing {doc.filename}...</h3>
-      <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Running OCR, alignment, and quality checks. Auto-refreshing...</p>
+      <h3 className="text-[18px] text-[var(--text-secondary)]">Processing {doc.filename}...</h3>
+      <p className="text-[13px] text-[var(--text-muted)]">Running OCR, alignment, and quality checks. Auto-refreshing...</p>
     </div>
   </div>
 );

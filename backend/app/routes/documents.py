@@ -6,21 +6,44 @@ from app.database import (
     bulk_delete_documents, update_document_status, insert_or_update_form_data,
     log_correction_data, get_edit_history, get_page_image
 )
-from app.crops import extract_crop, get_crop_page
-from app.ocr import get_router, get_normalizer
+from app.image.crops import extract_crop, get_crop_page
+from app.ocr.normalizers import get_normalizer
+from app.image.roi import ROIS_P1_POINTS, ROIS_P2_POINTS, ROIS_REMARKS_POINTS
 from app.schemas import VerifyDataRequest, BulkRequest
 from app.services.processing import get_executor, process_pdf_background
 from app.sse import notify as notify_sse
 
 FIELD_NAMES = {"roll_number", "class", "dob", "gender", "math_pct", "science_pct", "language_pct", "rank"}
 SCORE_FIELDS = {"math_pct", "science_pct", "language_pct", "rank"}
+MAX_TEXT_LEN = 32
 
 router = APIRouter()
 
 
+def _clean_field(value: str | None) -> str | None:
+    """Truncate and clean obviously garbage OCR values to prevent dashboard bloat."""
+    if not value or not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return value
+    # Truncate extremely long strings (garbage OCR)
+    if len(stripped) > MAX_TEXT_LEN:
+        return stripped[:MAX_TEXT_LEN] + "…"
+    return stripped
+
+
+def _clean_doc(doc: dict) -> dict:
+    for field in FIELD_NAMES:
+        if field in doc:
+            doc[field] = _clean_field(doc[field])
+    return doc
+
+
 @router.get("/api/documents")
 def list_documents():
-    return get_all_documents()
+    docs = get_all_documents()
+    return [_clean_doc(d) for d in docs]
 
 
 @router.get("/api/documents/{doc_id}")
@@ -165,7 +188,7 @@ def reprocess_field(doc_id: str, field_name: str):
     # Check cached Azure full-page result first (avoids repeat API call)
     _conf_scores = doc.get("confidence_scores") or {}
     _azure_cache = _conf_scores.get("_azure_cache") or {}
-    _page_key = "page_1" if field_name in __import__('app.ocr', fromlist=['ROIS_P1']).ROIS_P1 else "page_2"
+    _page_key = "page_1" if field_name in ROIS_P1_POINTS else "page_2"
     _cached = _azure_cache.get(_page_key, {}).get(field_name)
     if _cached and _cached[0] and _cached[1] > 0:
         norm_val, is_valid = get_normalizer(field_name)[0](_cached[0])
@@ -180,21 +203,14 @@ def reprocess_field(doc_id: str, field_name: str):
         result = None
 
     if result is None:
-        crop = extract_crop(aligned_img, field_name)
-        if crop is None or crop.size == 0:
-            raise HTTPException(status_code=404, detail="Crop region not found")
-        h, w = crop.shape[:2]
-        if h > 10 and w > 10:
-            up = cv2.resize(crop, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
-            gray = cv2.cvtColor(up, cv2.COLOR_BGR2GRAY)
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-            enhanced = clahe.apply(gray)
-            crop = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
-        router = get_router()
-        result = router.recognize_field(crop, field_name, route_override=['easyocr', 'trocr'], sequential=True)
-        normalizer_fn = get_normalizer(field_name)[0]
-        norm_val, is_valid = normalizer_fn(result.text)
-        new_confidence = result.confidence if is_valid else 0.0
+        return {
+            "field_name": field_name,
+            "value": doc.get(field_name) or doc.get("academic_scores", {}).get(field_name, ""),
+            "engine": "none",
+            "confidence": 0,
+            "updated": False,
+            "message": "No cached Azure result available — re-upload document to reprocess"
+        }
 
     print(f"⟳ reprocess_field {field_name}: engine={result.engine_name} raw='{result.text}' norm='{norm_val}' valid={is_valid} conf={result.confidence:.3f}")
 

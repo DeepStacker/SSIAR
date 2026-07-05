@@ -1,10 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Check, Loader2, Save } from 'lucide-react';
 import { Document, DocumentDetails, ZoomImage } from '../api';
 import { api } from '../api';
 import { DocHeader } from './DocHeader';
 import { ZoomPopup } from './ZoomPopup';
+import { PageViewer } from './PageViewer';
 import { useToast } from '../context/ToastContext';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 
 interface Props {
   doc: Document;
@@ -17,7 +21,59 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
   const [zoomImg, setZoomImg] = useState<ZoomImage | null>(null);
   const [reprocessingField, setReprocessingField] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pageViewer, setPageViewer] = useState<1 | 2 | null>(null);
+  const cropRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const focusedFieldRef = useRef<string | null>(null);
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { show } = useToast();
+
+  const showZoomForCrop = useCallback((key: string) => {
+    const el = cropRefs.current[key];
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setZoomImg({
+        src: api.getCropUrl(doc.id, `${key}.png`),
+        x: rect.right + 20,
+        y: rect.top + rect.height / 2,
+      });
+    }
+  }, [doc.id]);
+
+  const handleCropEnter = useCallback((e: React.MouseEvent, key: string) => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setZoomImg({ src: api.getCropUrl(doc.id, `${key}.png`), x: rect.left + rect.width / 2, y: rect.top });
+  }, [doc.id]);
+
+  const handleCropMove = useCallback((e: React.MouseEvent, key: string) => {
+    setZoomImg({ src: api.getCropUrl(doc.id, `${key}.png`), x: e.clientX, y: e.clientY });
+  }, [doc.id]);
+
+  const handleCropLeave = useCallback(() => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    leaveTimerRef.current = setTimeout(() => {
+      if (!focusedFieldRef.current) {
+        setZoomImg(null);
+      }
+    }, 80);
+  }, []);
+
+  const handleInputFocus = useCallback((e: React.FocusEvent<HTMLInputElement>, key: string) => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    focusedFieldRef.current = key;
+    showZoomForCrop(key);
+    e.target.select();
+  }, [showZoomForCrop]);
+
+  const handleInputBlur = useCallback(() => {
+    focusedFieldRef.current = null;
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    leaveTimerRef.current = setTimeout(() => {
+      if (!focusedFieldRef.current) {
+        setZoomImg(null);
+      }
+    }, 80);
+  }, []);
   const fields = [
     { key: 'roll_number', label: 'Roll Number' },
     { key: 'class', label: 'Class' },
@@ -96,104 +152,129 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
     <div className="app-container">
       <DocHeader title="SSIAR — Verified View" onClose={onClose} />
 
-      <div style={{ padding: '12px 20px', display: 'flex', justifyContent: 'flex-end' }}>
-        <button onClick={handleSave} className="btn btn-primary" style={{ fontSize: '14px', padding: '8px 20px' }} disabled={saving}>
+      <div className="flex justify-end gap-2 px-5 py-3">
+        <Button variant="outline" size="sm" onClick={() => setPageViewer(1)}>
+          Page 1
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setPageViewer(2)}>
+          Page 2
+        </Button>
+        <Button variant="default" size="sm" onClick={handleSave} disabled={saving}>
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
           {saving ? ' Saving...' : ' Save Changes'}
-        </button>
+        </Button>
       </div>
 
-      <div style={{ padding: '0 20px 20px' }}>
-        <div className="glass" style={{ padding: '20px', borderRadius: 'var(--radius-lg)' }}>
-          <h3 style={{ fontSize: '14px', marginBottom: '16px', color: 'var(--accent-emerald)' }}>
-            <Check size={14} /> Verified — {doc.filename}
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            {fields.map(f => (
-              <div key={f.key}>
-                <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>{f.label}</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
-                  <input className="form-input"
-                    style={{ width: '100px', fontSize: '14px', padding: '4px 8px', fontWeight: '500' }}
-                    value={getVal(f.key)} onChange={e => setVal(f.key, e.target.value)} />
-                  <img src={api.getCropUrl(doc.id, `${f.key}.png`)} alt={f.label}
-                    style={{ width: '120px', height: '30px', objectFit: 'contain', background: 'rgba(0,0,0,0.15)', borderRadius: '4px', border: '1px solid var(--color-border)', cursor: 'zoom-in' }}
-                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    onMouseMove={e => { setZoomImg({ src: (e.currentTarget as HTMLImageElement).src, x: e.clientX, y: e.clientY }); }}
-                    onMouseLeave={() => setZoomImg(null)} />
-                  {reprocessingField === f.key ? (
-                    <Loader2 size={14} className="animate-spin" style={{ color: 'var(--accent-cyan)' }} />
-                  ) : (
-                    <button onClick={() => handleReprocessField(f.key)}
-                      title="Re-run OCR on this field"
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', opacity: 0.5, fontSize: '14px' }}>⟳</button>
-                  )}
+      <div className="px-5 pb-5">
+        <Card>
+          <CardContent className="p-5">
+            <h3 className="text-sm mb-4 flex items-center gap-1" style={{ color: 'var(--accent-emerald)' }}>
+              <Check size={14} /> Verified — {doc.filename}
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              {fields.map(f => (
+                <div key={f.key}>
+                  <label className="text-xs block" style={{ color: 'var(--text-muted)' }}>{f.label}</label>
+                  <div className="flex items-center gap-2 py-1">
+                    <Input
+                      className="w-[100px] text-sm font-medium"
+                      value={getVal(f.key)} onChange={e => setVal(f.key, e.target.value)}
+                      onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                    />
+                    <div ref={el => { cropRefs.current[f.key] = el; }} className="leading-none"
+                      onMouseEnter={e => handleCropEnter(e, f.key)}
+                      onMouseMove={e => handleCropMove(e, f.key)}
+                      onMouseLeave={handleCropLeave}>
+                      <img src={api.getCropUrl(doc.id, `${f.key}.png`)} alt={f.label}
+                        className="w-[120px] h-[30px] object-contain bg-black/15 rounded cursor-zoom-in"
+                        style={{ border: '1px solid var(--color-border)' }}
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    </div>
+                    {reprocessingField === f.key ? (
+                      <Loader2 size={14} className="animate-spin shrink-0" style={{ color: 'var(--accent-cyan)' }} />
+                    ) : (
+                      <button onClick={() => handleReprocessField(f.key)}
+                        title="Re-run OCR on this field"
+                        className="bg-none border-none cursor-pointer p-0.5 opacity-50 text-sm"
+                        style={{ background: 'none', border: 'none' }}>⟳</button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-            <div>
-              <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Consent</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
+              ))}
+              <div>
+                <label className="text-xs block" style={{ color: 'var(--text-muted)' }}>Consent</label>
+                <div className="flex items-center gap-2 py-1">
                   {['Yes', 'No', 'Unanswered'].map(c => (
-                  <button key={c} onClick={() => onDetailsChange?.({ ...details, consent: c })}
-                    style={{
-                      padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
-                      border: '1px solid',
-                      background: (details.consent || 'Unanswered') === c ? 'rgba(16,185,129,0.15)' : 'rgba(0,0,0,0.1)',
-                      borderColor: (details.consent || 'Unanswered') === c ? 'var(--accent-emerald)' : 'var(--color-border)',
-                      color: (details.consent || 'Unanswered') === c ? 'var(--accent-emerald)' : 'var(--text-secondary)',
-                    }}>{c}</button>
-                ))}
+                    <button key={c} onClick={() => onDetailsChange?.({ ...details, consent: c })}
+                      style={{
+                        padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                        border: '1px solid',
+                        background: (details.consent || 'Unanswered') === c ? 'rgba(16,185,129,0.15)' : 'rgba(0,0,0,0.1)',
+                        borderColor: (details.consent || 'Unanswered') === c ? 'var(--accent-emerald)' : 'var(--color-border)',
+                        color: (details.consent || 'Unanswered') === c ? 'var(--accent-emerald)' : 'var(--text-secondary)',
+                      }}>{c}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs block" style={{ color: 'var(--text-muted)' }}>Remarks</label>
+                <div className="flex items-center gap-2 py-1">
+                  <textarea
+                    className="w-full text-sm px-2 py-1 resize-y rounded"
+                    style={{ height: '50px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--text-primary)' }}
+                    value={details.remarks || ''} onChange={e => {
+                      if (onDetailsChange) onDetailsChange({ ...details, remarks: e.target.value });
+                    }} />
+                </div>
               </div>
             </div>
-            <div>
-              <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Remarks</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
-                <textarea className="form-input"
-                  style={{ width: '100%', fontSize: '13px', padding: '4px 8px', resize: 'vertical', height: '50px' }}
-                  value={details.remarks || ''} onChange={e => {
-                    if (onDetailsChange) onDetailsChange({ ...details, remarks: e.target.value });
-                  }} />
-              </div>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <div style={{ padding: '0 20px 20px' }}>
-        <div className="glass" style={{ padding: '24px', borderRadius: 'var(--radius-lg)' }}>
-          <h3 style={{ fontSize: '18px', color: 'var(--text-secondary)', marginBottom: '16px' }}>SDQ Responses (Q1–Q25)</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-            {Array.from({ length: 25 }, (_, i) => {
-              const qi = i + 1;
-              const q = `q${qi}`;
-              const raw = details.responses?.[q];
-              const isMulti = Array.isArray(raw) && raw.filter((x: number) => x > 0).length > 1;
-              return (
-                <div key={q} style={{
-                  display: 'flex', alignItems: 'center', gap: '4px',
-                  padding: '6px 10px', borderRadius: '8px',
-                  background: isMulti ? 'rgba(168,85,247,0.08)' : 'rgba(0,0,0,0.08)',
-                  border: `1px solid ${isMulti ? 'rgba(168,85,247,0.25)' : 'transparent'}`,
-                }}>
-                  <div style={{ width: '24px', fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', flexShrink: 0 }}>Q{qi}</div>
-                  <img src={api.getCropUrl(doc.id, `${q}.png`)} alt={q}
-                    style={{ width: '160px', height: '50px', objectFit: 'contain', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', cursor: 'zoom-in', flexShrink: 0 }}
-                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    onMouseMove={e => { setZoomImg({ src: (e.currentTarget as HTMLImageElement).src, x: e.clientX, y: e.clientY }); }}
-                    onMouseLeave={() => setZoomImg(null)} />
-                  <span style={{ fontSize: '14px', fontWeight: '700', color: isMulti ? '#a855f7' : 'var(--text-primary)', minWidth: '24px', textAlign: 'center' }}>
-                    {Array.isArray(raw) ? raw.filter((x: number) => x > 0).join(',') || '—' : raw || '—'}
-                  </span>
-                  {isMulti && <span style={{ marginLeft: '2px', fontSize: '10px', color: '#a855f7' }}>✦</span>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      <div className="px-5 pb-5">
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="text-lg mb-4" style={{ color: 'var(--text-secondary)' }}>SDQ Responses (Q1–Q25)</h3>
+            <div className="grid grid-cols-2 gap-1.5">
+              {Array.from({ length: 25 }, (_, i) => {
+                const qi = i + 1;
+                const q = `q${qi}`;
+                const raw = details.responses?.[q];
+                const isMulti = Array.isArray(raw) && raw.filter((x: number) => x > 0).length > 1;
+                return (
+                  <div key={q} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg"
+                    style={{
+                      background: isMulti ? 'rgba(168,85,247,0.08)' : 'rgba(0,0,0,0.08)',
+                      border: `1px solid ${isMulti ? 'rgba(168,85,247,0.25)' : 'transparent'}`,
+                    }}>
+                    <div className="w-6 text-xs font-bold shrink-0" style={{ color: 'var(--text-muted)' }}>Q{qi}</div>
+                    <div ref={el => { cropRefs.current[`sdq_${q}`] = el; }} className="leading-none"
+                      onMouseEnter={e => {
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setZoomImg({ src: api.getCropUrl(doc.id, `${q}.png`), x: rect.left + rect.width / 2, y: rect.top });
+                      }}
+                      onMouseMove={e => { setZoomImg({ src: api.getCropUrl(doc.id, `${q}.png`), x: e.clientX, y: e.clientY }); }}
+                      onMouseLeave={handleCropLeave}>
+                      <img src={api.getCropUrl(doc.id, `${q}.png`)} alt={q}
+                        className="w-[160px] h-[50px] object-contain bg-black/20 rounded cursor-zoom-in shrink-0"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    </div>
+                    <span className="text-sm font-bold min-w-[24px] text-center"
+                      style={{ color: isMulti ? '#a855f7' : 'var(--text-primary)' }}>
+                      {Array.isArray(raw) ? raw.filter((x: number) => x > 0).join(',') || '—' : raw || '—'}
+                    </span>
+                    {isMulti && <span className="ml-0.5 text-xs" style={{ color: '#a855f7' }}>✦</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <ZoomPopup zoom={zoomImg} />
+      {pageViewer && <PageViewer docId={doc.id} pageNum={pageViewer} onClose={() => setPageViewer(null)} />}
     </div>
   );
 };
