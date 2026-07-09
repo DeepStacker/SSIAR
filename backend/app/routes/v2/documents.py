@@ -218,11 +218,13 @@ def serve_crop(doc_id: str, filename: str):
                     if page:
                         sel_marks = [el for el in page.elements if el.element_type == "selection_mark"]
                         rows = []
+                        scale_y = page.height / 3508.0
+                        y_tolerance = 100.0 * scale_y
                         for mark in sel_marks:
                             my = mark.bbox[1]
                             found_row = False
                             for r in rows:
-                                if abs(r[0].bbox[1] - my) < 50.0:
+                                if abs(r[0].bbox[1] - my) < y_tolerance:
                                     r.append(mark)
                                     found_row = True
                                     break
@@ -233,7 +235,8 @@ def serve_crop(doc_id: str, filename: str):
                         rows.sort(key=lambda r: sum(m.bbox[1] for m in r) / len(r))
                         
                         if not is_page_2:
-                            q_rows = [r for r in rows if (sum(m.bbox[1] for m in r) / len(r)) >= 1200.0]
+                            y_boundary = page.height * 0.38
+                            q_rows = [r for r in rows if (sum(m.bbox[1] for m in r) / len(r)) >= y_boundary]
                             row_idx = q_num - 1
                         else:
                             q_rows = rows

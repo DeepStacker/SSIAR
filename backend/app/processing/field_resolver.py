@@ -103,13 +103,40 @@ def resolve_field(
             x0, y0, x1, y1 = rect
             calculated_bbox = [x0 * scale, y0 * scale, x1 * scale, y1 * scale]
     
-    # Find candidate elements near the anchor
-    tolerance = max(field_def.width, field_def.height) * 2.0 + 50.0
+    # Find candidate elements near the anchor using direction-aware tolerance
+    # For right/left: cross-axis (dy) should be tight (field height)
+    # For above/below: cross-axis (dx) should be tight (field width)
+    scale = 300.0 / 72.0
+    # Try inline value extraction first (if the matching line contains both label and value)
+    if anchor_el:
+        for el in page.elements:
+            if el.element_type == "line" and anchor_text.lower() in el.text.lower():
+                cleaned = el.text.replace(anchor_text, "").strip()
+                cleaned = re.sub(r'^[:\-\s\=]+', '', cleaned).strip()
+                if cleaned:
+                    is_valid = False
+                    if field_def.type == "number" and any(c.isdigit() for c in cleaned) and len(cleaned) < 15:
+                        is_valid = True
+                    elif field_def.type == "date" and len(cleaned) < 15:
+                        is_valid = True
+                    elif field_def.type == "gender" and len(cleaned) < 10:
+                        is_valid = True
+                    if is_valid:
+                        # Extract the trailing parts as the value
+                        return cleaned, el.confidence, True, el.bbox, el.polygon, page.page
+
+    # Find candidate elements near the anchor using direction-aware tolerance
+    # For right/left: cross-axis (dy) should be strictly constrained to same row (max 150 pixels)
+    # For above/below: cross-axis (dx) should be constrained to same column (max 150 pixels)
+    if direction in ("right", "left"):
+        tolerance = 150.0
+    else:
+        tolerance = 150.0
     candidates = find_text_near(page, anchor_text, direction, tolerance)
     
     if not candidates:
-        # Fallback: try a broader search
-        candidates = find_text_near(page, anchor_text, direction, tolerance * 2.0)
+        # Fallback: try a broader search (max 250 pixels)
+        candidates = find_text_near(page, anchor_text, direction, 250.0)
     
     if not candidates:
         calculated_poly = [
@@ -124,6 +151,43 @@ def resolve_field(
     value_el = candidates[0]
     text = value_el.text.strip()
     confidence = value_el.confidence
+    bbox = value_el.bbox
+    polygon = value_el.polygon
+    
+    # Merge consecutive words on the same row (e.g. "40" and "%")
+    if value_el.element_type == "word":
+        curr_el = value_el
+        merged_elements = [value_el]
+        while True:
+            next_el = None
+            for el in page.elements:
+                if el.element_type == "word" and el not in merged_elements and el is not anchor_el:
+                    # Check vertical alignment (same row) and immediate horizontal proximity
+                    dy = abs((el.bbox[1] + el.bbox[3]) / 2.0 - (curr_el.bbox[1] + curr_el.bbox[3]) / 2.0)
+                    dx = el.bbox[0] - curr_el.bbox[2]
+                    if dy < 30.0 and 0.0 <= dx < 100.0:
+                        next_el = el
+                        break
+            if next_el:
+                text += " " + next_el.text.strip()
+                merged_elements.append(next_el)
+                curr_el = next_el
+            else:
+                break
+        
+        # If we merged multiple words, compute the bounding box/polygon of the merged group
+        if len(merged_elements) > 1:
+            mx0 = min(el.bbox[0] for el in merged_elements)
+            my0 = min(el.bbox[1] for el in merged_elements)
+            mx1 = max(el.bbox[2] for el in merged_elements)
+            my1 = max(el.bbox[3] for el in merged_elements)
+            bbox = [mx0, my0, mx1, my1]
+            polygon = [
+                mx0, my0,
+                mx1, my0,
+                mx1, my1,
+                mx0, my1
+            ]
     
     # For selection marks, return the state
     if value_el.element_type == "selection_mark":
@@ -135,6 +199,8 @@ def resolve_field(
             value_el = candidates[1]
             text = value_el.text.strip()
             confidence = value_el.confidence
+            bbox = value_el.bbox
+            polygon = value_el.polygon
         else:
             calculated_poly = [
                 calculated_bbox[0], calculated_bbox[1],
@@ -144,7 +210,7 @@ def resolve_field(
             ] if calculated_bbox else []
             return "", 0.0, False, calculated_bbox, calculated_poly, page.page
             
-    return text, confidence, True, value_el.bbox, value_el.polygon, page.page
+    return text, confidence, True, bbox, polygon, page.page
 
 
 def resolve_all_fields(

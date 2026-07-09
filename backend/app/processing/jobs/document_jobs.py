@@ -113,30 +113,40 @@ def get_job_queue() -> JobQueue:
 
 # ── Document Processing Orchestrator ─────────────────────────────────────────
 
-def get_column_index(x_coord: float) -> int:
-    # x_coord midpoints in pixels (300 DPI)
-    # Midpoints: (1603 + 1872) / 2 = 1737.5, (1872 + 2150) / 2 = 2011
-    if x_coord < 1737.5:
+def get_column_index(x_coord: float, page_width: float) -> int:
+    # Scale midpoints relative to the page width:
+    # Col 1 is at ~63.7%, Col 2 is at ~74.2%, Col 3 is at ~85.0%
+    # Midpoints: (63.7 + 74.2) / 2 = 68.95% (0.69), (74.2 + 85.0) / 2 = 79.6% (0.796)
+    rel_x = x_coord / page_width
+    if rel_x < 0.69:
         return 1
-    elif x_coord < 2011.0:
+    elif rel_x < 0.796:
         return 2
     else:
         return 3
 
 
-def resolve_page_selection_marks(page_elements: list, is_page_2: bool) -> tuple[dict[str, int], str]:
+def resolve_page_selection_marks(
+    page_elements: list,
+    is_page_2: bool,
+    page_width: float = 2483.0,
+    page_height: float = 3508.0
+) -> tuple[dict[str, int], str]:
     # Extract all selection marks
     sel_marks = [el for el in page_elements if el.element_type == "selection_mark"]
     if not sel_marks:
         return {}, "Unanswered"
     
-    # Group selection marks into rows by Y coordinate (Y tolerance of 50.0 pixels)
+    # Group selection marks into rows by Y coordinate (Y tolerance of 100.0 pixels scaled to page height)
+    scale_y = page_height / 3508.0
+    y_tolerance = 100.0 * scale_y
+    
     rows = []
     for mark in sel_marks:
         my = mark.bbox[1]  # y_min
         found_row = False
         for r in rows:
-            if abs(r[0].bbox[1] - my) < 50.0:
+            if abs(r[0].bbox[1] - my) < y_tolerance:
                 r.append(mark)
                 found_row = True
                 break
@@ -154,18 +164,25 @@ def resolve_page_selection_marks(page_elements: list, is_page_2: bool) -> tuple[
     consent_val = "Unanswered"
     
     if not is_page_2:
-        # Page 1: consent at Y < 1200, Q1-Q12 at Y >= 1200
-        consent_rows = [r for r in rows if (sum(m.bbox[1] for m in r) / len(r)) < 1200.0]
-        question_rows = [r for r in rows if (sum(m.bbox[1] for m in r) / len(r)) >= 1200.0]
+        # Page 1: consent is in the upper part (Y < 40% of page height), Q1-Q12 are in the lower part
+        y_boundary = page_height * 0.38
+        consent_rows = [r for r in rows if (sum(m.bbox[1] for m in r) / len(r)) < y_boundary]
+        question_rows = [r for r in rows if (sum(m.bbox[1] for m in r) / len(r)) >= y_boundary]
         
         # Parse consent
         if consent_rows:
-            c_marks = consent_rows[0]
+            c_marks = []
+            for r in consent_rows:
+                c_marks.extend(r)
             c_marks.sort(key=lambda m: m.bbox[0])
-            if len(c_marks) >= 1 and c_marks[0].text == "✓":
-                consent_val = "Yes"
-            elif len(c_marks) >= 2 and c_marks[1].text == "✓":
-                consent_val = "No"
+            
+            selected_mark = next((m for m in c_marks if m.text == "✓"), None)
+            if selected_mark:
+                rel_cx = selected_mark.bbox[0] / page_width
+                if rel_cx < 0.83:
+                    consent_val = "Yes"
+                else:
+                    consent_val = "No"
                 
         # Parse Q1-Q12
         for idx, r in enumerate(question_rows[:12]):
@@ -173,7 +190,7 @@ def resolve_page_selection_marks(page_elements: list, is_page_2: bool) -> tuple[
             selected_col = 0
             for m in r:
                 if m.text == "✓":
-                    selected_col = get_column_index(m.bbox[0])
+                    selected_col = get_column_index(m.bbox[0], page_width)
                     break
             responses[f"q{q_num}"] = selected_col
     else:
@@ -183,7 +200,7 @@ def resolve_page_selection_marks(page_elements: list, is_page_2: bool) -> tuple[
             selected_col = 0
             for m in r:
                 if m.text == "✓":
-                    selected_col = get_column_index(m.bbox[0])
+                    selected_col = get_column_index(m.bbox[0], page_width)
                     break
             responses[f"q{q_num}"] = selected_col
             
@@ -264,35 +281,43 @@ def process_document_background(
         finally:
             put_conn(conn)
         
-        # 4. Send to Azure Document Intelligence (whole pages)
-        from app.ocr.plugin import AzureOCRPlugin
-        plugin = AzureOCRPlugin()
-        azure_full_page_results = []
-        
-        if plugin.is_available():
-            for i, page_img in enumerate(pages):
-                try:
-                    result = plugin.recognize_page(page_img)
-                    azure_full_page_results.append(result)
-                except Exception as e:
-                    print(f"Azure analysis failed for page {i+1}: {e}")
-                    azure_full_page_results.append(None)
-        
-        # 5. Normalize Azure response
+        # 4. Check for cached Azure response (skip expensive API calls during re-processing)
         from app.processing.azure_processor import normalize_azure_response
-        raw_responses = {}
-        for i, (page_img, azure_res) in enumerate(
-            zip(pages, azure_full_page_results or [None] * len(pages))
-        ):
-            if azure_res:
-                normalized = normalize_azure_response(doc_id, azure_res)
-                raw_responses[f"page_{i+1}"] = normalized.raw_response
+        cached_raw = _load_cached_azure_response(doc_id)
         
-        # Store raw Azure response
-        _store_azure_response(doc_id, raw_responses)
-        
-        # 6. Normalize all pages together
-        combined_normalized = _combine_normalized_responses(doc_id, azure_full_page_results)
+        if cached_raw:
+            print(f"[{doc_id}] Reusing cached Azure response (skipping API call)")
+            raw_responses = cached_raw
+            combined_normalized = normalize_azure_response(doc_id, cached_raw)
+        else:
+            # 4b. Send to Azure Document Intelligence (whole pages)
+            from app.ocr.plugin import AzureOCRPlugin
+            plugin = AzureOCRPlugin()
+            azure_full_page_results = []
+            
+            if plugin.is_available():
+                for i, page_img in enumerate(pages):
+                    try:
+                        result = plugin.recognize_page(page_img)
+                        azure_full_page_results.append(result)
+                    except Exception as e:
+                        print(f"Azure analysis failed for page {i+1}: {e}")
+                        azure_full_page_results.append(None)
+            
+            # 5. Normalize Azure response
+            raw_responses = {}
+            for i, (page_img, azure_res) in enumerate(
+                zip(pages, azure_full_page_results or [None] * len(pages))
+            ):
+                if azure_res:
+                    normalized = normalize_azure_response(doc_id, azure_res)
+                    raw_responses[f"page_{i+1}"] = normalized.raw_response
+            
+            # Store raw Azure response for future reuse
+            _store_azure_response(doc_id, raw_responses)
+            
+            # 6. Normalize all pages together
+            combined_normalized = _combine_normalized_responses(doc_id, azure_full_page_results)
         
         _update_doc_status(doc_id, "azure_completed", user_id=user_id)
         notify_sse("document_updated", {
@@ -311,7 +336,9 @@ def process_document_background(
                         page_obj = p
                         break
                 if page_obj:
-                    p_resp, p_consent = resolve_page_selection_marks(page_obj.elements, is_p2)
+                    p_resp, p_consent = resolve_page_selection_marks(
+                        page_obj.elements, is_p2, page_obj.width, page_obj.height
+                    )
                     responses.update(p_resp)
                     if not is_p2:
                         consent = p_consent
@@ -445,6 +472,22 @@ def _store_azure_response(doc_id: str, raw_responses: dict):
         conn.commit()
     finally:
         put_conn(conn)
+
+
+def _load_cached_azure_response(doc_id: str) -> Optional[dict]:
+    """Load a previously stored Azure response from the database, if available."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT raw_response FROM azure_responses WHERE document_id = ?", (doc_id,))
+        row = cur.fetchone()
+        if row and row[0]:
+            return json.loads(row[0])
+    except Exception:
+        pass
+    finally:
+        put_conn(conn)
+    return None
 
 
 def _store_processed_results(

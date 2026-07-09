@@ -98,15 +98,37 @@ def _normalize_from_sdk(doc_id: str, result: Any) -> NormalizedAzureResponse:
 
 
 def _normalize_from_dict(doc_id: str, raw: dict) -> NormalizedAzureResponse:
-    """Normalize from a raw dict (e.g., loaded from JSON storage)."""
-    model_id = raw.get("model_id", "prebuilt-read")
-    pages_raw = raw.get("pages", [])
-    pages = []
+    """Normalize from a raw dict (e.g., loaded from JSON storage).
     
+    Handles two formats:
+    1. Flat: {"pages": [...], "modelId": ...}           (single analyzeResult)
+    2. Per-page: {"page_1": {analyzeResult}, "page_2": {analyzeResult}}  (stored format)
+    """
+    model_id = raw.get("modelId", raw.get("model_id", "prebuilt-layout"))
+    pages_raw = raw.get("pages", [])
+    
+    # Detect per-page storage format: {"page_1": {...}, "page_2": {...}}
+    if not pages_raw:
+        page_keys = sorted([k for k in raw.keys() if k.startswith("page_")])
+        if page_keys:
+            # Each page_N is a full analyzeResult; collect all inner pages
+            for pg_key in page_keys:
+                pg_idx = int(pg_key.split("_")[1])  # e.g. "page_1" -> 1
+                sub_result = raw[pg_key]
+                if not isinstance(sub_result, dict):
+                    continue
+                inner_pages = sub_result.get("pages", [])
+                for ip in inner_pages:
+                    # Override pageNumber to match the outer page key
+                    ip_copy = dict(ip)
+                    ip_copy["pageNumber"] = pg_idx
+                    pages_raw.append(ip_copy)
+    
+    pages = []
     for p in pages_raw:
         unit = p.get("unit", "inch")
         np_page = NormalizedPage(
-            page=p.get("page_number", p.get("page", 1)),
+            page=p.get("pageNumber", p.get("page_number", p.get("page", 1))),
             angle=p.get("angle", 0.0),
             width=p.get("width", 0.0) * (300.0 if unit == "inch" else 1.0),
             height=p.get("height", 0.0) * (300.0 if unit == "inch" else 1.0),
@@ -134,7 +156,7 @@ def _normalize_from_dict(doc_id: str, raw: dict) -> NormalizedAzureResponse:
                 element_type="line",
             ))
         
-        for mark in p.get("selection_marks", []):
+        for mark in p.get("selectionMarks", p.get("selection_marks", [])):
             poly = _scale_polygon(mark.get("polygon", []), unit)
             bbox = _polygon_to_bbox(poly) if poly else [0, 0, 0, 0]
             np_page.elements.append(NormalizedElement(
@@ -209,8 +231,14 @@ def find_text_near(
     """
     Find text elements near a given anchor text on the page.
     Uses spatial relationship to locate field values.
+    
+    For 'right'/'left': requires significant horizontal displacement from anchor
+    and tight vertical alignment. Sorts by vertical closeness first, then distance.
+    
+    For 'below'/'above': requires significant vertical displacement from anchor
+    and tight horizontal alignment. Sorts by horizontal closeness first, then distance.
     """
-    # Find the anchor element
+    # Find the anchor element (prefer line elements for multi-word anchors)
     anchor_el = None
     for el in page.elements:
         if anchor_text.lower() in el.text.lower():
@@ -221,6 +249,16 @@ def find_text_near(
         return []
     
     ax0, ay0, ax1, ay1 = anchor_el.bbox
+    
+    # Expand anchor boundary to the full line containing the anchor text to establish the true label boundary
+    for el in page.elements:
+        if el.element_type == "line" and anchor_text.lower() in el.text.lower():
+            ax0 = min(ax0, el.bbox[0])
+            ay0 = min(ay0, el.bbox[1])
+            ax1 = max(ax1, el.bbox[2])
+            ay1 = max(ay1, el.bbox[3])
+            break
+            
     acx = (ax0 + ax1) / 2.0
     acy = (ay0 + ay1) / 2.0
     
@@ -228,8 +266,12 @@ def find_text_near(
     for el in page.elements:
         if el is anchor_el:
             continue
-        # Skip elements that overlap significantly with the anchor (e.g. sub-words or label words)
-        if _overlaps(el.bbox, anchor_el.bbox, 0.2):
+        # Only consider word elements for value extraction (skip lines to avoid
+        # picking up compound labels like "जन्म तिथि" when searching for "जन्म")
+        if el.element_type not in ("word", "selection_mark"):
+            continue
+        # Skip elements that overlap significantly with the anchor boundary
+        if _overlaps(el.bbox, [ax0, ay0, ax1, ay1], 0.2):
             continue
             
         ex0, ey0, ex1, ey1 = el.bbox
@@ -240,19 +282,28 @@ def find_text_near(
         dy = ecy - acy
         
         match = False
-        if direction == "below" and dy > 0 and abs(dx) < tolerance:
+        cross_axis_dev = 0.0  # deviation on the perpendicular axis
+        
+        # Enforce that the value must be strictly on the target side of the expanded anchor label boundary
+        if direction == "right" and ex0 >= ax1 - 15.0 and abs(dy) < tolerance:
             match = True
-        elif direction == "above" and dy < 0 and abs(dx) < tolerance:
+            cross_axis_dev = abs(dy)
+        elif direction == "left" and ex1 <= ax0 + 15.0 and abs(dy) < tolerance:
             match = True
-        elif direction == "right" and dx > 0 and abs(dy) < tolerance:
+            cross_axis_dev = abs(dy)
+        elif direction == "below" and ey0 >= ay1 - 15.0 and abs(dx) < tolerance:
             match = True
-        elif direction == "left" and dx < 0 and abs(dy) < tolerance:
+            cross_axis_dev = abs(dx)
+        elif direction == "above" and ey1 <= ay0 + 15.0 and abs(dx) < tolerance:
             match = True
+            cross_axis_dev = abs(dx)
         
         if match:
-            distance = (dx ** 2 + dy ** 2) ** 0.5
-            candidates.append((distance, el))
+            main_distance = (dx ** 2 + dy ** 2) ** 0.5
+            # Sort key: cross-axis deviation dominates (100x weight), then main distance
+            sort_key = cross_axis_dev * 100.0 + main_distance
+            candidates.append((sort_key, el))
     
-    # Sort by distance (closest first)
+    # Sort by weighted key (tightest vertical/horizontal alignment first)
     candidates.sort(key=lambda x: x[0])
     return [c for _, c in candidates]
