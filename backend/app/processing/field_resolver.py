@@ -15,6 +15,88 @@ from app.processing.types import (
 from app.processing.azure_processor import find_text_near
 
 
+def _polygon_to_bbox(poly: list[float]) -> list[float]:
+    if not poly or len(poly) < 8:
+        return [0.0, 0.0, 0.0, 0.0]
+    xs = poly[0::2]
+    ys = poly[1::2]
+    return [min(xs), min(ys), max(xs), max(ys)]
+
+
+def resolve_field_from_tables(
+    anchor_text: str,
+    raw_response: dict,
+    page_num: int
+) -> Optional[tuple[str, float, list[float], list[float]]]:
+    """Search for the anchor and its value in the structured tables from Azure DI."""
+    if not raw_response:
+        return None
+        
+    # Get the raw page data
+    page_raw = raw_response.get(f"page_{page_num}", {})
+    if not page_raw or "pages" not in page_raw:
+        # Fallback if flat
+        page_raw = raw_response
+        
+    tables = page_raw.get("tables", [])
+    if not tables:
+        # Check inside inner pages just in case
+        for p in page_raw.get("pages", []):
+            p_num = p.get("pageNumber", p.get("page", 1))
+            if p_num == page_num:
+                tables = p.get("tables", [])
+                break
+                
+    if not tables:
+        return None
+        
+    for table in tables:
+        row_cells = {}
+        for cell in table.get("cells", []):
+            r_idx = cell.get("rowIndex")
+            c_idx = cell.get("columnIndex")
+            if r_idx is not None and c_idx is not None:
+                row_cells.setdefault(r_idx, {})[c_idx] = cell
+                
+        for r_idx, cols in row_cells.items():
+            if 0 in cols and 1 in cols:
+                label_cell = cols[0]
+                val_cell = cols[1]
+                
+                label_content = label_cell.get("content", "")
+                if anchor_text.lower() in label_content.lower():
+                    # Match found! Extract value content and coordinates
+                    val_text = val_cell.get("content", "").strip()
+                    
+                    # Clean up prefix punctuation
+                    val_text = re.sub(r'^[:\-\s\=]+', '', val_text).strip()
+                    
+                    # Extract polygon/bbox if present
+                    poly = []
+                    bbox = None
+                    regions = val_cell.get("boundingRegions", [])
+                    if regions:
+                        poly = regions[0].get("polygon", [])
+                        unit = "pixel"
+                        # Try to detect unit from the parent page
+                        for p in page_raw.get("pages", []):
+                            p_num = p.get("pageNumber", p.get("page", 1))
+                            if p_num == page_num:
+                                unit = p.get("unit", "pixel")
+                                break
+                        if unit == "inch":
+                            poly = [pt * 300.0 for pt in poly]
+                        if poly and len(poly) >= 8:
+                            bbox = _polygon_to_bbox(poly)
+                            
+                    # Get average confidence of words inside cell or default
+                    conf = 1.0
+                    
+                    return val_text, conf, bbox, poly
+                    
+    return None
+
+
 def resolve_field(
     field_def: FieldDefinition,
     normalized: NormalizedAzureResponse,
@@ -42,6 +124,17 @@ def resolve_field(
     
     anchor_text = field_def.anchor
     direction = field_def.relationship
+    
+    # Try structured table resolution first (highest accuracy, handles rotations/perspective automatically)
+    try:
+        tbl_res = resolve_field_from_tables(anchor_text, normalized.raw_response, page_num)
+        if tbl_res:
+            val_text, val_conf, val_bbox, val_poly = tbl_res
+            # If coordinates are valid, return them immediately
+            if val_bbox and val_poly:
+                return val_text, val_conf, True, val_bbox, val_poly, page_num
+    except Exception as e:
+        print(f"Table resolution error for {field_def.name}: {e}")
     
     # Locate anchor element
     anchor_el = None

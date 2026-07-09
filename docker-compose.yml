@@ -8,10 +8,8 @@ services:
     env_file:
       - backend/.env
     volumes:
-      - ./shared/database:/app/shared/database
-      - ./shared/processed:/app/shared/processed
-      - ./shared/uploads:/app/shared/uploads
-      - ./shared/temp:/app/shared/temp
+      - ./backend:/app
+      - ./shared:/app/shared
     restart: unless-stopped
 
   frontend:

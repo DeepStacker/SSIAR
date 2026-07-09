@@ -6,6 +6,8 @@ Replaces synchronous `Upload → Wait → OCR → Wait → Result` with async:
     Upload → Return → Process in background → Notify user
 """
 import os
+import numpy as np
+import cv2
 import uuid
 import json
 import threading
@@ -113,98 +115,160 @@ def get_job_queue() -> JobQueue:
 
 # ── Document Processing Orchestrator ─────────────────────────────────────────
 
-def get_column_index(x_coord: float, page_width: float) -> int:
-    # Scale midpoints relative to the page width:
-    # Col 1 is at ~63.7%, Col 2 is at ~74.2%, Col 3 is at ~85.0%
-    # Midpoints: (63.7 + 74.2) / 2 = 68.95% (0.69), (74.2 + 85.0) / 2 = 79.6% (0.796)
-    rel_x = x_coord / page_width
-    if rel_x < 0.69:
-        return 1
-    elif rel_x < 0.796:
-        return 2
-    else:
-        return 3
+def _check_checkbox_density(page_img: np.ndarray, poly: list[float], page_w: float, page_h: float, unit: str = "pixel") -> float:
+    try:
+        if unit == "inch":
+            poly = [pt * 300.0 for pt in poly]
+            
+        h_img, w_img = page_img.shape[:2]
+        scale_x = w_img / page_w
+        scale_y = h_img / page_h
+        
+        xs = poly[0::2]
+        ys = poly[1::2]
+        x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+        
+        x0 = int(x0 * scale_x)
+        y0 = int(y0 * scale_y)
+        x1 = int(x1 * scale_x)
+        y1 = int(y1 * scale_y)
+        
+        crop = page_img[y0:y1, x0:x1]
+        if crop.size == 0:
+            return 0.0
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if len(crop.shape) == 3 else crop
+        w, h = gray.shape[1], gray.shape[0]
+        
+        # Shave 30% to completely remove borders
+        center = gray[int(h*0.30):int(h*0.70), int(w*0.30):int(w*0.70)]
+        if center.size == 0:
+            return 0.0
+            
+        paper_bg = np.percentile(center, 90)
+        dark_pixels = center < (paper_bg - 18)
+        return float(np.mean(dark_pixels))
+    except Exception:
+        return 0.0
 
 
 def resolve_page_selection_marks(
     page_elements: list,
     is_page_2: bool,
     page_width: float = 2483.0,
-    page_height: float = 3508.0
+    page_height: float = 3508.0,
+    raw_response: dict = None,
+    page_img: np.ndarray = None
 ) -> tuple[dict[str, int], str]:
-    # Extract all selection marks
-    sel_marks = [el for el in page_elements if el.element_type == "selection_mark"]
-    if not sel_marks:
-        return {}, "Unanswered"
-    
-    # Group selection marks into rows by Y coordinate (Y tolerance of 100.0 pixels scaled to page height)
-    scale_y = page_height / 3508.0
-    y_tolerance = 100.0 * scale_y
-    
-    rows = []
-    for mark in sel_marks:
-        my = mark.bbox[1]  # y_min
-        found_row = False
-        for r in rows:
-            if abs(r[0].bbox[1] - my) < y_tolerance:
-                r.append(mark)
-                found_row = True
-                break
-        if not found_row:
-            rows.append([mark])
-            
-    # Sort each row by X coordinate (left to right)
-    for r in rows:
-        r.sort(key=lambda m: m.bbox[0])
-        
-    # Sort rows by Y coordinate (top to bottom)
-    rows.sort(key=lambda r: sum(m.bbox[1] for m in r) / len(r))
-    
+    """
+    Resolve checkbox selections directly from Azure's table model,
+    falling back to pixel density classification if Azure missed the selection state.
+    """
     responses = {}
     consent_val = "Unanswered"
     
-    if not is_page_2:
-        # Page 1: consent is in the upper part (Y < 40% of page height), Q1-Q12 are in the lower part
-        y_boundary = page_height * 0.38
-        consent_rows = [r for r in rows if (sum(m.bbox[1] for m in r) / len(r)) < y_boundary]
-        question_rows = [r for r in rows if (sum(m.bbox[1] for m in r) / len(r)) >= y_boundary]
+    if not raw_response:
+        return {}, "Unanswered"
         
-        # Parse consent
-        if consent_rows:
-            c_marks = []
-            for r in consent_rows:
-                c_marks.extend(r)
-            c_marks.sort(key=lambda m: m.bbox[0])
-            
-            selected_mark = next((m for m in c_marks if m.text == "✓"), None)
-            if selected_mark:
-                rel_cx = selected_mark.bbox[0] / page_width
-                if rel_cx < 0.83:
-                    consent_val = "Yes"
-                else:
-                    consent_val = "No"
+    page_num = 2 if is_page_2 else 1
+    
+    # Get raw page data
+    page_raw = raw_response.get(f"page_{page_num}", {})
+    if not page_raw or "pages" not in page_raw:
+        page_raw = raw_response
+        
+    # Resize page_img to match Azure's coordinate space (page_width, page_height)
+    if page_img is not None and page_width > 0 and page_height > 0:
+        h_img, w_img = page_img.shape[:2]
+        target_w = int(page_width)
+        target_h = int(page_height)
+        if h_img != target_h or w_img != target_w:
+            import cv2
+            page_img = cv2.resize(page_img, (target_w, target_h), interpolation=cv2.INTER_CUBIC)
+        
+    # Get page unit (inch or pixel) from the first page in page_raw
+    unit = "pixel"
+    pages_list = page_raw.get("pages", [])
+    if pages_list:
+        unit = pages_list[0].get("unit", "pixel")
+        
+    tables = page_raw.get("tables", [])
+    if not tables and pages_list:
+        tables = pages_list[0].get("tables", [])
                 
-        # Parse Q1-Q12
-        for idx, r in enumerate(question_rows[:12]):
-            q_num = idx + 1
-            selected_col = 0
-            for m in r:
-                if m.text == "✓":
-                    selected_col = get_column_index(m.bbox[0], page_width)
+    if not tables:
+        return {}, "Unanswered"
+        
+    # Page 1 Table 1 is checkbox table. Page 2 Table 0 is checkbox table.
+    if page_num == 1:
+        table = tables[1] if len(tables) >= 2 else tables[0]
+        # Parse consent from page 1 elements
+        for mark in page_elements:
+            if mark.element_type == "selection_mark" and mark.bbox[1] < page_height * 0.38:
+                if mark.text == "✓":
+                    rel_cx = mark.bbox[0] / page_width
+                    consent_val = "Yes" if rel_cx < 0.83 else "No"
                     break
-            responses[f"q{q_num}"] = selected_col
     else:
-        # Page 2: Q13-Q25
-        for idx, r in enumerate(rows[:13]):
-            q_num = idx + 13
-            selected_col = 0
-            for m in r:
-                if m.text == "✓":
-                    selected_col = get_column_index(m.bbox[0], page_width)
-                    break
-            responses[f"q{q_num}"] = selected_col
+        table = tables[0]
+        
+    # Map cells by row index
+    rows_cells = {}
+    for cell in table.get("cells", []):
+        r = cell.get("rowIndex")
+        c = cell.get("columnIndex")
+        if c in (1, 2, 3):
+            if r not in rows_cells:
+                rows_cells[r] = {}
+            rows_cells[r][c] = cell
             
+    # Process each row (Q1-Q12 on Page 1, Q13-Q25 on Page 2)
+    max_rows = 13 if is_page_2 else 13
+    start_row = 0 if is_page_2 else 1
+    
+    for row_idx in range(start_row, max_rows):
+        q_num = row_idx + 13 if is_page_2 else row_idx
+        q_key = f"q{q_num}"
+        
+        cells = rows_cells.get(row_idx, {})
+        selected_col = 0
+        
+        # 1. First pass: check if any cell contains ':selected:'
+        for col in (1, 2, 3):
+            cell = cells.get(col)
+            if cell and ":selected:" in cell.get("content", ""):
+                selected_col = col
+                break
+                
+        # 2. Second pass: fallback to relative pixel density if no cell was detected as selected
+        if selected_col == 0 and page_img is not None:
+            ratios = {}
+            for col in (1, 2, 3):
+                cell = cells.get(col)
+                if cell:
+                    regions = cell.get("boundingRegions", [])
+                    if regions:
+                        poly = regions[0].get("polygon", [])
+                        if poly and len(poly) >= 8:
+                            ratio = _check_checkbox_density(page_img, poly, page_width, page_height, unit)
+                            ratios[col] = ratio
+            if len(ratios) == 3:
+                r1 = ratios[1]
+                r2 = ratios[2]
+                r3 = ratios[3]
+                max_r = max(r1, r2, r3)
+                min_r = min(r1, r2, r3)
+                # If the darkest checkbox is at least 3.5% darker than the lightest checkbox,
+                # we classify it as selected!
+                if max_r - min_r >= 0.035:
+                    for col, ratio in ratios.items():
+                        if ratio == max_r:
+                            selected_col = col
+                            break
+                
+        responses[q_key] = selected_col
+        
     return responses, consent_val
+
 
 
 def process_document_background(
@@ -241,7 +305,26 @@ def process_document_background(
         
         # 2. Render and process
         from app.image.pdf import render_pdf_to_arrays
-        pages = render_pdf_to_arrays(pdf_bytes)
+        raw_pages = render_pdf_to_arrays(pdf_bytes)
+        
+        # Apply CLAHE contrast enhancement and sharpening to improve checkbox/pen stroke detection for Azure DI and local density check
+        pages = []
+        for img in raw_pages:
+            try:
+                # Convert to LAB color space to equalize luminosity channel
+                lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+                l, a, b = cv2.split(lab)
+                clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+                cl = clahe.apply(l)
+                limg = cv2.merge((cl, a, b))
+                enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+                
+                # Apply sharpening filter to emphasize thin pen strokes (like checkmarks)
+                kernel = np.array([[0, -0.5, 0], [-0.5, 3.0, -0.5], [0, -0.5, 0]], dtype=np.float32)
+                sharpened = cv2.filter2D(enhanced, -1, kernel)
+                pages.append(sharpened)
+            except Exception:
+                pages.append(img)
         
         # Save page images to database
         from app.database import store_page_image
@@ -337,7 +420,8 @@ def process_document_background(
                         break
                 if page_obj:
                     p_resp, p_consent = resolve_page_selection_marks(
-                        page_obj.elements, is_p2, page_obj.width, page_obj.height
+                        page_obj.elements, is_p2, page_obj.width, page_obj.height,
+                        raw_response=raw_responses, page_img=pages[i]
                     )
                     responses.update(p_resp)
                     if not is_p2:
@@ -362,24 +446,37 @@ def process_document_background(
         resolved_pages = {}
         
         for fd in template.fields:
-            text, conf, found, bbox, poly, res_page = resolve_field(fd, combined_normalized)
-            normalized_text = normalize_value(text, fd.type) if found else ""
+            try:
+                text, conf, found, bbox, poly, res_page = resolve_field(fd, combined_normalized)
+                normalized_text = normalize_value(text, fd.type) if found else ""
+            except Exception as e:
+                print(f"[{doc_id}] Field resolution failed for {fd.name}: {e}")
+                text, conf, found, bbox, poly, res_page = "", 0.0, False, None, None, 1
+                normalized_text = ""
+            
             extracted_fields[fd.name] = normalized_text
             bboxes[fd.name] = bbox
             polygons[fd.name] = poly
             resolved_pages[fd.name] = res_page
             
             # Validate
-            vresult = validate_field(fd, normalized_text, extracted_fields)
+            try:
+                vresult = validate_field(fd, normalized_text, extracted_fields)
+            except Exception:
+                vresult = {"valid": False, "issues": ["validation_error"]}
             validation_results[fd.name] = vresult
             
             # Calculate trust
-            trust = calculate_trust(
-                field_def=fd,
-                extracted_text=normalized_text,
-                azure_confidence=conf,
-                validation_result=vresult,
-            )
+            try:
+                trust = calculate_trust(
+                    field_def=fd,
+                    extracted_text=normalized_text,
+                    azure_confidence=conf,
+                    validation_result=vresult,
+                )
+            except Exception:
+                from app.processing.trust_confidence import TrustConfidence
+                trust = TrustConfidence()
             trust_confidences[fd.name] = trust
         
         # 9. Cross-field consistency check

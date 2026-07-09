@@ -14,8 +14,9 @@ from app.processing.types import (
     ReviewPriority,
 )
 
-# Default templates directory
-_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shared" / "templates"
+# Default templates directory — resolves to <project_root>/shared/templates
+# From: /app/app/processing/templates.py → .parent³ = /app → shared/templates
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "shared" / "templates"
 _TEMPLATES_CONFIG_DIR = _TEMPLATES_DIR / "config"
 
 # In-memory template cache
@@ -126,8 +127,8 @@ def _build_sdq_config() -> TemplateConfig:
             label="Remarks",
             type="text",
             anchor="टिप्पणी",
-            relationship="right",
-            width=524, height=40,
+            relationship="below",
+            width=600, height=150,
             required=False,
             review_priority=ReviewPriority.LOW_TRUST,
             validation_rules=[],

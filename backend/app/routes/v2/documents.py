@@ -4,6 +4,7 @@ Documents API (V2)
 Clean V2 implementation — no backward compatibility.
 """
 import asyncio
+from typing import Optional
 import cv2
 import numpy as np
 import os
@@ -127,7 +128,12 @@ def serve_page(doc_id: str, page_num: int):
 
 
 def _get_azure_scale(doc_id: str, page_num: int, img_w: int, img_h: int) -> tuple[float, float]:
-    """Compute scale factors from Azure coordinate space to actual image pixel space."""
+    """Compute scale factors from Azure coordinate space to actual image pixel space.
+    
+    Handles two storage formats:
+    1. Flat: {"pages": [...]}
+    2. Per-page: {"page_1": {analyzeResult}, "page_2": {analyzeResult}}
+    """
     from app.database import get_db_connection, put_conn
     import json
     
@@ -142,9 +148,20 @@ def _get_azure_scale(doc_id: str, page_num: int, img_w: int, img_h: int) -> tupl
         if row and row[0]:
             try:
                 raw_dict = json.loads(row[0])
-                for p in raw_dict.get("pages", []):
+                
+                # Try flat format first: {"pages": [...]}
+                pages_list = raw_dict.get("pages", [])
+                
+                # Try per-page storage format: {"page_1": {...}, "page_2": {...}}
+                if not pages_list:
+                    pg_key = f"page_{page_num}"
+                    sub_result = raw_dict.get(pg_key, {})
+                    if isinstance(sub_result, dict):
+                        pages_list = sub_result.get("pages", [])
+                
+                for p in pages_list:
                     p_num = p.get("pageNumber", p.get("page", 1))
-                    if p_num == page_num:
+                    if p_num == page_num or len(pages_list) == 1:
                         w_val = p.get("width", 0.0)
                         h_val = p.get("height", 0.0)
                         unit_val = p.get("unit", "inch")
@@ -157,7 +174,97 @@ def _get_azure_scale(doc_id: str, page_num: int, img_w: int, img_h: int) -> tupl
     finally:
         put_conn(conn)
     
+    # Prevent division by zero
+    scaled_azure_w = max(1.0, scaled_azure_w)
+    scaled_azure_h = max(1.0, scaled_azure_h)
+    
     return img_w / scaled_azure_w, img_h / scaled_azure_h
+
+
+def get_sdq_row_bbox_from_table(raw_dict: dict, q_num: int) -> Optional[tuple[list[float], list[float], int]]:
+    """Determine the bounding box and polygon of the three checkbox cells for a specific question using Azure's table model."""
+    page_num = 2 if q_num >= 13 else 1
+    
+    # Get raw page data
+    page_raw = raw_dict.get(f"page_{page_num}", {})
+    if not page_raw or "pages" not in page_raw:
+        page_raw = raw_dict
+        
+    tables = page_raw.get("tables", [])
+    if not tables:
+        for p in page_raw.get("pages", []):
+            p_num = p.get("pageNumber", p.get("page", 1))
+            if p_num == page_num:
+                tables = p.get("tables", [])
+                break
+                
+    if not tables:
+        return None
+        
+    if page_num == 1:
+        # Table 1 is the checkbox table on Page 1
+        table = tables[1] if len(tables) >= 2 else tables[0]
+        row_idx = q_num
+    else:
+        # Table 0 is the checkbox table on Page 2
+        table = tables[0]
+        row_idx = q_num - 13
+        
+    # Get cells in columns 1, 2, 3 (checkboxes) of the target row
+    target_cells = []
+    for cell in table.get("cells", []):
+        if cell.get("rowIndex") == row_idx and cell.get("columnIndex") in (1, 2, 3):
+            target_cells.append(cell)
+            
+    if not target_cells:
+        return None
+        
+    polys = []
+    unit = "pixel"
+    for p in page_raw.get("pages", []):
+        p_num = p.get("pageNumber", p.get("page", 1))
+        if p_num == page_num:
+            unit = p.get("unit", "pixel")
+            break
+            
+    for cell in target_cells:
+        regions = cell.get("boundingRegions", [])
+        if regions:
+            poly = regions[0].get("polygon", [])
+            if unit == "inch":
+                poly = [pt * 300.0 for pt in poly]
+            if poly and len(poly) >= 8:
+                polys.append(poly)
+                
+    if not polys:
+        return None
+        
+    # Combine coordinate limits
+    all_xs = []
+    all_ys = []
+    for poly in polys:
+        all_xs.extend(poly[0::2])
+        all_ys.extend(poly[1::2])
+        
+    x0 = min(all_xs)
+    x1 = max(all_xs)
+    y0 = min(all_ys)
+    y1 = max(all_ys)
+    
+    # We want a very clean crop showing only the checkboxes.
+    # Minimal vertical padding so they aren't vertically squeezed,
+    # and minimal horizontal padding to prevent clipping checkmarks.
+    pad_x = (x1 - x0) * 0.02
+    pad_y = (y1 - y0) * 0.10
+    
+    bbox = [x0 - pad_x, y0 - pad_y, x1 + pad_x, y1 + pad_y]
+    polygon = [
+        x0 - pad_x, y0 - pad_y,
+        x1 + pad_x, y0 - pad_y,
+        x1 + pad_x, y1 + pad_y,
+        x0 - pad_x, y1 + pad_y
+    ]
+    return polygon, bbox, page_num
 
 
 @router.get("/api/crops/{doc_id}/{filename}")
@@ -167,7 +274,7 @@ def serve_crop(doc_id: str, filename: str):
 
     if cache_key in _cache_crop:
         return Response(content=_cache_crop[cache_key], media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=3600"})
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
     if use_r2() and R2_PUBLIC_URL:
         redirect_url = f"{R2_PUBLIC_URL}/rois/{doc_id}/roi_{crop_name}.jpg"
@@ -178,7 +285,7 @@ def serve_crop(doc_id: str, filename: str):
     if roi_bytes:
         _cache_crop_set(cache_key, roi_bytes)
         return Response(content=roi_bytes, media_type="image/jpeg",
-                        headers={"Cache-Control": "private, max-age=86400"})
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
     # Check if a dynamic V2 bounding box/polygon and page exist in form_data
     doc = get_document(doc_id)
@@ -190,10 +297,9 @@ def serve_crop(doc_id: str, filename: str):
         bbox = field_info.get("bbox")
         res_page = field_info.get("page")
         
-        # For checkbox questions, dynamically compute row bbox from Azure selection marks
+        # For checkbox questions, dynamically compute row bbox from Azure selection marks / tables
         if not bbox and not polygon and crop_name.startswith("q"):
             from app.database import get_db_connection, put_conn
-            from app.processing.azure_processor import normalize_azure_response
             conn = get_db_connection()
             raw_responses_str = None
             try:
@@ -209,53 +315,10 @@ def serve_crop(doc_id: str, filename: str):
                 try:
                     import json
                     raw_dict = json.loads(raw_responses_str)
-                    norm = normalize_azure_response(doc_id, raw_dict)
                     q_num = int(crop_name[1:])
-                    is_page_2 = q_num >= 13
-                    target_page = 2 if is_page_2 else 1
-                    
-                    page = next((p for p in norm.pages if p.page == target_page), None)
-                    if page:
-                        sel_marks = [el for el in page.elements if el.element_type == "selection_mark"]
-                        rows = []
-                        scale_y = page.height / 3508.0
-                        y_tolerance = 100.0 * scale_y
-                        for mark in sel_marks:
-                            my = mark.bbox[1]
-                            found_row = False
-                            for r in rows:
-                                if abs(r[0].bbox[1] - my) < y_tolerance:
-                                    r.append(mark)
-                                    found_row = True
-                                    break
-                            if not found_row:
-                                rows.append([mark])
-                        for r in rows:
-                            r.sort(key=lambda m: m.bbox[0])
-                        rows.sort(key=lambda r: sum(m.bbox[1] for m in r) / len(r))
-                        
-                        if not is_page_2:
-                            y_boundary = page.height * 0.38
-                            q_rows = [r for r in rows if (sum(m.bbox[1] for m in r) / len(r)) >= y_boundary]
-                            row_idx = q_num - 1
-                        else:
-                            q_rows = rows
-                            row_idx = q_num - 13
-                            
-                        if 0 <= row_idx < len(q_rows):
-                            target_row = q_rows[row_idx]
-                            # Center vertically on checkboxes, span full checkbox column width
-                            ry_center = sum((m.bbox[1] + m.bbox[3]) / 2.0 for m in target_row) / len(target_row)
-                            scale_pt = 300.0 / 72.0
-                            row_height_px = 35.0 * scale_pt
-                            
-                            rx0 = 230.0 * scale_pt
-                            rx1 = 545.0 * scale_pt
-                            ry0 = ry_center - row_height_px / 2.0
-                            ry1 = ry_center + row_height_px / 2.0
-                            
-                            bbox = [rx0, ry0, rx1, ry1]
-                            res_page = target_page
+                    tbl_res = get_sdq_row_bbox_from_table(raw_dict, q_num)
+                    if tbl_res:
+                        polygon, bbox, res_page = tbl_res
                 except Exception:
                     pass
                     
@@ -271,55 +334,84 @@ def serve_crop(doc_id: str, filename: str):
                 
                 # === PRIMARY: Polygon-based perspective crop ===
                 if polygon and len(polygon) >= 8:
-                    import numpy as np
-                    # polygon is [x0,y0, x1,y1, x2,y2, x3,y3] — 4 corners
-                    pts = []
-                    for i in range(0, 8, 2):
-                        px = polygon[i] * scale_x
-                        py = polygon[i+1] * scale_y
-                        pts.append([px, py])
-                    pts = np.array(pts, dtype=np.float32)
-                    
-                    # Determine output width/height from the polygon edges
-                    w1 = np.linalg.norm(pts[1] - pts[0])
-                    w2 = np.linalg.norm(pts[2] - pts[3])
-                    h1 = np.linalg.norm(pts[3] - pts[0])
-                    h2 = np.linalg.norm(pts[2] - pts[1])
-                    out_w = int(max(w1, w2))
-                    out_h = int(max(h1, h2))
-                    
-                    if out_w > 5 and out_h > 5:
-                        # Add padding
-                        pad_x = int(out_w * 0.08)
-                        pad_y = int(out_h * 0.12)
+                    try:
+                        import numpy as np
+                        # polygon is [x0,y0, x1,y1, x2,y2, x3,y3] — 4 corners
+                        pts = []
+                        for i in range(0, 8, 2):
+                            px = polygon[i] * scale_x
+                            py = polygon[i+1] * scale_y
+                            pts.append([px, py])
+                        pts = np.array(pts, dtype=np.float32)
                         
-                        # Expand polygon outward for padding
-                        center = pts.mean(axis=0)
-                        padded_pts = pts.copy()
-                        for i in range(4):
-                            direction = pts[i] - center
-                            norm = np.linalg.norm(direction)
-                            if norm > 0:
-                                padded_pts[i] = pts[i] + direction / norm * max(pad_x, pad_y)
+                        # Determine output width/height from the polygon edges
+                        w1 = np.linalg.norm(pts[1] - pts[0])
+                        w2 = np.linalg.norm(pts[2] - pts[3])
+                        h1 = np.linalg.norm(pts[3] - pts[0])
+                        h2 = np.linalg.norm(pts[2] - pts[1])
+                        out_w = int(max(w1, w2))
+                        out_h = int(max(h1, h2))
                         
-                        # Clamp to image bounds
-                        padded_pts[:, 0] = np.clip(padded_pts[:, 0], 0, w_img - 1)
-                        padded_pts[:, 1] = np.clip(padded_pts[:, 1], 0, h_img - 1)
-                        
-                        out_w_padded = out_w + 2 * pad_x
-                        out_h_padded = out_h + 2 * pad_y
-                        
-                        dst = np.array([
-                            [0, 0],
-                            [out_w_padded - 1, 0],
-                            [out_w_padded - 1, out_h_padded - 1],
-                            [0, out_h_padded - 1]
-                        ], dtype=np.float32)
-                        
-                        M = cv2.getPerspectiveTransform(padded_pts, dst)
-                        crop = cv2.warpPerspective(aligned_img, M, (out_w_padded, out_h_padded),
-                                                   flags=cv2.INTER_CUBIC,
-                                                   borderMode=cv2.BORDER_REPLICATE)
+                        if out_w > 5 and out_h > 5:
+                            # 1. Determine direction vectors along the cell edges to handle rotation perfectly
+                            # dir_x points from left to right, dir_y points from top to bottom
+                            dir_x = (pts[1] - pts[0]) / out_w
+                            dir_y = (pts[3] - pts[0]) / out_h
+                            
+                            # 2. Determine shaving/padding based on the field type
+                            if crop_name in {"math_pct", "science_pct", "language_pct"}:
+                                # Pad outward horizontally and vertically to keep starting handwriting and digits fully visible
+                                shave_l = -int(out_w * 0.05)
+                                shave_r = -int(out_w * 0.05)
+                                shave_t = -int(out_h * 0.05)
+                                shave_b = -int(out_h * 0.05)
+                            elif crop_name in {"roll_number", "class", "dob", "gender"}:
+                                # Metadata fields: pad outward to prevent any clipping on start/end
+                                shave_l = -int(out_w * 0.05)
+                                shave_r = -int(out_w * 0.05)
+                                shave_t = -int(out_h * 0.05)
+                                shave_b = -int(out_h * 0.05)
+                            elif crop_name.startswith("q"):
+                                # Checkbox questions
+                                shave_l = int(out_w * 0.01)
+                                shave_r = int(out_w * 0.01)
+                                shave_t = int(out_h * 0.05)
+                                shave_b = int(out_h * 0.05)
+                            else:
+                                # Non-table fields: use negative shave (i.e. expand/pad outward)
+                                shave_l = -int(out_w * 0.05)
+                                shave_r = -int(out_w * 0.05)
+                                shave_t = -int(out_h * 0.08)
+                                shave_b = -int(out_h * 0.08)
+                                
+                            # 3. Apply shaving/padding to relocate the 4 corners inward/outward
+                            padded_pts = pts.copy()
+                            padded_pts[0] = pts[0] + dir_x * shave_l + dir_y * shave_t
+                            padded_pts[1] = pts[1] - dir_x * shave_r + dir_y * shave_t
+                            padded_pts[2] = pts[2] - dir_x * shave_r - dir_y * shave_b
+                            padded_pts[3] = pts[3] + dir_x * shave_l - dir_y * shave_b
+                            
+                            # 4. Clamp corners to image bounds
+                            padded_pts[:, 0] = np.clip(padded_pts[:, 0], 0, w_img - 1)
+                            padded_pts[:, 1] = np.clip(padded_pts[:, 1], 0, h_img - 1)
+                            
+                            # 5. Compute the new width and height of the cropped region
+                            out_w_padded = max(2, out_w - shave_l - shave_r)
+                            out_h_padded = max(2, out_h - shave_t - shave_b)
+                            
+                            dst = np.array([
+                                [0, 0],
+                                [out_w_padded - 1, 0],
+                                [out_w_padded - 1, out_h_padded - 1],
+                                [0, out_h_padded - 1]
+                            ], dtype=np.float32)
+                            
+                            M = cv2.getPerspectiveTransform(padded_pts, dst)
+                            crop = cv2.warpPerspective(aligned_img, M, (out_w_padded, out_h_padded),
+                                                       flags=cv2.INTER_CUBIC,
+                                                       borderMode=cv2.BORDER_REPLICATE)
+                    except Exception:
+                        crop = None  # Fall through to bbox fallback
                 
                 # === FALLBACK: Axis-aligned bbox crop ===
                 if crop is None and bbox:
@@ -329,8 +421,14 @@ def serve_crop(doc_id: str, filename: str):
                     x1 = int(x1 * scale_x)
                     y1 = int(y1 * scale_y)
                     
-                    pad_x = int(35 * scale_x)
-                    pad_y = int(20 * scale_y)
+                    is_tight = crop_name.startswith("q") or crop_name in {"roll_number", "class", "dob", "gender", "math_pct", "science_pct", "language_pct", "rank"}
+                    if is_tight:
+                        pad_x = int(5 * scale_x)
+                        pad_y = int(4 * scale_y)
+                    else:
+                        pad_x = int(35 * scale_x)
+                        pad_y = int(20 * scale_y)
+                        
                     x0 = max(0, x0 - pad_x)
                     y0 = max(0, y0 - pad_y)
                     x1 = min(w_img, x1 + pad_x)
@@ -343,7 +441,7 @@ def serve_crop(doc_id: str, filename: str):
                     _cache_crop_set(cache_key, crop_bytes)
                     store_roi_file(doc_id, crop_name, crop)
                     return Response(content=crop_bytes, media_type="image/jpeg",
-                                    headers={"Cache-Control": "public, max-age=3600"})
+                                    headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
     # Fallback to legacy coordinate-based cropping
     page_num = get_crop_page(crop_name)

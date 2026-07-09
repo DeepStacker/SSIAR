@@ -47,7 +47,7 @@ const KBD = ({ children }: { children: React.ReactNode }) => (
 );
 
 export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onDirtyChange, reviewIndex, totalReview, onClose, onVerify, onReprocess, onNext, onPrev, saving }) => {
-  const [showAllFields, setShowAllFields] = useState(false);
+  const [showAllFields, setShowAllFields] = useState(true);
   const [fieldAccepted, setFieldAccepted] = useState<Record<string, boolean>>({});
   const [flashField, setFlashField] = useState<string | null>(null);
   const [zoomImg, setZoomImg] = useState<ZoomImage | null>(null);
