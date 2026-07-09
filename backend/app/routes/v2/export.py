@@ -1,3 +1,8 @@
+"""
+Export API (V2)
+================
+Consolidated Excel/CSV export endpoint matching frontend requirements.
+"""
 from typing import Optional
 from fastapi import APIRouter, Query, HTTPException, Depends
 from app.database import get_all_documents, get_document
@@ -24,7 +29,7 @@ def export_results(
     if status_filter:
         filtered_docs = [d for d in docs if d["status"] == status_filter]
     else:
-        filtered_docs = [d for d in docs if d["status"] in ("verified", "needs_review")]
+        filtered_docs = [d for d in docs if d["status"] in ("verified", "needs_review", "approved")]
 
     if doc_ids:
         ids_set = set(doc_ids.split(","))
@@ -32,11 +37,9 @@ def export_results(
     elif class_filter:
         filtered_docs = [d for d in filtered_docs if d.get("class") == class_filter]
     if date_from:
-        # Match the analytics endpoint semantics: append T00:00:00 so the inclusive date_to day is captured
         from_str = date_from if "T" in date_from else date_from + "T00:00:00"
         filtered_docs = [d for d in filtered_docs if d.get("created_at", "") >= from_str]
     if date_to:
-        # Inclusive upper bound: append T23:59:59 so the entire date_to day is included
         to_str = date_to if "T" in date_to else date_to + "T23:59:59"
         filtered_docs = [d for d in filtered_docs if d.get("created_at", "") <= to_str]
     if roll_prefix:

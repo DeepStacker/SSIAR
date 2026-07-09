@@ -18,7 +18,8 @@ TEST_DB_PATH = os.path.join(TEST_DB_DIR, "test_api_ssiar.db")
 import app.database as db_module
 _ORIGINAL_DB_PATH = db_module.DB_PATH
 
-from app.main import app, init_templates
+from app.main import app
+from app.processing.templates import init_templates
 from app.database import init_db, get_db_connection, get_corrections_log
 
 class TestSSIARApi(unittest.TestCase):

@@ -148,6 +148,37 @@ def init_db():
                     saved_at TEXT
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS azure_responses (
+                    document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+                    raw_response TEXT,
+                    saved_at TEXT
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS processing_metrics (
+                    id SERIAL PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                    metric_name TEXT NOT NULL,
+                    metric_value REAL,
+                    metric_unit TEXT,
+                    recorded_at TEXT NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS review_tasks (
+                    id SERIAL PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                    field_name TEXT NOT NULL,
+                    original_value TEXT,
+                    corrected_value TEXT,
+                    priority TEXT NOT NULL DEFAULT 'normal',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    reviewer_id TEXT,
+                    reviewed_at TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
         else:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -223,6 +254,40 @@ def init_db():
                     recognized_text TEXT,
                     confidence REAL,
                     saved_at TEXT
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS azure_responses (
+                    document_id TEXT PRIMARY KEY,
+                    raw_response TEXT,
+                    saved_at TEXT,
+                    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS processing_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    document_id TEXT NOT NULL,
+                    metric_name TEXT NOT NULL,
+                    metric_value REAL,
+                    metric_unit TEXT,
+                    recorded_at TEXT NOT NULL,
+                    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS review_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    document_id TEXT NOT NULL,
+                    field_name TEXT NOT NULL,
+                    original_value TEXT,
+                    corrected_value TEXT,
+                    priority TEXT NOT NULL DEFAULT 'normal',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    reviewer_id TEXT,
+                    reviewed_at TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
                 )
             """)
             _run_migrations(cur)
