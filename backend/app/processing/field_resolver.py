@@ -18,15 +18,15 @@ from app.processing.azure_processor import find_text_near
 def resolve_field(
     field_def: FieldDefinition,
     normalized: NormalizedAzureResponse,
-) -> tuple[str, float, bool, Optional[list[float]], int]:
+) -> tuple[str, float, bool, Optional[list[float]], Optional[list[float]], int]:
     """
     Resolve a field value from the normalized Azure response using
     anchor-based semantic resolution.
     
-    Returns: (extracted_text, confidence, found, bbox, page_number)
+    Returns: (extracted_text, confidence, found, bbox, polygon, page_number)
     """
     if not normalized or not normalized.pages:
-        return "", 0.0, False, None, 1
+        return "", 0.0, False, None, None, 1
     
     page_num = _get_field_page(field_def.name, normalized.pages)
     
@@ -38,10 +38,70 @@ def resolve_field(
             break
     
     if page is None:
-        return "", 0.0, False, None, page_num
+        return "", 0.0, False, None, None, page_num
     
     anchor_text = field_def.anchor
     direction = field_def.relationship
+    
+    # Locate anchor element
+    anchor_el = None
+    for el in page.elements:
+        if anchor_text.lower() in el.text.lower():
+            anchor_el = el
+            break
+            
+    # Calculate calculated_bbox (either anchor-relative or template fallback)
+    scale = 300.0 / 72.0
+    calculated_bbox = None
+    if anchor_el:
+        ax0, ay0, ax1, ay1 = anchor_el.bbox
+        fw = field_def.width * scale
+        fh = field_def.height * scale
+        
+        if direction == "below":
+            bx0 = ax0
+            by0 = ay1 + 5.0
+            bx1 = ax0 + fw
+            by1 = by0 + fh
+        elif direction == "right":
+            bx0 = ax1 + 5.0
+            by0 = ay0
+            bx1 = bx0 + fw
+            by1 = ay0 + fh
+        elif direction == "above":
+            bx0 = ax0
+            by0 = max(0.0, ay0 - fh - 5.0)
+            bx1 = ax0 + fw
+            by1 = ay0 - 5.0
+        elif direction == "left":
+            bx0 = max(0.0, ax0 - fw - 5.0)
+            by0 = ay0
+            bx1 = ax0 - 5.0
+            by1 = ay0 + fh
+        else: # around
+            bx0 = max(0.0, ax0 - fw/2.0)
+            by0 = ay1 + 5.0
+            bx1 = ax0 + fw/2.0
+            by1 = by0 + fh
+        calculated_bbox = [bx0, by0, bx1, by1]
+    else:
+        # Fall back to template coordinates
+        from app.image.roi import ROIS_P1_POINTS, ROIS_P2_POINTS, ROIS_REMARKS_POINTS
+        rect = None
+        if page_num == 1:
+            if field_def.name in ROIS_P1_POINTS:
+                rect = ROIS_P1_POINTS[field_def.name]
+            elif field_def.name == "consent":
+                rect = (470.0, 190.0, 555.0, 240.0)
+        else:
+            if field_def.name in ROIS_P2_POINTS:
+                rect = ROIS_P2_POINTS[field_def.name]
+            elif field_def.name == "remarks":
+                rect = ROIS_REMARKS_POINTS['remarks']
+                
+        if rect:
+            x0, y0, x1, y1 = rect
+            calculated_bbox = [x0 * scale, y0 * scale, x1 * scale, y1 * scale]
     
     # Find candidate elements near the anchor
     tolerance = max(field_def.width, field_def.height) * 2.0 + 50.0
@@ -52,7 +112,13 @@ def resolve_field(
         candidates = find_text_near(page, anchor_text, direction, tolerance * 2.0)
     
     if not candidates:
-        return "", 0.0, False, None, page.page
+        calculated_poly = [
+            calculated_bbox[0], calculated_bbox[1],
+            calculated_bbox[2], calculated_bbox[1],
+            calculated_bbox[2], calculated_bbox[3],
+            calculated_bbox[0], calculated_bbox[3]
+        ] if calculated_bbox else []
+        return "", 0.0, False, calculated_bbox, calculated_poly, page.page
     
     # The closest element is likely the field value
     value_el = candidates[0]
@@ -61,7 +127,7 @@ def resolve_field(
     
     # For selection marks, return the state
     if value_el.element_type == "selection_mark":
-        return text, confidence, True, value_el.bbox, page.page
+        return text, confidence, True, value_el.bbox, value_el.polygon, page.page
     
     # Some anchors detect the label itself (e.g., "जन्म तिथि") — skip if too similar
     if is_label(text, anchor_text):
@@ -70,9 +136,15 @@ def resolve_field(
             text = value_el.text.strip()
             confidence = value_el.confidence
         else:
-            return "", 0.0, False, None, page.page
-    
-    return text, confidence, True, value_el.bbox, page.page
+            calculated_poly = [
+                calculated_bbox[0], calculated_bbox[1],
+                calculated_bbox[2], calculated_bbox[1],
+                calculated_bbox[2], calculated_bbox[3],
+                calculated_bbox[0], calculated_bbox[3]
+            ] if calculated_bbox else []
+            return "", 0.0, False, calculated_bbox, calculated_poly, page.page
+            
+    return text, confidence, True, value_el.bbox, value_el.polygon, page.page
 
 
 def resolve_all_fields(
@@ -143,9 +215,12 @@ def is_label(text: str, anchor_text: str) -> bool:
     """Check if extracted text is just the label/anchor text itself."""
     t = text.strip().lower()
     a = anchor_text.strip().lower()
-    # If they share significant overlap, it's likely the label
-    if len(t) > 0 and len(a) > 0:
-        common = len(set(t) & set(a))
-        ratio = common / max(len(set(t)), len(set(a)), 1)
-        return ratio > 0.6
-    return False
+    if not t or not a:
+        return False
+    # Substring check
+    if t in a or a in t:
+        return True
+    # Character overlap Jaccard ratio
+    common = len(set(t) & set(a))
+    ratio = common / max(len(set(t)), len(set(a)), 1)
+    return ratio > 0.4

@@ -126,6 +126,40 @@ def serve_page(doc_id: str, page_num: int):
     raise HTTPException(status_code=404, detail="Page not found")
 
 
+def _get_azure_scale(doc_id: str, page_num: int, img_w: int, img_h: int) -> tuple[float, float]:
+    """Compute scale factors from Azure coordinate space to actual image pixel space."""
+    from app.database import get_db_connection, put_conn
+    import json
+    
+    scaled_azure_w = 2483.0  # default fallback (A4 at 300 DPI)
+    scaled_azure_h = 3508.0
+    
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT raw_response FROM azure_responses WHERE document_id = ?", (doc_id,))
+        row = cur.fetchone()
+        if row and row[0]:
+            try:
+                raw_dict = json.loads(row[0])
+                for p in raw_dict.get("pages", []):
+                    p_num = p.get("pageNumber", p.get("page", 1))
+                    if p_num == page_num:
+                        w_val = p.get("width", 0.0)
+                        h_val = p.get("height", 0.0)
+                        unit_val = p.get("unit", "inch")
+                        scale_val = 300.0 if unit_val == "inch" else 1.0
+                        scaled_azure_w = w_val * scale_val
+                        scaled_azure_h = h_val * scale_val
+                        break
+            except Exception:
+                pass
+    finally:
+        put_conn(conn)
+    
+    return img_w / scaled_azure_w, img_h / scaled_azure_h
+
+
 @router.get("/api/crops/{doc_id}/{filename}")
 def serve_crop(doc_id: str, filename: str):
     crop_name = filename.replace('.png', '')
@@ -146,33 +180,167 @@ def serve_crop(doc_id: str, filename: str):
         return Response(content=roi_bytes, media_type="image/jpeg",
                         headers={"Cache-Control": "private, max-age=86400"})
 
-    # Check if a dynamic V2 bounding box and page exist in form_data
+    # Check if a dynamic V2 bounding box/polygon and page exist in form_data
     doc = get_document(doc_id)
     if doc:
         confidence_scores = doc.get("confidence_scores", {})
         v2_trust = confidence_scores.get("v2_trust", {}) if isinstance(confidence_scores, dict) else {}
-        field_info = v2_trust.get(crop_name, {})
+        field_info = v2_trust.get(crop_name, {}) if isinstance(v2_trust, dict) else {}
+        polygon = field_info.get("polygon")
         bbox = field_info.get("bbox")
         res_page = field_info.get("page")
-        if bbox and res_page:
+        
+        # For checkbox questions, dynamically compute row bbox from Azure selection marks
+        if not bbox and not polygon and crop_name.startswith("q"):
+            from app.database import get_db_connection, put_conn
+            from app.processing.azure_processor import normalize_azure_response
+            conn = get_db_connection()
+            raw_responses_str = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT raw_response FROM azure_responses WHERE document_id = ?", (doc_id,))
+                row = cur.fetchone()
+                if row:
+                    raw_responses_str = row[0]
+            finally:
+                put_conn(conn)
+                
+            if raw_responses_str:
+                try:
+                    import json
+                    raw_dict = json.loads(raw_responses_str)
+                    norm = normalize_azure_response(doc_id, raw_dict)
+                    q_num = int(crop_name[1:])
+                    is_page_2 = q_num >= 13
+                    target_page = 2 if is_page_2 else 1
+                    
+                    page = next((p for p in norm.pages if p.page == target_page), None)
+                    if page:
+                        sel_marks = [el for el in page.elements if el.element_type == "selection_mark"]
+                        rows = []
+                        for mark in sel_marks:
+                            my = mark.bbox[1]
+                            found_row = False
+                            for r in rows:
+                                if abs(r[0].bbox[1] - my) < 50.0:
+                                    r.append(mark)
+                                    found_row = True
+                                    break
+                            if not found_row:
+                                rows.append([mark])
+                        for r in rows:
+                            r.sort(key=lambda m: m.bbox[0])
+                        rows.sort(key=lambda r: sum(m.bbox[1] for m in r) / len(r))
+                        
+                        if not is_page_2:
+                            q_rows = [r for r in rows if (sum(m.bbox[1] for m in r) / len(r)) >= 1200.0]
+                            row_idx = q_num - 1
+                        else:
+                            q_rows = rows
+                            row_idx = q_num - 13
+                            
+                        if 0 <= row_idx < len(q_rows):
+                            target_row = q_rows[row_idx]
+                            # Center vertically on checkboxes, span full checkbox column width
+                            ry_center = sum((m.bbox[1] + m.bbox[3]) / 2.0 for m in target_row) / len(target_row)
+                            scale_pt = 300.0 / 72.0
+                            row_height_px = 35.0 * scale_pt
+                            
+                            rx0 = 230.0 * scale_pt
+                            rx1 = 545.0 * scale_pt
+                            ry0 = ry_center - row_height_px / 2.0
+                            ry1 = ry_center + row_height_px / 2.0
+                            
+                            bbox = [rx0, ry0, rx1, ry1]
+                            res_page = target_page
+                except Exception:
+                    pass
+                    
+        if (polygon or bbox) and res_page:
             aligned_img = _get_page(doc_id, res_page)
             if aligned_img is not None:
                 h_img, w_img = aligned_img.shape[:2]
-                x0, y0, x1, y1 = [int(val) for val in bbox]
-                # Add a comfort padding of 15 pixels
-                pad = 15
-                x0 = max(0, x0 - pad)
-                y0 = max(0, y0 - pad)
-                x1 = min(w_img, x1 + pad)
-                y1 = min(h_img, y1 + pad)
-                crop = aligned_img[y0:y1, x0:x1]
                 
-                _, buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
-                crop_bytes = buf.tobytes()
-                _cache_crop_set(cache_key, crop_bytes)
-                store_roi_file(doc_id, crop_name, crop)
-                return Response(content=crop_bytes, media_type="image/jpeg",
-                                headers={"Cache-Control": "public, max-age=3600"})
+                # Compute scale factors from Azure coordinate space to actual image pixels
+                scale_x, scale_y = _get_azure_scale(doc_id, res_page, w_img, h_img)
+                
+                crop = None
+                
+                # === PRIMARY: Polygon-based perspective crop ===
+                if polygon and len(polygon) >= 8:
+                    import numpy as np
+                    # polygon is [x0,y0, x1,y1, x2,y2, x3,y3] — 4 corners
+                    pts = []
+                    for i in range(0, 8, 2):
+                        px = polygon[i] * scale_x
+                        py = polygon[i+1] * scale_y
+                        pts.append([px, py])
+                    pts = np.array(pts, dtype=np.float32)
+                    
+                    # Determine output width/height from the polygon edges
+                    w1 = np.linalg.norm(pts[1] - pts[0])
+                    w2 = np.linalg.norm(pts[2] - pts[3])
+                    h1 = np.linalg.norm(pts[3] - pts[0])
+                    h2 = np.linalg.norm(pts[2] - pts[1])
+                    out_w = int(max(w1, w2))
+                    out_h = int(max(h1, h2))
+                    
+                    if out_w > 5 and out_h > 5:
+                        # Add padding
+                        pad_x = int(out_w * 0.08)
+                        pad_y = int(out_h * 0.12)
+                        
+                        # Expand polygon outward for padding
+                        center = pts.mean(axis=0)
+                        padded_pts = pts.copy()
+                        for i in range(4):
+                            direction = pts[i] - center
+                            norm = np.linalg.norm(direction)
+                            if norm > 0:
+                                padded_pts[i] = pts[i] + direction / norm * max(pad_x, pad_y)
+                        
+                        # Clamp to image bounds
+                        padded_pts[:, 0] = np.clip(padded_pts[:, 0], 0, w_img - 1)
+                        padded_pts[:, 1] = np.clip(padded_pts[:, 1], 0, h_img - 1)
+                        
+                        out_w_padded = out_w + 2 * pad_x
+                        out_h_padded = out_h + 2 * pad_y
+                        
+                        dst = np.array([
+                            [0, 0],
+                            [out_w_padded - 1, 0],
+                            [out_w_padded - 1, out_h_padded - 1],
+                            [0, out_h_padded - 1]
+                        ], dtype=np.float32)
+                        
+                        M = cv2.getPerspectiveTransform(padded_pts, dst)
+                        crop = cv2.warpPerspective(aligned_img, M, (out_w_padded, out_h_padded),
+                                                   flags=cv2.INTER_CUBIC,
+                                                   borderMode=cv2.BORDER_REPLICATE)
+                
+                # === FALLBACK: Axis-aligned bbox crop ===
+                if crop is None and bbox:
+                    x0, y0, x1, y1 = [int(val) for val in bbox]
+                    x0 = int(x0 * scale_x)
+                    y0 = int(y0 * scale_y)
+                    x1 = int(x1 * scale_x)
+                    y1 = int(y1 * scale_y)
+                    
+                    pad_x = int(35 * scale_x)
+                    pad_y = int(20 * scale_y)
+                    x0 = max(0, x0 - pad_x)
+                    y0 = max(0, y0 - pad_y)
+                    x1 = min(w_img, x1 + pad_x)
+                    y1 = min(h_img, y1 + pad_y)
+                    crop = aligned_img[y0:y1, x0:x1]
+                
+                if crop is not None and crop.size > 0:
+                    _, buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                    crop_bytes = buf.tobytes()
+                    _cache_crop_set(cache_key, crop_bytes)
+                    store_roi_file(doc_id, crop_name, crop)
+                    return Response(content=crop_bytes, media_type="image/jpeg",
+                                    headers={"Cache-Control": "public, max-age=3600"})
 
     # Fallback to legacy coordinate-based cropping
     page_num = get_crop_page(crop_name)
@@ -451,20 +619,54 @@ def reprocess_field(doc_id: str, field_name: str):
     }
 
 
+@router.get("/api/queue-status")
+def queue_status():
+    from app.processing.jobs.document_jobs import get_worker_count
+    from app.database import get_all_documents
+    docs = get_all_documents()
+    levels = {"level_1": 0, "level_2": 0, "level_3": 0, "level_4": 0}
+    for d in docs:
+        lev = d.get("escalation_level", "level_1")
+        if lev in levels:
+            levels[lev] += 1
+            
+    return {
+        "total": len(docs),
+        "processing": len([d for d in docs if d["status"] == "processing"]),
+        "needs_review": len([d for d in docs if d["status"] in ("needs_review", "review_required")]),
+        "verified": len([d for d in docs if d["status"] in ("verified", "approved")]),
+        "failed": len([d for d in docs if d["status"] == "failed"]),
+        "workers": get_worker_count(),
+        "by_escalation": levels,
+    }
+
+
 @router.get("/api/events")
 async def event_stream():
+    import json
     from app.sse import subscribe, unsubscribe
     uid = get_current_user_id()
     queue = subscribe(user_id=uid)
     try:
         from fastapi.responses import StreamingResponse
         async def gen():
+            # Send initial connection verification message
+            yield f"data: {json.dumps({'event': 'connected', 'data': {}})}\n\n"
             while True:
                 try:
                     msg = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    yield f"event: {msg['event']}\ndata: {msg['data']}\n\n"
+                    yield f"data: {json.dumps(msg)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
-        return StreamingResponse(gen(), media_type="text/event-stream")
+        return StreamingResponse(
+            gen(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+                "Content-Encoding": "none",
+            }
+        )
     finally:
         unsubscribe(queue)

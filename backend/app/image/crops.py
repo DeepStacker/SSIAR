@@ -10,22 +10,26 @@ def extract_crop(aligned_img, crop_name):
         return dynamic_crop
 
     # Fallback to static coordinates if dynamic extraction fails
+    h_img, w_img = aligned_img.shape[:2]
+    scale_x = w_img / 595.0
+    scale_y = h_img / 842.0
+
     if crop_name in ROIS_P1 or crop_name in ROIS_P2:
         all_rois = {**ROIS_P1, **ROIS_P2}
         x0, y0, x1, y1 = all_rois[crop_name]
-        px0, py0, px1, py1 = int(x0 * ZOOM), int(y0 * ZOOM), int(x1 * ZOOM), int(y1 * ZOOM)
-        padding = 5 if crop_name in ROIS_P1 else 0
+        px0, py0, px1, py1 = int(x0 * scale_x), int(y0 * scale_y), int(x1 * scale_x), int(y1 * scale_y)
+        padding = int(5 * scale_y) if crop_name in ROIS_P1 else 0
         crop = aligned_img[py0+padding:py1-padding, px0:px1]
         return crop
 
     if crop_name == "consent":
-        px0, py0, px1, py1 = int(470 * ZOOM), int(190 * ZOOM), int(555 * ZOOM), int(240 * ZOOM)
+        px0, py0, px1, py1 = int(470 * scale_x), int(190 * scale_y), int(555 * scale_x), int(240 * scale_y)
         return aligned_img[py0:py1, px0:px1]
 
     if crop_name == "remarks":
         rect = ROIS_REMARKS['remarks']
         x0, y0, x1, y1 = rect
-        px0, py0, px1, py1 = int(x0 * ZOOM), int(y0 * ZOOM), int(x1 * ZOOM), int(y1 * ZOOM)
+        px0, py0, px1, py1 = int(x0 * scale_x), int(y0 * scale_y), int(x1 * scale_x), int(y1 * scale_y)
         return aligned_img[py0:py1, px0:px1]
 
     if crop_name.startswith("q"):
@@ -41,10 +45,19 @@ def extract_crop(aligned_img, crop_name):
             y0, y1 = P2_Y_RANGES[idx]
         else:
             return None
-        cx3 = int((COLS_X_PTS[-1] + 2.5) * ZOOM)
-        row_x_start = int(230 * ZOOM)
-        row_x_end = cx3 + 70
-        crop = aligned_img[y0+10:y1-10, row_x_start:row_x_end]
+        
+        base_zoom = 300.0 / 72.0
+        y0_pt = y0 / base_zoom
+        y1_pt = y1 / base_zoom
+        y0_scaled = int(y0_pt * scale_y)
+        y1_scaled = int(y1_pt * scale_y)
+        
+        cx3 = int((COLS_X_PTS[-1] + 2.5) * scale_x)
+        row_x_start = int(230 * scale_x)
+        row_x_end = cx3 + int(70 * scale_x)
+        
+        pad_y = int(10 * scale_y)
+        crop = aligned_img[y0_scaled+pad_y:y1_scaled-pad_y, row_x_start:row_x_end]
         return crop
 
     if crop_name == "aligned_p1":

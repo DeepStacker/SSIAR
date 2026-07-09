@@ -153,6 +153,16 @@ def submit_review(
                 responses[field_name] = int(corrected_value)
             except ValueError:
                 responses[field_name] = corrected_value
+        # Update the confidence scores mapping to make the corrected field high confidence
+        if isinstance(confidence_scores, dict):
+            ocr_map = confidence_scores.setdefault("ocr", {})
+            ocr_map[field_name] = "high_confidence"
+            
+            v2_trust = confidence_scores.setdefault("v2_trust", {})
+            if field_name in v2_trust:
+                v2_trust[field_name]["trust_confidence"] = 1.0
+                v2_trust[field_name]["ocr_confidence"] = 1.0
+                v2_trust[field_name]["validation_score"] = 1.0
                 
         # Save the updated form data back to DB
         insert_or_update_form_data(

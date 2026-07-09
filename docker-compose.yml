@@ -5,14 +5,22 @@ services:
       dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
-    environment:
-      AZURE_DOC_INTELLIGENCE_ENDPOINT: ${AZURE_DOC_INTELLIGENCE_ENDPOINT:?err}
-      AZURE_DOC_INTELLIGENCE_KEY: ${AZURE_DOC_INTELLIGENCE_KEY:?err}
-      MAX_WORKERS: ${MAX_WORKERS:-4}
-      SURYA_ENABLED: "0"
+    env_file:
+      - backend/.env
     volumes:
-      - /data/shared/database:/app/shared/database
-      - /data/shared/processed:/app/shared/processed
-      - /data/shared/uploads:/app/shared/uploads
-      - /data/shared/temp:/app/shared/temp
+      - ./shared/database:/app/shared/database
+      - ./shared/processed:/app/shared/processed
+      - ./shared/uploads:/app/shared/uploads
+      - ./shared/temp:/app/shared/temp
     restart: unless-stopped
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_TARGET=http://app:8000
+    command: sh -c "npm install && npm run dev -- --host"

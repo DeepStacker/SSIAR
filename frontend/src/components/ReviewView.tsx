@@ -47,6 +47,7 @@ const KBD = ({ children }: { children: React.ReactNode }) => (
 );
 
 export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onDirtyChange, reviewIndex, totalReview, onClose, onVerify, onReprocess, onNext, onPrev, saving }) => {
+  const [showAllFields, setShowAllFields] = useState(false);
   const [fieldAccepted, setFieldAccepted] = useState<Record<string, boolean>>({});
   const [flashField, setFlashField] = useState<string | null>(null);
   const [zoomImg, setZoomImg] = useState<ZoomImage | null>(null);
@@ -59,6 +60,11 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
   const focusedFieldRef = useRef<string | null>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { show } = useToast();
+
+  const reviewFields = details.confidence_scores?.review_fields || [];
+  const activeFields = (reviewFields.length > 0 && !showAllFields)
+    ? MAIN_FIELDS.filter(f => reviewFields.includes(f.key))
+    : MAIN_FIELDS;
 
   const handleReprocessField = async (key: string) => {
     setReprocessingField(key);
@@ -121,20 +127,20 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
   }, [fieldAccepted]);
 
   const focusNextField = useCallback((fi: number) => {
-    const next = MAIN_FIELDS[fi + 1];
+    const next = activeFields[fi + 1];
     if (next) {
       const el = fieldRefs.current[next.key];
       if (el) setTimeout(() => el.focus(), 50);
     }
-  }, []);
+  }, [activeFields]);
 
   const handleFieldKeyDown = useCallback((e: React.KeyboardEvent, fi: number) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      handleAccept(MAIN_FIELDS[fi].key);
+      handleAccept(activeFields[fi].key);
       focusNextField(fi);
     }
-  }, [handleAccept, focusNextField]);
+  }, [handleAccept, focusNextField, activeFields]);
 
   const showZoomForCrop = useCallback((key: string) => {
     const el = cropRefs.current[key];
@@ -201,8 +207,12 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
   }, [onClose, onVerify, pageViewer]);
 
   useEffect(() => {
-    setTimeout(() => rollRef.current?.focus(), 100);
-  }, [doc.id]);
+    if (activeFields.length > 0) {
+      const firstKey = activeFields[0].key;
+      const el = fieldRefs.current[firstKey];
+      if (el) setTimeout(() => el.focus(), 100);
+    }
+  }, [doc.id, activeFields]);
 
   useEffect(() => {
     const init: Record<string, boolean> = {};
@@ -215,7 +225,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
     setFieldAccepted(init);
   }, [details.id]);
 
-  const acceptedCount = Object.values(fieldAccepted).filter(Boolean).length;
+  const acceptedCount = activeFields.filter(f => fieldAccepted[f.key]).length;
   const highConfQCount = Array.from({ length: 25 }, (_, i) => `q${i + 1}`).filter(q => {
     const c = checkboxConf[q];
     return c === 'high' || c === 'high_confidence' || !c;
@@ -255,19 +265,32 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
         <Card size="sm" className="mb-4">
           <CardContent className="flex justify-between items-center !px-5">
             <span className="text-[13px] text-[var(--text-secondary)]">
-              {doc.filename} — <b className="text-white">{acceptedCount}/8</b> main fields
+              {doc.filename} — {reviewFields.length > 0 && !showAllFields ? (
+                <>
+                  Reviewing <b className="text-[var(--accent-amber)]">{reviewFields.length}</b> issue fields ({acceptedCount}/{activeFields.length} accepted)
+                </>
+              ) : (
+                <>
+                  <b className="text-white">{acceptedCount}/{activeFields.length}</b> main fields accepted
+                </>
+              )}
               + <b className="text-[var(--accent-emerald)]">{highConfQCount}/25</b> questions auto-verified
             </span>
             <div className="flex gap-2">
+              {reviewFields.length > 0 && (
+                <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowAllFields(prev => !prev)}>
+                  {showAllFields ? "Show Issues Only" : "Show All Fields (V1 Mode)"}
+                </Button>
+              )}
               <Button variant="outline" size="sm" className="text-xs"
                 onClick={() => {
                   const next = { ...fieldAccepted };
-                  for (const f of MAIN_FIELDS) {
+                  for (const f of activeFields) {
                     if (isHighConf(f.key)) next[f.key] = true;
                   }
                   setFieldAccepted(next);
                 }}>
-                Accept High-Conf ({MAIN_FIELDS.filter(f => isHighConf(f.key)).length})
+                Accept High-Conf ({activeFields.filter(f => isHighConf(f.key)).length})
               </Button>
               <Button variant="default" onClick={onVerify} disabled={saving}>
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
@@ -304,7 +327,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
         <Card className="mb-5 !py-0">
           <CardContent className="!p-0">
             <div className="grid grid-cols-2">
-              {MAIN_FIELDS.map((f, fi) => {
+              {activeFields.map((f, fi) => {
                 const val = getFieldVal(f.key);
                 const accepted = fieldAccepted[f.key];
                 const confidence = fieldConf(f.key);
@@ -322,7 +345,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
                     flex items-center gap-3 px-[18px] py-[10px]
                     ${flashField === f.key ? 'accept-flash' : ''}
                     ${fi % 2 === 0 ? 'border-r border-[var(--color-border)]' : ''}
-                    ${fi < MAIN_FIELDS.length - 2 ? 'border-b border-[var(--color-border)]' : ''}
+                    ${fi < activeFields.length - 2 ? 'border-b border-[var(--color-border)]' : ''}
                     ${accepted ? 'bg-[rgba(16,185,129,0.04)]' : isEdited ? 'bg-[rgba(245,158,11,0.04)]' : ''}
                   `}>
                     <div ref={el => { cropRefs.current[f.key] = el; }} className="shrink-0 leading-none"

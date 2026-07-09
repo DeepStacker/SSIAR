@@ -479,18 +479,28 @@ def get_document(doc_id: str) -> Optional[dict]:
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
-        cur.execute(
-            """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
-               f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
-               f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
-               FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = %s AND d.user_id = %s"""
-            if USE_POSTGRES else
-            """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
-               f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
-               f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
-               FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = ? AND d.user_id = ?""",
-            (doc_id, uid) if uid else (doc_id,)
-        )
+        if uid:
+            query = """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+                       f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
+                       f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
+                       FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = %s AND d.user_id = %s""" if USE_POSTGRES else \
+                    """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+                       f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
+                       f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
+                       FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = ? AND d.user_id = ?"""
+            params = (doc_id, uid)
+        else:
+            query = """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+                       f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
+                       f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
+                       FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = %s""" if USE_POSTGRES else \
+                    """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+                       f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
+                       f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
+                       FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = ?"""
+            params = (doc_id,)
+            
+        cur.execute(query, params)
         row = cur.fetchone()
         if row:
             d = dict(row)

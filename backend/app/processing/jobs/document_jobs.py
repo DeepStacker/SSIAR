@@ -53,7 +53,8 @@ class JobQueue:
         **kwargs,
     ) -> str:
         """Submit a job to the queue."""
-        job_id = f"{job_type.value}_{doc_id}_{uuid.uuid4().hex[:8]}"
+        jtype_str = job_type.value if hasattr(job_type, "value") else str(job_type)
+        job_id = f"{jtype_str}_{doc_id}_{uuid.uuid4().hex[:8]}"
         
         with self._lock:
             self._status[job_id] = "queued"
@@ -129,13 +130,13 @@ def resolve_page_selection_marks(page_elements: list, is_page_2: bool) -> tuple[
     if not sel_marks:
         return {}, "Unanswered"
     
-    # Group selection marks into rows by Y coordinate (Y tolerance of 40.0 pixels)
+    # Group selection marks into rows by Y coordinate (Y tolerance of 50.0 pixels)
     rows = []
     for mark in sel_marks:
         my = mark.bbox[1]  # y_min
         found_row = False
         for r in rows:
-            if abs(r[0].bbox[1] - my) < 40.0:
+            if abs(r[0].bbox[1] - my) < 50.0:
                 r.append(mark)
                 found_row = True
                 break
@@ -204,6 +205,17 @@ def process_document_background(
     """
     try:
         import cv2
+        # Delete existing ROI files from disk to force re-cropping
+        from app.image.storage import PROCESSED_DIR
+        doc_dir = PROCESSED_DIR / doc_id
+        if doc_dir.exists():
+            for f in doc_dir.iterdir():
+                if f.name.startswith("roi_") and f.name.endswith(".jpg"):
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+
         # 1. Update status
         _update_doc_status(doc_id, "processing", user_id=user_id)
         notify_sse("document_updated", {
@@ -319,13 +331,15 @@ def process_document_background(
         validation_results = {}
         trust_confidences = {}
         bboxes = {}
+        polygons = {}
         resolved_pages = {}
         
         for fd in template.fields:
-            text, conf, found, bbox, res_page = resolve_field(fd, combined_normalized)
+            text, conf, found, bbox, poly, res_page = resolve_field(fd, combined_normalized)
             normalized_text = normalize_value(text, fd.type) if found else ""
             extracted_fields[fd.name] = normalized_text
             bboxes[fd.name] = bbox
+            polygons[fd.name] = poly
             resolved_pages[fd.name] = res_page
             
             # Validate
@@ -386,7 +400,7 @@ def process_document_background(
         _store_processed_results(
             doc_id, extracted_fields, validation_results,
             trust_confidences, cross_reason, review_fields,
-            escalation, responses, consent, bboxes, resolved_pages
+            escalation, responses, consent, bboxes, resolved_pages, polygons
         )
         
         _update_doc_status(doc_id, status, escalation, user_id=user_id)
@@ -444,7 +458,8 @@ def _store_processed_results(
     responses: dict,
     consent: str,
     bboxes: dict,
-    resolved_pages: dict
+    resolved_pages: dict,
+    polygons: dict
 ):
     """Store processing results in the database."""
     from app.database import insert_or_update_form_data
@@ -475,6 +490,7 @@ def _store_processed_results(
             "ambiguity_score": tc.ambiguity_score,
             "cross_field_score": tc.cross_field_score,
             "bbox": bboxes.get(fn),
+            "polygon": polygons.get(fn),
             "page": resolved_pages.get(fn),
         }
     
@@ -484,8 +500,13 @@ def _store_processed_results(
         val = responses.get(q_key, 0)
         cb_conf[q_key] = "high_confidence" if val > 0 else "unanswered"
         
+    ocr_map = {}
+    for fn, tc in trust_confidences.items():
+        ocr_map[fn] = "high_confidence" if tc.trust_confidence >= 0.85 else "low_confidence"
+        
     confidence_scores = {
         "v2_trust": confidence_data,
+        "ocr": ocr_map,
         "cross_field_penalty": 0,
         "cross_field_reason": cross_reason,
         "review_fields": review_fields,

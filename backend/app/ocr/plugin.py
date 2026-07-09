@@ -101,7 +101,7 @@ class AzureOCRPlugin(OCREngine):
             _, jpeg_buf = cv2.imencode('.jpg', page_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
             buf = io.BytesIO(jpeg_buf.tobytes())
             poller = self._client.begin_analyze_document(
-                "prebuilt-read",
+                "prebuilt-layout",
                 body=buf,
                 content_type="image/jpeg"
             )

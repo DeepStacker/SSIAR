@@ -30,22 +30,30 @@ def normalize_azure_response(doc_id: str, raw_response: Any) -> NormalizedAzureR
         raise ValueError(f"Unsupported Azure response type: {type(raw_response)}")
 
 
+def _scale_polygon(poly: list[float], unit: str) -> list[float]:
+    if not poly:
+        return []
+    scale = 300.0 if unit == "inch" else 1.0
+    return [val * scale for val in poly]
+
+
 def _normalize_from_sdk(doc_id: str, result: Any) -> NormalizedAzureResponse:
     """Normalize from Azure SDK DocumentAnalysisResult."""
     model_id = getattr(result, "model_id", "prebuilt-read")
     pages = []
     
     for page in getattr(result, "pages", []) or []:
+        unit = getattr(page, "unit", "inch")
         np_page = NormalizedPage(
             page=page.page_number if hasattr(page, "page_number") else (getattr(page, "page", 1)),
             angle=getattr(page, "angle", 0.0),
-            width=getattr(page, "width", 0.0),
-            height=getattr(page, "height", 0.0),
+            width=getattr(page, "width", 0.0) * (300.0 if unit == "inch" else 1.0),
+            height=getattr(page, "height", 0.0) * (300.0 if unit == "inch" else 1.0),
         )
         
         # Process words
         for word in getattr(page, "words", []) or []:
-            poly = list(getattr(word, "polygon", [])) or []
+            poly = _scale_polygon(list(getattr(word, "polygon", [])) or [], unit)
             bbox = _polygon_to_bbox(poly) if poly else [0, 0, 0, 0]
             np_page.elements.append(NormalizedElement(
                 text=getattr(word, "content", ""),
@@ -57,7 +65,7 @@ def _normalize_from_sdk(doc_id: str, result: Any) -> NormalizedAzureResponse:
         
         # Process lines for additional context
         for line in getattr(page, "lines", []) or []:
-            poly = list(getattr(line, "polygon", [])) or []
+            poly = _scale_polygon(list(getattr(line, "polygon", [])) or [], unit)
             bbox = _polygon_to_bbox(poly) if poly else [0, 0, 0, 0]
             np_page.elements.append(NormalizedElement(
                 text=getattr(line, "content", ""),
@@ -69,7 +77,7 @@ def _normalize_from_sdk(doc_id: str, result: Any) -> NormalizedAzureResponse:
         
         # Process selection marks (checkboxes)
         for sel in getattr(page, "selection_marks", []) or []:
-            poly = list(getattr(sel, "polygon", [])) or []
+            poly = _scale_polygon(list(getattr(sel, "polygon", [])) or [], unit)
             bbox = _polygon_to_bbox(poly) if poly else [0, 0, 0, 0]
             np_page.elements.append(NormalizedElement(
                 text="✓" if getattr(sel, "state", "unselected") == "selected" else "☐",
@@ -96,15 +104,16 @@ def _normalize_from_dict(doc_id: str, raw: dict) -> NormalizedAzureResponse:
     pages = []
     
     for p in pages_raw:
+        unit = p.get("unit", "inch")
         np_page = NormalizedPage(
             page=p.get("page_number", p.get("page", 1)),
             angle=p.get("angle", 0.0),
-            width=p.get("width", 0.0),
-            height=p.get("height", 0.0),
+            width=p.get("width", 0.0) * (300.0 if unit == "inch" else 1.0),
+            height=p.get("height", 0.0) * (300.0 if unit == "inch" else 1.0),
         )
         
         for word in p.get("words", []):
-            poly = word.get("polygon", [])
+            poly = _scale_polygon(word.get("polygon", []), unit)
             bbox = _polygon_to_bbox(poly) if poly else [0, 0, 0, 0]
             np_page.elements.append(NormalizedElement(
                 text=word.get("content", ""),
@@ -115,7 +124,7 @@ def _normalize_from_dict(doc_id: str, raw: dict) -> NormalizedAzureResponse:
             ))
         
         for line in p.get("lines", []):
-            poly = line.get("polygon", [])
+            poly = _scale_polygon(line.get("polygon", []), unit)
             bbox = _polygon_to_bbox(poly) if poly else [0, 0, 0, 0]
             np_page.elements.append(NormalizedElement(
                 text=line.get("content", ""),
@@ -126,7 +135,7 @@ def _normalize_from_dict(doc_id: str, raw: dict) -> NormalizedAzureResponse:
             ))
         
         for mark in p.get("selection_marks", []):
-            poly = mark.get("polygon", [])
+            poly = _scale_polygon(mark.get("polygon", []), unit)
             bbox = _polygon_to_bbox(poly) if poly else [0, 0, 0, 0]
             np_page.elements.append(NormalizedElement(
                 text="✓" if mark.get("state") == "selected" else "☐",
@@ -144,7 +153,6 @@ def _normalize_from_dict(doc_id: str, raw: dict) -> NormalizedAzureResponse:
         raw_response=raw,
         model_id=model_id,
     )
-
 
 def _polygon_to_bbox(poly: list[float]) -> list[float]:
     """Convert polygon [x0,y0,x1,y1,...] to [x_min, y_min, x_max, y_max]."""
@@ -169,6 +177,28 @@ def _sdk_to_dict(result: Any) -> dict:
 
 
 # ── Helper: Find text elements near a region ─────────────────────────────────
+
+def _overlaps(box1: list[float], box2: list[float], threshold: float = 0.1) -> bool:
+    if not box1 or not box2:
+        return False
+    x0_1, y0_1, x1_1, y1_1 = box1
+    x0_2, y0_2, x1_2, y1_2 = box2
+    
+    # Intersection
+    xi0 = max(x0_1, x0_2)
+    yi0 = max(y0_1, y0_2)
+    xi1 = min(x1_1, x1_2)
+    yi1 = min(y1_1, y1_2)
+    
+    if xi1 <= xi0 or yi1 <= yi0:
+        return False
+        
+    inter_area = (xi1 - xi0) * (yi1 - yi0)
+    box1_area = (x1_1 - x0_1) * (y1_1 - y0_1)
+    if box1_area <= 0:
+        return False
+    return (inter_area / box1_area) > threshold
+
 
 def find_text_near(
     page: NormalizedPage,
@@ -198,6 +228,10 @@ def find_text_near(
     for el in page.elements:
         if el is anchor_el:
             continue
+        # Skip elements that overlap significantly with the anchor (e.g. sub-words or label words)
+        if _overlaps(el.bbox, anchor_el.bbox, 0.2):
+            continue
+            
         ex0, ey0, ex1, ey1 = el.bbox
         ecx = (ex0 + ex1) / 2.0
         ecy = (ey0 + ey1) / 2.0

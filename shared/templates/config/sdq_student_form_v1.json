@@ -1,0 +1,167 @@
+{
+  "template_id": "sdq_student_form_v1",
+  "name": "SDQ Student Hindi Form",
+  "version": "1.0",
+  "pages": 2,
+  "fields": [
+    {
+      "name": "roll_number",
+      "label": "अनुक्रमांक (Roll Number)",
+      "type": "number",
+      "anchor": "अनुक्रमांक",
+      "relationship": "below",
+      "offset_x": 0,
+      "offset_y": 0,
+      "width": 190,
+      "height": 31,
+      "required": true,
+      "review_priority": 1,
+      "validation_rules": [
+        "roll_number"
+      ],
+      "options": []
+    },
+    {
+      "name": "class",
+      "label": "कक्षा (Class)",
+      "type": "number",
+      "anchor": "कक्षा",
+      "relationship": "below",
+      "offset_x": 0,
+      "offset_y": 0,
+      "width": 190,
+      "height": 31,
+      "required": true,
+      "review_priority": 1,
+      "validation_rules": [
+        "class"
+      ],
+      "options": []
+    },
+    {
+      "name": "dob",
+      "label": "जन्म तिथि (DOB)",
+      "type": "date",
+      "anchor": "जन्म तिथि",
+      "relationship": "below",
+      "offset_x": 0,
+      "offset_y": 0,
+      "width": 190,
+      "height": 32,
+      "required": true,
+      "review_priority": 1,
+      "validation_rules": [
+        "dob"
+      ],
+      "options": []
+    },
+    {
+      "name": "gender",
+      "label": "लिंग (Gender)",
+      "type": "gender",
+      "anchor": "लिंग",
+      "relationship": "below",
+      "offset_x": 0,
+      "offset_y": 0,
+      "width": 190,
+      "height": 30,
+      "required": true,
+      "review_priority": 1,
+      "validation_rules": [
+        "gender"
+      ],
+      "options": [
+        "M",
+        "F"
+      ]
+    },
+    {
+      "name": "math_pct",
+      "label": "Math Percentage",
+      "type": "number",
+      "anchor": "गणित",
+      "relationship": "right",
+      "offset_x": 0,
+      "offset_y": 0,
+      "width": 100,
+      "height": 30,
+      "required": false,
+      "review_priority": 2,
+      "validation_rules": [
+        "percentage"
+      ],
+      "options": []
+    },
+    {
+      "name": "science_pct",
+      "label": "Science Percentage",
+      "type": "number",
+      "anchor": "विज्ञान",
+      "relationship": "right",
+      "offset_x": 0,
+      "offset_y": 0,
+      "width": 100,
+      "height": 30,
+      "required": false,
+      "review_priority": 2,
+      "validation_rules": [
+        "percentage"
+      ],
+      "options": []
+    },
+    {
+      "name": "language_pct",
+      "label": "Language Percentage",
+      "type": "number",
+      "anchor": "भाषा",
+      "relationship": "right",
+      "offset_x": 0,
+      "offset_y": 0,
+      "width": 100,
+      "height": 30,
+      "required": false,
+      "review_priority": 2,
+      "validation_rules": [
+        "language_pct"
+      ],
+      "options": []
+    },
+    {
+      "name": "rank",
+      "label": "Rank",
+      "type": "number",
+      "anchor": "श्रेणी",
+      "relationship": "right",
+      "offset_x": 0,
+      "offset_y": 0,
+      "width": 115,
+      "height": 50,
+      "required": false,
+      "review_priority": 2,
+      "validation_rules": [
+        "rank"
+      ],
+      "options": []
+    },
+    {
+      "name": "remarks",
+      "label": "Remarks",
+      "type": "text",
+      "anchor": "टिप्पणी",
+      "relationship": "right",
+      "offset_x": 0,
+      "offset_y": 0,
+      "width": 524,
+      "height": 40,
+      "required": false,
+      "review_priority": 2,
+      "validation_rules": [],
+      "options": []
+    }
+  ],
+  "metadata": {
+    "form_type": "sdq",
+    "language": "hi",
+    "country": "IN"
+  }
+}

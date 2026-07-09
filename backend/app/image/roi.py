@@ -106,7 +106,10 @@ def correct_crop_orientation(crop: np.ndarray) -> np.ndarray:
         
     angles = []
     for line in lines:
-        x1, y1, x2, y2 = line[0]
+        val = line.flatten()
+        if len(val) != 4:
+            continue
+        x1, y1, x2, y2 = val
         angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
         if abs(angle) < 15:
             angles.append(angle)
@@ -175,6 +178,9 @@ def extract_dynamic_roi(
             rect = ROIS_REMARKS_POINTS['remarks']
 
     # Question row routing: dynamic coordinates from row index
+    h_img, w_img = aligned_img.shape[:2]
+    dynamic_zoom = w_img / 595.0
+
     if field_name.startswith("q"):
         try:
             q_num = int(field_name[1:])
@@ -187,11 +193,13 @@ def extract_dynamic_roi(
                 y0, y1 = P2_Y_RANGES[idx]
             else:
                 return None
-            cx3 = int((COLS_X_PTS[-1] + 2.5) * ZOOM)
-            px0 = int(230 * ZOOM)
-            px1 = cx3 + 70
-            # Convert pixel coords to points coords so it can be refined
-            rect = (px0 / ZOOM, y0 / ZOOM, px1 / ZOOM, y1 / ZOOM)
+            cx3_pt = COLS_X_PTS[-1] + 2.5
+            px0_pt = 230.0
+            px1_pt = cx3_pt + (70.0 / dynamic_zoom)
+            base_zoom = 300.0 / 72.0
+            y0_pt = y0 / base_zoom
+            y1_pt = y1 / base_zoom
+            rect = (px0_pt, y0_pt, px1_pt, y1_pt)
         except ValueError:
             return None
 
@@ -199,7 +207,7 @@ def extract_dynamic_roi(
         return None
         
     # 2. Refine coordinates based on actual table borders in the image
-    refined = get_refined_coordinates(rect, h_mask, v_mask)
+    refined = get_refined_coordinates(rect, h_mask, v_mask, zoom=dynamic_zoom)
     
     # 3. Apply padding and orientation correction
     is_detail_field = (field_name in ROIS_P1_POINTS or field_name in ROIS_P2_POINTS)
