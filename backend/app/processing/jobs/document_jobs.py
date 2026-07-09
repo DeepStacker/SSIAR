@@ -373,19 +373,28 @@ def process_document_background(
             raw_responses = cached_raw
             combined_normalized = normalize_azure_response(doc_id, cached_raw)
         else:
-            # 4b. Send to Azure Document Intelligence (whole pages)
+            # 4b. Send to Azure Document Intelligence (whole pages) in parallel
             from app.ocr.plugin import AzureOCRPlugin
             plugin = AzureOCRPlugin()
-            azure_full_page_results = []
+            azure_full_page_results = [None] * len(pages)
             
             if plugin.is_available():
-                for i, page_img in enumerate(pages):
+                from concurrent.futures import ThreadPoolExecutor
+                def analyze_single_page(idx, page_img):
                     try:
-                        result = plugin.recognize_page(page_img)
-                        azure_full_page_results.append(result)
+                        return idx, plugin.recognize_page(page_img)
                     except Exception as e:
-                        print(f"Azure analysis failed for page {i+1}: {e}")
-                        azure_full_page_results.append(None)
+                        print(f"Azure analysis failed for page {idx+1}: {e}")
+                        return idx, None
+                
+                with ThreadPoolExecutor(max_workers=len(pages)) as executor:
+                    futures = [
+                        executor.submit(analyze_single_page, i, page_img)
+                        for i, page_img in enumerate(pages)
+                    ]
+                    for fut in futures:
+                        idx, result = fut.result()
+                        azure_full_page_results[idx] = result
             
             # 5. Normalize Azure response
             raw_responses = {}
