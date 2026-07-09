@@ -213,22 +213,47 @@ def resolve_page_selection_marks(
                 consent_val = "Yes" if rel_cx < 0.83 else "No"
                 break
         # 2. Density-based check fallback
-        if consent_val == "Unanswered" and page_img is not None and len(consent_marks) >= 2:
-            ratios = {}
-            for idx, mark in enumerate(consent_marks):
-                x1, y1, x2, y2 = mark.bbox
-                poly = [x1, y1, x2, y1, x2, y2, x1, y2]
-                ratio = _check_checkbox_density(page_img, poly, page_width, page_height, "pixel")
-                ratios[idx] = (ratio, mark)
-            if ratios:
-                darkest_idx = max(ratios.keys(), key=lambda k: ratios[k][0])
-                lightest_idx = min(ratios.keys(), key=lambda k: ratios[k][0])
-                max_r = ratios[darkest_idx][0]
-                min_r = ratios[lightest_idx][0]
+        if consent_val == "Unanswered" and page_img is not None:
+            if len(consent_marks) >= 2:
+                ratios = {}
+                for idx, mark in enumerate(consent_marks):
+                    x1, y1, x2, y2 = mark.bbox
+                    poly = [x1, y1, x2, y1, x2, y2, x1, y2]
+                    ratio = _check_checkbox_density(page_img, poly, page_width, page_height, "pixel")
+                    ratios[idx] = (ratio, mark)
+                if ratios:
+                    darkest_idx = max(ratios.keys(), key=lambda k: ratios[k][0])
+                    lightest_idx = min(ratios.keys(), key=lambda k: ratios[k][0])
+                    max_r = ratios[darkest_idx][0]
+                    min_r = ratios[lightest_idx][0]
+                    if max_r - min_r >= 0.035:
+                        best_mark = ratios[darkest_idx][1]
+                        rel_cx = best_mark.bbox[0] / page_width
+                        consent_val = "Yes" if rel_cx < 0.83 else "No"
+            else:
+                # If Azure missed the marks completely, fallback to checking standard regions
+                # Yes: x from 3550 to 3700, y from 1430 to 1550 (on 4500x6000 page)
+                # No: x from 3800 to 3950, y from 1430 to 1550
+                scale_x = page_width / 4500.0
+                scale_y = page_height / 6000.0
+                yes_poly = [
+                    3550 * scale_x, 1430 * scale_y,
+                    3700 * scale_x, 1430 * scale_y,
+                    3700 * scale_x, 1550 * scale_y,
+                    3550 * scale_x, 1550 * scale_y
+                ]
+                no_poly = [
+                    3800 * scale_x, 1430 * scale_y,
+                    3950 * scale_x, 1430 * scale_y,
+                    3950 * scale_x, 1550 * scale_y,
+                    3800 * scale_x, 1550 * scale_y
+                ]
+                yes_ratio = _check_checkbox_density(page_img, yes_poly, page_width, page_height, "pixel")
+                no_ratio = _check_checkbox_density(page_img, no_poly, page_width, page_height, "pixel")
+                max_r = max(yes_ratio, no_ratio)
+                min_r = min(yes_ratio, no_ratio)
                 if max_r - min_r >= 0.035:
-                    best_mark = ratios[darkest_idx][1]
-                    rel_cx = best_mark.bbox[0] / page_width
-                    consent_val = "Yes" if rel_cx < 0.83 else "No"
+                    consent_val = "Yes" if yes_ratio == max_r else "No"
     else:
         table = tables[0]
         
@@ -328,20 +353,22 @@ def process_document_background(
         from app.image.pdf import render_pdf_to_arrays
         raw_pages = render_pdf_to_arrays(pdf_bytes)
         
-        # Apply CLAHE contrast enhancement and sharpening to improve checkbox/pen stroke detection for Azure DI and local density check
+        # Apply bilateral denoising, CLAHE contrast enhancement, and strong Laplacian sharpening to make checkboxes and pen strokes highly readable.
         pages = []
         for img in raw_pages:
             try:
-                # Convert to LAB color space to equalize luminosity channel
-                lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+                # 1. Bilateral filter to reduce noise (like compression artifacts) while keeping edges sharp
+                denoised = cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
+                # 2. CLAHE (Local Contrast Equalization) in LAB space
+                lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
                 l, a, b = cv2.split(lab)
-                clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+                clahe = cv2.createCLAHE(clipLimit=4.5, tileGridSize=(8, 8))
                 cl = clahe.apply(l)
                 limg = cv2.merge((cl, a, b))
                 enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
                 
-                # Apply sharpening filter to emphasize thin pen strokes (like checkmarks)
-                kernel = np.array([[0, -0.5, 0], [-0.5, 3.0, -0.5], [0, -0.5, 0]], dtype=np.float32)
+                # 3. Stronger Laplacian sharpening filter to make thin pen strokes pop out
+                kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]], dtype=np.float32)
                 sharpened = cv2.filter2D(enhanced, -1, kernel)
                 pages.append(sharpened)
             except Exception:
