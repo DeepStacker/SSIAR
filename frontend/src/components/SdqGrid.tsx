@@ -1,13 +1,15 @@
-import React, { memo } from 'react';
+import React, { memo, useCallback, useRef } from 'react';
 import { ZoomImage } from '../api';
 import { api } from '../api';
 import { Card, CardContent } from '@/components/ui/card';
+import { CanvasCrop } from './CanvasCrop';
 
 interface Props {
   docId: string;
   responses: Record<string, number | number[]>;
   checkboxConf: Record<string, string>;
   multiTicks?: Record<string, number[]>;
+  v2Trust: Record<string, any>;
   onChange: (responses: Record<string, number | number[]>) => void;
   onZoom: (img: ZoomImage | null) => void;
 }
@@ -23,13 +25,21 @@ const toggleValue = (cur: number | number[] | undefined, v: number): number | nu
   return [cur as number, v];
 };
 
-const SdqGridComponent: React.FC<Props> = ({ docId, responses, checkboxConf, onChange, onZoom }) => {
+const SdqGridComponent: React.FC<Props> = ({ docId, responses, checkboxConf, v2Trust, onChange, onZoom }) => {
+  // Store data URLs for zoom
+  const dataUrls = useRef<Record<string, string>>({});
+
   const getCheckboxConf = (q: string): 'high' | 'medium' | 'low' => {
     const c = checkboxConf[q];
     if (c === 'low_confidence' || c === 'low') return 'low';
     if (c === 'medium' || c === 'medium_confidence') return 'medium';
     return 'high';
   };
+
+  const handleZoom = useCallback((q: string, x: number, y: number) => {
+    const src = dataUrls.current[q];
+    if (src) onZoom({ src, x, y });
+  }, [onZoom]);
 
   return (
     <Card className="mb-5">
@@ -49,6 +59,12 @@ const SdqGridComponent: React.FC<Props> = ({ docId, responses, checkboxConf, onC
             const confLevel = getCheckboxConf(q);
             const cellColor = isMulti ? 'var(--accent-violet)' : (confLevel === 'high' ? 'var(--accent-emerald)' : confLevel === 'medium' ? 'var(--accent-amber)' : 'var(--accent-rose)');
             const cur = responses[q];
+
+            const qInfo = v2Trust?.[q];
+            const qPage = qInfo?.page || (qi >= 13 ? 2 : 1);
+            const qBbox = qInfo?.bbox;
+            const pageUrl = api.getPageUrl(docId, qPage);
+
             return (
               <div key={q} className="flex items-center gap-1 p-1.5 rounded-lg"
                 onKeyDown={e => {
@@ -63,17 +79,23 @@ const SdqGridComponent: React.FC<Props> = ({ docId, responses, checkboxConf, onC
                   border: `1px solid ${isMulti ? 'color-mix(in srgb, var(--accent-violet) 25%, transparent)' : 'transparent'}`,
                 }}>
                 <div className="w-6 text-xs font-bold text-[var(--text-muted)] shrink-0">Q{qi}</div>
-                <img src={api.getCropUrl(docId, `${q}.png`)} alt={q}
-                  className="shrink-0"
-                  style={{ width: '160px', height: '50px', objectFit: 'contain', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', cursor: 'zoom-in' }}
-                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  onMouseEnter={e => {
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    onZoom({ src: api.getCropUrl(docId, `${q}.png`), x: rect.left + rect.width / 2, y: rect.top });
-                  }}
-                  onMouseMove={e => onZoom({ src: api.getCropUrl(docId, `${q}.png`), x: e.clientX, y: e.clientY - 20 })}
-                  onMouseLeave={() => onZoom(null)}
-                />
+                {qBbox ? (
+                  <div className="shrink-0"
+                    style={{ width: '160px', height: '50px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', cursor: 'zoom-in', overflow: 'hidden' }}
+                    onMouseEnter={e => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      handleZoom(q, rect.left + rect.width / 2, rect.top);
+                    }}
+                    onMouseMove={e => handleZoom(q, e.clientX, e.clientY - 20)}
+                    onMouseLeave={() => onZoom(null)}
+                  >
+                    <CanvasCrop pageUrl={pageUrl} bbox={qBbox}
+                      style={{ width: '160px', height: '50px', objectFit: 'contain' }}
+                      onDataUrl={url => { dataUrls.current[q] = url; }} />
+                  </div>
+                ) : (
+                  <div className="shrink-0" style={{ width: '160px', height: '50px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }} />
+                )}
                 <div className="flex items-center gap-3 justify-end flex-1 shrink-0">
                   <span className="text-2xl font-extrabold shrink-0 min-w-[30px] text-center" style={{ color: cellColor }}>
                     {(() => {
@@ -120,7 +142,8 @@ const propsAreEqual = (prev: Props, next: Props) => {
     && prev.onZoom === next.onZoom
     && JSON.stringify(prev.responses) === JSON.stringify(next.responses)
     && JSON.stringify(prev.checkboxConf) === JSON.stringify(next.checkboxConf)
-    && JSON.stringify(prev.multiTicks) === JSON.stringify(next.multiTicks);
+    && JSON.stringify(prev.multiTicks) === JSON.stringify(next.multiTicks)
+    && prev.v2Trust === next.v2Trust;
 };
 
 export const SdqGrid = memo(SdqGridComponent, propsAreEqual);

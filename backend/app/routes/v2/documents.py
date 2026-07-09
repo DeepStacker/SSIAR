@@ -66,6 +66,53 @@ def get_document_details(doc_id: str):
     doc = get_document(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+        
+    try:
+        # Dynamically inject coordinates for all fields (including questions) to allow client-side canvas cropping
+        if "confidence_scores" in doc and isinstance(doc["confidence_scores"], dict):
+            cs = doc["confidence_scores"]
+            if "v2_trust" not in cs or not isinstance(cs["v2_trust"], dict):
+                cs["v2_trust"] = {}
+            v2 = cs["v2_trust"]
+            
+            # Load raw response for tables if needed
+            from app.database import get_db_connection, put_conn
+            import json
+            conn = get_db_connection()
+            raw_dict = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT raw_response FROM azure_responses WHERE document_id = ?", (doc_id,))
+                row = cur.fetchone()
+                if row and row[0]:
+                    raw_dict = json.loads(row[0])
+            finally:
+                put_conn(conn)
+                
+            # 1. Enrich Q1 - Q25 coordinates
+            if raw_dict:
+                for q_num in range(1, 26):
+                    q_key = f"q{q_num}"
+                    if q_key not in v2:
+                        tbl_res = get_sdq_row_bbox_from_table(raw_dict, q_num)
+                        if tbl_res:
+                            poly, bbox, page_num = tbl_res
+                            v2[q_key] = {
+                                "page": page_num,
+                                "bbox": bbox,
+                                "polygon": poly
+                            }
+                            
+            # 2. Enrich consent coordinates (page 1, standard relative region)
+            if "consent" not in v2:
+                v2["consent"] = {
+                    "page": 1,
+                    "bbox": [3550, 1430, 3950, 1550],
+                    "polygon": [3550, 1430, 3950, 1430, 3950, 1550, 3550, 1550]
+                }
+    except Exception:
+        pass
+        
     return doc
 
 
@@ -439,7 +486,6 @@ def serve_crop(doc_id: str, filename: str):
                     _, buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
                     crop_bytes = buf.tobytes()
                     _cache_crop_set(cache_key, crop_bytes)
-                    store_roi_file(doc_id, crop_name, crop)
                     return Response(content=crop_bytes, media_type="image/jpeg",
                                     headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
@@ -463,7 +509,6 @@ def serve_crop(doc_id: str, filename: str):
     _, buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
     crop_bytes = buf.tobytes()
     _cache_crop_set(cache_key, crop_bytes)
-    store_roi_file(doc_id, crop_name, crop)
     return Response(content=crop_bytes, media_type="image/jpeg",
                     headers={"Cache-Control": "public, max-age=3600"})
 

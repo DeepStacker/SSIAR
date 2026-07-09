@@ -12,6 +12,7 @@ import { useToast } from '../context/ToastContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { CanvasCrop } from './CanvasCrop';
 
 interface Props {
   doc: Document;
@@ -95,6 +96,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
   const checkboxConf = details.confidence_scores?.checkbox || {};
   const multiTicks: Record<string, number[]> = details.confidence_scores?.multi_ticks || {};
   const academic = details.academic_scores || {} as any;
+  const v2Trust = details.confidence_scores?.v2_trust || {};
 
   const fieldConf = (key: string): number => {
     const v2Trust = details.confidence_scores?.v2_trust?.[key];
@@ -149,29 +151,31 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
     }
   }, [handleAccept, focusNextField, activeFields]);
 
+  // Data URLs for zoom from client-side canvas crops
+  const cropDataUrls = useRef<Record<string, string>>({});
+
   const showZoomForCrop = useCallback((key: string) => {
     const el = cropRefs.current[key];
-    if (el) {
+    const src = cropDataUrls.current[key] || '';
+    if (el && src) {
       const rect = el.getBoundingClientRect();
-      setZoomImg({
-        src: api.getCropUrl(doc.id, `${key}.png`),
-        x: rect.right + 20,
-        y: rect.top + rect.height / 2,
-      });
-    } else {
-      setZoomImg({ src: api.getCropUrl(doc.id, `${key}.png`), x: 0, y: 0 });
+      setZoomImg({ src, x: rect.right + 20, y: rect.top + rect.height / 2 });
     }
-  }, [doc.id]);
+  }, []);
 
   const handleCropEnter = useCallback((e: React.MouseEvent, key: string) => {
     if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setZoomImg({ src: api.getCropUrl(doc.id, `${key}.png`), x: rect.left + rect.width / 2, y: rect.top });
-  }, [doc.id]);
+    const src = cropDataUrls.current[key] || '';
+    if (src) {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setZoomImg({ src, x: rect.left + rect.width / 2, y: rect.top });
+    }
+  }, []);
 
   const handleCropMove = useCallback((e: React.MouseEvent, key: string) => {
-    setZoomImg({ src: api.getCropUrl(doc.id, `${key}.png`), x: e.clientX, y: e.clientY - 20 });
-  }, [doc.id]);
+    const src = cropDataUrls.current[key] || '';
+    if (src) setZoomImg({ src, x: e.clientX, y: e.clientY - 20 });
+  }, []);
 
   const handleCropLeave = useCallback(() => {
     if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
@@ -359,8 +363,17 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
                       onMouseEnter={e => handleCropEnter(e, f.key)}
                       onMouseMove={e => handleCropMove(e, f.key)}
                       onMouseLeave={handleCropLeave}>
-                      <img src={api.getCropUrl(doc.id, `${f.key}.png`)} alt={f.label}
-                        className="w-[220px] h-[54px] object-contain bg-[rgba(0,0,0,0.3)] rounded block cursor-zoom-in" />
+                      {v2Trust[f.key]?.bbox ? (
+                        <CanvasCrop
+                          pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
+                          bbox={v2Trust[f.key].bbox}
+                          style={{ width: '220px', height: '54px', objectFit: 'contain', background: 'rgba(0,0,0,0.3)' }}
+                          className="rounded block cursor-zoom-in"
+                          onDataUrl={url => { cropDataUrls.current[f.key] = url; }}
+                        />
+                      ) : (
+                        <div className="w-[220px] h-[54px] bg-[rgba(0,0,0,0.3)] rounded" />
+                      )}
                     </div>
                     <span className="text-[15px] whitespace-nowrap text-[var(--text-secondary)] font-medium flex items-center gap-1.5">
                       <Icon size={14} className="text-[var(--text-muted)]" />
@@ -468,10 +481,12 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
         </Card>
 
         <SdqGrid docId={doc.id} responses={details.responses || {}} checkboxConf={checkboxConf} multiTicks={multiTicks}
+          v2Trust={v2Trust}
           onChange={newResp => { onDirtyChange(true); onDetailsChange({ ...details, responses: newResp }); }}
           onZoom={setZoomImg} />
 
         <ConsentRemarks docId={doc.id} consent={details.consent || 'Unanswered'} remarks={details.remarks || ''}
+          v2Trust={v2Trust}
           onConsentChange={v => { onDirtyChange(true); onDetailsChange({ ...details, consent: v }); }}
           onRemarksChange={v => { onDirtyChange(true); onDetailsChange({ ...details, remarks: v }); }}
           onZoom={setZoomImg} />

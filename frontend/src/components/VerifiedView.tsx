@@ -10,6 +10,7 @@ import { useToast } from '../context/ToastContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { CanvasCrop } from './CanvasCrop';
 
 interface Props {
   doc: Document;
@@ -27,28 +28,31 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
   const focusedFieldRef = useRef<string | null>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { show } = useToast();
+  const v2Trust = details.confidence_scores?.v2_trust || {};
+  const cropDataUrls = useRef<Record<string, string>>({});
 
   const showZoomForCrop = useCallback((key: string) => {
     const el = cropRefs.current[key];
-    if (el) {
+    const src = cropDataUrls.current[key] || '';
+    if (el && src) {
       const rect = el.getBoundingClientRect();
-      setZoomImg({
-        src: api.getCropUrl(doc.id, `${key}.png`),
-        x: rect.right + 20,
-        y: rect.top + rect.height / 2,
-      });
+      setZoomImg({ src, x: rect.right + 20, y: rect.top + rect.height / 2 });
     }
-  }, [doc.id]);
+  }, []);
 
   const handleCropEnter = useCallback((e: React.MouseEvent, key: string) => {
     if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setZoomImg({ src: api.getCropUrl(doc.id, `${key}.png`), x: rect.left + rect.width / 2, y: rect.top });
-  }, [doc.id]);
+    const src = cropDataUrls.current[key] || '';
+    if (src) {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setZoomImg({ src, x: rect.left + rect.width / 2, y: rect.top });
+    }
+  }, []);
 
   const handleCropMove = useCallback((e: React.MouseEvent, key: string) => {
-    setZoomImg({ src: api.getCropUrl(doc.id, `${key}.png`), x: e.clientX, y: e.clientY });
-  }, [doc.id]);
+    const src = cropDataUrls.current[key] || '';
+    if (src) setZoomImg({ src, x: e.clientX, y: e.clientY });
+  }, []);
 
   const handleCropLeave = useCallback(() => {
     if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
@@ -206,10 +210,17 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
                       onMouseEnter={e => handleCropEnter(e, f.key)}
                       onMouseMove={e => handleCropMove(e, f.key)}
                       onMouseLeave={handleCropLeave}>
-                      <img src={api.getCropUrl(doc.id, `${f.key}.png`)} alt={f.label}
-                        className="w-[120px] h-[30px] object-contain bg-black/15 rounded cursor-zoom-in"
-                        style={{ border: '1px solid var(--color-border)' }}
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      {v2Trust[f.key]?.bbox ? (
+                        <CanvasCrop
+                          pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
+                          bbox={v2Trust[f.key].bbox}
+                          style={{ width: '120px', height: '30px', objectFit: 'contain', border: '1px solid var(--color-border)' }}
+                          className="bg-black/15 rounded cursor-zoom-in"
+                          onDataUrl={url => { cropDataUrls.current[f.key] = url; }}
+                        />
+                      ) : (
+                        <div className="w-[120px] h-[30px] bg-black/15 rounded" style={{ border: '1px solid var(--color-border)' }} />
+                      )}
                     </div>
                     {reprocessingField === f.key ? (
                       <Loader2 size={14} className="animate-spin shrink-0" style={{ color: 'var(--accent-cyan)' }} />
@@ -273,13 +284,25 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
                     <div ref={el => { cropRefs.current[`sdq_${q}`] = el; }} className="leading-none"
                       onMouseEnter={e => {
                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        setZoomImg({ src: api.getCropUrl(doc.id, `${q}.png`), x: rect.left + rect.width / 2, y: rect.top });
+                        const src = cropDataUrls.current[`sdq_${q}`] || '';
+                        if (src) setZoomImg({ src, x: rect.left + rect.width / 2, y: rect.top });
                       }}
-                      onMouseMove={e => { setZoomImg({ src: api.getCropUrl(doc.id, `${q}.png`), x: e.clientX, y: e.clientY }); }}
+                      onMouseMove={e => {
+                        const src = cropDataUrls.current[`sdq_${q}`] || '';
+                        if (src) setZoomImg({ src, x: e.clientX, y: e.clientY });
+                      }}
                       onMouseLeave={handleCropLeave}>
-                      <img src={api.getCropUrl(doc.id, `${q}.png`)} alt={q}
-                        className="w-[160px] h-[50px] object-contain bg-black/20 rounded cursor-zoom-in shrink-0"
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      {v2Trust[q]?.bbox ? (
+                        <CanvasCrop
+                          pageUrl={api.getPageUrl(doc.id, v2Trust[q]?.page || (qi >= 13 ? 2 : 1))}
+                          bbox={v2Trust[q].bbox}
+                          style={{ width: '160px', height: '50px', objectFit: 'contain' }}
+                          className="bg-black/20 rounded cursor-zoom-in shrink-0"
+                          onDataUrl={url => { cropDataUrls.current[`sdq_${q}`] = url; }}
+                        />
+                      ) : (
+                        <div className="w-[160px] h-[50px] bg-black/20 rounded shrink-0" />
+                      )}
                     </div>
                     <span className="text-sm font-bold min-w-[24px] text-center"
                       style={{ color: isMulti ? 'var(--accent-violet)' : 'var(--text-primary)' }}>

@@ -591,6 +591,10 @@ def process_document_background(
             "escalation_level": escalation,
         }, user_id=user_id)
         
+        # Delete original uploaded PDF since we keep page images and can compile PDF on-the-fly
+        from app.database import delete_pdf
+        delete_pdf(doc_id)
+        
     except Exception as e:
         import traceback
         traceback.print_exc()

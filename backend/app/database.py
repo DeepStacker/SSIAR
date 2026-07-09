@@ -646,7 +646,38 @@ def store_pdf(doc_id: str, pdf_bytes: bytes):
 
 def get_pdf(doc_id: str) -> bytes:
     from app.image.storage import get_pdf_file
-    return get_pdf_file(doc_id)
+    pdf_bytes = get_pdf_file(doc_id)
+    if pdf_bytes:
+        return pdf_bytes
+    # Compile PDF from stored page images on-the-fly
+    try:
+        import fitz
+        from app.database import get_page_image
+        doc = fitz.open()
+        for page_num in (1, 2):
+            img_bytes = get_page_image(doc_id, page_num)
+            if img_bytes:
+                img_doc = fitz.open(stream=img_bytes, filetype="jpg")
+                rect = img_doc[0].rect
+                pdf_page = doc.new_page(width=rect.width, height=rect.height)
+                pdf_page.insert_image(rect, stream=img_bytes)
+                img_doc.close()
+        if len(doc) > 0:
+            pdf_bytes = doc.tobytes()
+            doc.close()
+            return pdf_bytes
+        doc.close()
+    except Exception:
+        pass
+    return b""
+
+
+def delete_pdf(doc_id: str):
+    from app.image.storage import delete_pdf_file
+    try:
+        delete_pdf_file(doc_id)
+    except Exception:
+        pass
 
 
 def store_page_image(doc_id: str, page_num: int, image_bytes: bytes):
