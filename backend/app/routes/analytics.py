@@ -15,12 +15,20 @@ from app.auth import require_auth, get_current_user_id
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"], dependencies=[Depends(require_auth)])
 
-METADATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "shared", "metadata", "sdq_metadata.json")
+def find_metadata_path():
+    path1 = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "shared", "metadata", "sdq_metadata.json"))
+    if os.path.exists(path1):
+        return path1
+    path2 = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "shared", "metadata", "sdq_metadata.json"))
+    if os.path.exists(path2):
+        return path2
+    return path1
 
 def load_metadata():
-    if not os.path.exists(METADATA_PATH):
+    path = find_metadata_path()
+    if not os.path.exists(path):
         return []
-    with open(METADATA_PATH, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def calculate_cronbach_alpha(df: pd.DataFrame, items: List[str]) -> float:
@@ -44,7 +52,7 @@ def get_processed_data(class_filter=None, gender_filter=None, date_from=None, da
     placeholders = ",".join("?" for _ in statuses)
     query = f"""
         SELECT fd.document_id, fd.roll_number, fd.class, fd.dob, fd.gender, fd.consent, 
-               fd.responses, fd.academic_scores, fd.remarks, fd.quality_report, d.status
+               fd.responses, fd.academic_scores, fd.remarks, fd.quality_report, fd.confidence_scores, d.status
         FROM form_data fd
         JOIN documents d ON fd.document_id = d.id
         WHERE d.status IN ({placeholders})
@@ -1005,10 +1013,111 @@ def export_research_data(
         export_cols = ["roll_number", "class_clean", "gender", "age", "consent"] + q_cols + dom_cols + acad_cols
         export_df = df[export_cols].copy()
         
+        # Helper to map raw response digits to text labels with scores
+        def map_response_to_text(val, is_reverse):
+            if pd.isna(val) or val is None:
+                return "अनुत्तरित"
+            val_str = str(val).strip()
+            digits = []
+            if val_str.startswith("[") and val_str.endswith("]"):
+                try:
+                    import ast
+                    parsed = ast.literal_eval(val_str)
+                    if isinstance(parsed, (list, tuple)):
+                        digits = [int(x) for x in parsed]
+                except Exception:
+                    pass
+            elif "," in val_str:
+                try:
+                    digits = [int(x.strip()) for x in val_str.split(",") if x.strip().isdigit()]
+                except Exception:
+                    pass
+            else:
+                try:
+                    digits = [int(float(val_str))]
+                except Exception:
+                    pass
+            if not digits:
+                return "अनुत्तरित"
+            labels = {
+                1: "सही नहीं",
+                2: "कुछ-कुछ सही",
+                3: "बिल्कुल सही"
+            }
+            result_parts = []
+            for d in digits:
+                lbl = labels.get(d, f"अज्ञात ({d})")
+                if d in (1, 2, 3):
+                    score = (3 - d) if is_reverse else (d - 1)
+                    result_parts.append(f"{lbl} ({score})")
+                else:
+                    result_parts.append(lbl)
+            return ", ".join(result_parts)
+
+        # Helper to map raw response digits to text labels with scores for Sheet 2 (Scored Data)
+        def map_text_to_score(val_str, is_reverse):
+            if pd.isna(val_str) or val_str is None:
+                return ""
+            val_str = str(val_str).strip()
+            if not val_str:
+                return ""
+            mapping = {
+                "सच नहीं": 2 if is_reverse else 0,
+                "कुछ हद तक सच है": 1,
+                "सही में सच है": 0 if is_reverse else 2
+            }
+            parts = [p.strip() for p in val_str.split(",")]
+            scores = []
+            for p in parts:
+                if p in mapping:
+                    scores.append(str(mapping[p]))
+                else:
+                    try:
+                        clean_p = p.split("(")[0].strip()
+                        if clean_p in mapping:
+                            scores.append(str(mapping[clean_p]))
+                        elif clean_p.isdigit():
+                            d = int(clean_p)
+                            score = (3 - d) if is_reverse else (d - 1)
+                            scores.append(str(score))
+                    except Exception:
+                        pass
+            if not scores:
+                return ""
+            return ", ".join(scores)
+
+        # Apply response mapping to Sheet 1 (Extracted Data)
+        for item in meta:
+            q_id = item["question_id"]
+            if q_id in export_df.columns:
+                is_reverse = item.get("reverse_scored", False)
+                export_df[q_id] = export_df[q_id].apply(lambda v: map_response_to_text(v, is_reverse))
+
+        # Build Sheet 2 (Scored Data)
+        scored_df = export_df.copy()
+        for item in meta:
+            q_id = item["question_id"]
+            if q_id in scored_df.columns:
+                is_reverse = item.get("reverse_scored", False)
+                scored_df[q_id] = scored_df[q_id].apply(lambda v: map_text_to_score(v, is_reverse))
+
+        # Rename question columns in Sheet 1 to show question text
+        rename_map = {}
+        for item in meta:
+            q_id = item["question_id"]
+            text_en = item.get("text_en", "")
+            rename_map[q_id] = f"{q_id.upper()}: {text_en}"
+        export_df = export_df.rename(columns=rename_map)
+
         # If columns param is provided, filter to only those columns (comma-separated)
         if columns:
             requested_cols = [c.strip() for c in columns.split(",")]
-            valid_cols = [c for c in requested_cols if c in export_df.columns]
+            # Match columns either by their raw name or renamed name
+            valid_cols = []
+            for c in requested_cols:
+                mapped_name = rename_map.get(c, c)
+                if mapped_name in export_df.columns:
+                    valid_cols.append(mapped_name)
             if valid_cols:
                 export_df = export_df[valid_cols]
         
@@ -1024,8 +1133,54 @@ def export_research_data(
                 headers={"Content-Disposition": "attachment; filename=ssiar_research_export.csv"}
             )
         elif format_type == "excel":
+            # Map column names back to original fields for conditional formatting
+            header_to_orig_field = {}
+            for item in meta:
+                q_id = item["question_id"]
+                text_en = item.get("text_en", "")
+                header_to_orig_field[f"{q_id.upper()}: {text_en}"] = q_id
+            header_to_orig_field["class_clean"] = "class"
+            
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                export_df.to_excel(writer, sheet_name="SDQ Data", index=False)
+                # Write Sheet 1 (Extracted Data)
+                export_df.to_excel(writer, sheet_name="Extracted Data", index=False)
+                # Write Sheet 2 (Scored Data)
+                scored_df.to_excel(writer, sheet_name="Scored Data", index=False)
+                
+                workbook = writer.book
+                worksheet1 = writer.sheets["Extracted Data"]
+                
+                # Add highlighting formats
+                orange_format = workbook.add_format({'bg_color': '#FFD580'}) # Light orange for needs review / low confidence
+                green_format = workbook.add_format({'bg_color': '#D1E7DD'})  # Light green for verified
+                
+                # Format Sheet 1 (Extracted Data) with highlighting based on status & low confidence
+                for r_idx in range(len(export_df)):
+                    excel_row = r_idx + 1
+                    row_status = df.iloc[r_idx]["status"]
+                    conf_str = df.iloc[r_idx]["confidence_scores"]
+                    
+                    review_fields = []
+                    if conf_str:
+                        try:
+                            conf_data = json.loads(conf_str) if isinstance(conf_str, str) else conf_str
+                            review_fields = conf_data.get("review_fields", [])
+                        except Exception:
+                            pass
+                            
+                    for col_idx, col_name in enumerate(export_df.columns):
+                        cell_val = export_df.iloc[r_idx, col_idx]
+                        if pd.isna(cell_val):
+                            cell_val = ""
+                            
+                        orig_field = header_to_orig_field.get(col_name, col_name)
+                        
+                        if row_status == "verified":
+                            worksheet1.write(excel_row, col_idx, cell_val, green_format)
+                        elif row_status == "needs_review" and orig_field in review_fields:
+                            worksheet1.write(excel_row, col_idx, cell_val, orange_format)
+                        else:
+                            worksheet1.write(excel_row, col_idx, cell_val)
             output.seek(0)
             return StreamingResponse(
                 output, 

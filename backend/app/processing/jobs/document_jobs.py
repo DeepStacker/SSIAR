@@ -202,12 +202,33 @@ def resolve_page_selection_marks(
     if page_num == 1:
         table = tables[1] if len(tables) >= 2 else tables[0]
         # Parse consent from page 1 elements
-        for mark in page_elements:
-            if mark.element_type == "selection_mark" and mark.bbox[1] < page_height * 0.38:
-                if mark.text == "✓":
-                    rel_cx = mark.bbox[0] / page_width
+        consent_marks = [
+            m for m in page_elements
+            if m.element_type == "selection_mark" and m.bbox[1] < page_height * 0.38
+        ]
+        # 1. Check if Azure detected selected state
+        for mark in consent_marks:
+            if mark.text == "✓":
+                rel_cx = mark.bbox[0] / page_width
+                consent_val = "Yes" if rel_cx < 0.83 else "No"
+                break
+        # 2. Density-based check fallback
+        if consent_val == "Unanswered" and page_img is not None and len(consent_marks) >= 2:
+            ratios = {}
+            for idx, mark in enumerate(consent_marks):
+                x1, y1, x2, y2 = mark.bbox
+                poly = [x1, y1, x2, y1, x2, y2, x1, y2]
+                ratio = _check_checkbox_density(page_img, poly, page_width, page_height, "pixel")
+                ratios[idx] = (ratio, mark)
+            if ratios:
+                darkest_idx = max(ratios.keys(), key=lambda k: ratios[k][0])
+                lightest_idx = min(ratios.keys(), key=lambda k: ratios[k][0])
+                max_r = ratios[darkest_idx][0]
+                min_r = ratios[lightest_idx][0]
+                if max_r - min_r >= 0.035:
+                    best_mark = ratios[darkest_idx][1]
+                    rel_cx = best_mark.bbox[0] / page_width
                     consent_val = "Yes" if rel_cx < 0.83 else "No"
-                    break
     else:
         table = tables[0]
         
@@ -692,6 +713,8 @@ def _combine_normalized_responses(doc_id: str, azure_results: list) -> Optional[
         if result is None:
             continue
         normalized = normalize_azure_response(f"{doc_id}_p{i+1}", result)
+        for page_obj in normalized.pages:
+            page_obj.page = i + 1
         combined.pages.extend(normalized.pages)
         combined.raw_response.update(normalized.raw_response)
     

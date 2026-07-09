@@ -743,10 +743,12 @@ def queue_status():
 
 
 @router.get("/api/events")
-async def event_stream():
+async def event_stream(request: Request):
     import json
     from app.sse import subscribe, unsubscribe
-    uid = get_current_user_id()
+    uid = request.state.user_id if hasattr(request.state, "user_id") else None
+    if not uid:
+        uid = get_current_user_id()
     queue = subscribe(user_id=uid)
     try:
         from fastapi.responses import StreamingResponse

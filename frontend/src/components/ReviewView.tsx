@@ -97,8 +97,15 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
   const academic = details.academic_scores || {} as any;
 
   const fieldConf = (key: string): number => {
-    const c = conf[key] ?? 1;
-    return typeof c === 'number' ? c : 1;
+    const v2Trust = details.confidence_scores?.v2_trust?.[key];
+    if (v2Trust && typeof v2Trust.trust_confidence === 'number') {
+      return v2Trust.trust_confidence;
+    }
+    const c = conf[key];
+    if (typeof c === 'number') return c;
+    if (c === 'high_confidence' || c === 'high') return 0.95;
+    if (c === 'low_confidence' || c === 'low') return 0.50;
+    return 1;
   };
 
   const isHighConf = (key: string) => fieldConf(key) >= CONF_THRESHOLD;
