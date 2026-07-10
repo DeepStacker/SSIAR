@@ -718,33 +718,86 @@ export const DlqView: React.FC<Props> = ({ onClose }) => {
                     </div>
                   )}
 
-                  {/* 3. SDQ Questions fast resolution (1 / 2 / 3 / 0) */}
-                  {activeTask.field_name.startsWith('q') && (
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-[var(--text-primary)] flex justify-between items-center">
-                        <span>Select Correct Value</span>
-                        <span className="text-[10px] text-[var(--text-muted)] font-normal">Press <kbd className="font-bold">1</kbd> / <kbd className="font-bold">2</kbd> / <kbd className="font-bold">3</kbd> / <kbd className="font-bold">0</kbd> for instant save</span>
-                      </label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {[
-                          { val: '1', label: '1 (उदास/डर)' },
-                          { val: '2', label: '2 (गुस्सैल/झगड़ालू)' },
-                          { val: '3', label: '3 (खुश/शांत)' },
-                          { val: '0', label: '0 (Unanswered)' }
-                        ].map(opt => (
-                          <Button
-                            key={opt.val}
-                            variant={inputValue === opt.val ? 'default' : 'outline'}
-                            onClick={() => handleResolve(opt.val)}
-                            className="h-14 flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-150 active:scale-95"
+                  {/* 3. SDQ Questions fast resolution (supporting multi-ticks toggle) */}
+                  {activeTask.field_name.startsWith('q') && (() => {
+                    // Parse current input value as array of numbers
+                    let selectedVals: number[] = [];
+                    try {
+                      if (inputValue.startsWith('[') && inputValue.endsWith(']')) {
+                        selectedVals = JSON.parse(inputValue);
+                      } else if (inputValue.includes(',')) {
+                        selectedVals = inputValue.split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x));
+                      } else if (inputValue && !isNaN(parseInt(inputValue))) {
+                        selectedVals = [parseInt(inputValue)];
+                      }
+                    } catch {
+                      selectedVals = [];
+                    }
+
+                    const handleToggleOption = (valNum: number) => {
+                      if (valNum === 0) {
+                        setInputValue('0');
+                        return;
+                      }
+                      let nextVals: number[];
+                      if (selectedVals.includes(0)) {
+                        nextVals = [valNum];
+                      } else if (selectedVals.includes(valNum)) {
+                        nextVals = selectedVals.filter(x => x !== valNum);
+                      } else {
+                        nextVals = [...selectedVals, valNum].sort();
+                      }
+                      
+                      if (nextVals.length === 0) {
+                        setInputValue('0');
+                      } else {
+                        setInputValue(JSON.stringify(nextVals));
+                      }
+                    };
+
+                    return (
+                      <div className="space-y-3">
+                        <label className="text-xs font-semibold text-[var(--text-primary)] flex justify-between items-center">
+                          <span>Select Correct Value(s)</span>
+                          <span className="text-[10px] text-[var(--text-muted)] font-normal">Toggle selections or click save</span>
+                        </label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {[
+                            { val: 1, label: '1 (उदास/डर)' },
+                            { val: 2, label: '2 (गुस्सैल/झगड़ालू)' },
+                            { val: 3, label: '3 (खुश/शांत)' },
+                            { val: 0, label: '0 (Unanswered)' }
+                          ].map(opt => {
+                            const isSelected = selectedVals.includes(opt.val);
+                            return (
+                              <Button
+                                key={opt.val}
+                                type="button"
+                                variant={isSelected ? 'default' : 'outline'}
+                                onClick={() => handleToggleOption(opt.val)}
+                                className={`h-14 flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-150 ${
+                                  isSelected ? 'ring-2 ring-[var(--accent-violet)]' : ''
+                                }`}
+                              >
+                                <span className="text-base font-extrabold">{opt.val}</span>
+                                <span className="text-[8px] mt-0.5 text-center truncate w-full">{opt.label}</span>
+                              </Button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <Button 
+                            type="button" 
+                            variant="default"
+                            onClick={() => handleResolve(inputValue)}
+                            className="w-full h-10 font-bold"
                           >
-                            <span className="text-base font-extrabold">{opt.val}</span>
-                            <span className="text-[8px] mt-0.5 text-center truncate w-full">{opt.label}</span>
+                            Save Selection: {inputValue || '0'}
                           </Button>
-                        ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* 4. Gender (M / F) */}
                   {activeTask.field_name === 'gender' && (

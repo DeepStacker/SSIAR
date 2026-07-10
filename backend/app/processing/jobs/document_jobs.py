@@ -442,6 +442,7 @@ def process_document_background(
                     # 3. Unsharp Masking: smooth sharpening by blending a Gaussian-blurred image
                     blurred = cv2.GaussianBlur(enhanced, (5, 5), 0)
                     sharpened = cv2.addWeighted(enhanced, 1.5, blurred, -0.5, 0)
+                    sharpened = np.clip(sharpened, 0, 255).astype(np.uint8)
                     pages.append(sharpened)
                     
                     # Explicitly release large temporary arrays

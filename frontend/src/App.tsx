@@ -342,7 +342,6 @@ function AppInner() {
       await api.bulkVerify(docIds);
       show(`Verified ${docIds.length} documents`);
       setSelectedDashDocs(new Set());
-      await loadAll();
     } catch { show("Bulk verify failed", 'error'); }
   };
 
@@ -352,7 +351,6 @@ function AppInner() {
       await Promise.all(docIds.map(id => api.reprocessDocument(id)));
       show(`Reprocessing ${docIds.length} documents`);
       setSelectedDashDocs(new Set());
-      await loadAll();
     } catch { show("Bulk reprocess failed", 'error'); }
   };
 
@@ -362,7 +360,6 @@ function AppInner() {
       await api.bulkDelete(docIds);
       show(`Deleted ${docIds.length} documents`);
       setSelectedDashDocs(new Set());
-      await loadAll();
     } catch { show("Bulk delete failed", 'error'); }
   };
 

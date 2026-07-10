@@ -127,8 +127,32 @@ def get_pending_review_tasks(
                     if not row.get("confidence_score") and "trust_confidence" in field_data:
                         row["confidence_score"] = field_data["trust_confidence"]
                         
-                    row["bbox"] = field_data.get("bbox")
-                    row["polygon"] = field_data.get("polygon")
+                    # Scale coordinates from 300 DPI space to actual image pixels (matching documents.py detail scaling)
+                    bbox = field_data.get("bbox")
+                    polygon = field_data.get("polygon")
+                    page_num = field_data.get("page", 1)
+                    
+                    if (bbox or polygon):
+                        from app.routes.v2.documents import _get_page, _get_azure_scale
+                        img = _get_page(doc_id, page_num)
+                        if img is not None:
+                            h, w = img.shape[:2]
+                            scale_x, scale_y = _get_azure_scale(doc_id, page_num, w, h)
+                            if bbox and len(bbox) >= 4:
+                                bbox = [
+                                    bbox[0] * scale_x,
+                                    bbox[1] * scale_y,
+                                    bbox[2] * scale_x,
+                                    bbox[3] * scale_y
+                                ]
+                            if polygon and len(polygon) >= 8:
+                                polygon = [
+                                    pt * scale_x if idx % 2 == 0 else pt * scale_y
+                                    for idx, pt in enumerate(polygon)
+                                ]
+                                
+                    row["bbox"] = bbox
+                    row["polygon"] = polygon
                 except Exception:
                     row["bbox"] = None
                     row["polygon"] = None
@@ -237,10 +261,24 @@ def submit_review(
         elif field_name in ("math_pct", "science_pct", "language_pct", "rank"):
             academic_scores[field_name] = corrected_value
         elif field_name.startswith("q") and field_name[1:].isdigit():
-            try:
-                responses[field_name] = int(corrected_value)
-            except ValueError:
-                responses[field_name] = corrected_value
+            # Support multi-tick arrays e.g. '[1, 2]' or '1,2'
+            val_str = corrected_value.strip()
+            if val_str.startswith("[") and val_str.endswith("]"):
+                try:
+                    import json
+                    responses[field_name] = json.loads(val_str)
+                except Exception:
+                    responses[field_name] = val_str
+            elif "," in val_str:
+                try:
+                    responses[field_name] = [int(x.strip()) for x in val_str.split(",") if x.strip().isdigit()]
+                except Exception:
+                    responses[field_name] = val_str
+            else:
+                try:
+                    responses[field_name] = int(val_str)
+                except ValueError:
+                    responses[field_name] = val_str
         # Update the confidence scores mapping to make the corrected field high confidence
         if isinstance(confidence_scores, dict):
             ocr_map = confidence_scores.setdefault("ocr", {})

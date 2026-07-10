@@ -57,13 +57,15 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 
 
 @router.get("/api/documents")
-def list_documents():
-    return get_all_documents()
+async def list_documents():
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, get_all_documents)
 
 
 @router.get("/api/documents/{doc_id}")
-def get_document_details(doc_id: str):
-    doc = get_document(doc_id)
+async def get_document_details(doc_id: str):
+    loop = asyncio.get_running_loop()
+    doc = await loop.run_in_executor(None, get_document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
         
@@ -232,7 +234,11 @@ def serve_page(doc_id: str, page_num: int):
         
     if page_path.exists():
         return FileResponse(str(page_path), media_type="image/jpeg",
-                            headers={"Cache-Control": "public, max-age=86400"})
+                            headers={
+                                "Cache-Control": "public, max-age=86400",
+                                "Access-Control-Allow-Origin": "*",
+                                "Access-Control-Allow-Methods": "GET"
+                            })
 
     # 2. Try database files
     img_bytes = get_page_image_file(doc_id, page_num)
@@ -240,7 +246,11 @@ def serve_page(doc_id: str, page_num: int):
         img_bytes = get_page_image_file(doc_id, 1)
     if img_bytes:
         return Response(content=img_bytes, media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=86400"})
+                        headers={
+                            "Cache-Control": "public, max-age=86400",
+                            "Access-Control-Allow-Origin": "*",
+                            "Access-Control-Allow-Methods": "GET"
+                        })
 
     # 3. Try database page_images
     img = get_page_image(doc_id, page_num)
@@ -248,7 +258,11 @@ def serve_page(doc_id: str, page_num: int):
         img = get_page_image(doc_id, 1)
     if img:
         return Response(content=img, media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=86400"})
+                        headers={
+                            "Cache-Control": "public, max-age=86400",
+                            "Access-Control-Allow-Origin": "*",
+                            "Access-Control-Allow-Methods": "GET"
+                        })
 
     raise HTTPException(status_code=404, detail="Page not found")
 

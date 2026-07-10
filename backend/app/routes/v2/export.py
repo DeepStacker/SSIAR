@@ -12,8 +12,10 @@ from app.auth import require_auth, get_current_user_id
 router = APIRouter(dependencies=[Depends(require_auth)])
 
 
+import asyncio
+
 @router.get("/api/export")
-def export_results(
+async def export_results(
     format: str = Query("excel", pattern="^(excel|csv)$"),
     lang: str = Query("en", pattern="^(en|hi)$"),
     status_filter: Optional[str] = Query(None, alias="status"),
@@ -24,7 +26,8 @@ def export_results(
     columns: Optional[str] = Query(None),
     doc_ids: Optional[str] = Query(None),
 ):
-    docs = get_all_documents()
+    loop = asyncio.get_running_loop()
+    docs = await loop.run_in_executor(None, get_all_documents)
 
     if status_filter:
         filtered_docs = [d for d in docs if d["status"] == status_filter]
@@ -48,4 +51,4 @@ def export_results(
     if not filtered_docs:
         raise HTTPException(status_code=400, detail="No documents match the filter criteria")
 
-    return build_export(filtered_docs, lang, columns, format)
+    return await loop.run_in_executor(None, lambda: build_export(filtered_docs, lang, columns, format))
