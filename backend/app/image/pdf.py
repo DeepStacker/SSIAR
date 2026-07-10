@@ -3,9 +3,9 @@ import fitz
 import numpy as np
 import os
 
-TEMPLATE_W = 2483
-TEMPLATE_H = 3508
-ZOOM = 300 / 72
+TEMPLATE_W = 1490
+TEMPLATE_H = 2104
+ZOOM = 180 / 72
 
 COLS_X_PTS = [384.8, 449.3, 516.0]
 

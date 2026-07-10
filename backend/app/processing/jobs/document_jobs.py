@@ -109,8 +109,8 @@ def get_job_queue() -> JobQueue:
     if _queue is None:
         with _queue_lock:
             if _queue is None:
-                # Limit concurrent CPU/memory-heavy document processes to 1 to prevent OOM container crashes and system lag
-                _queue = JobQueue(max_workers=1)
+                # Run up to 4 document processes in parallel safely due to 180 DPI memory optimizations
+                _queue = JobQueue(max_workers=4)
     return _queue
 
 
