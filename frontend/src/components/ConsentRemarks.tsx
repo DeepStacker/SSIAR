@@ -69,7 +69,7 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
                 onMouseMove={e => handleZoom('consent', e.clientX, e.clientY - 20)}
                 onMouseLeave={() => onZoom(null)}
               >
-                <CanvasCrop pageUrl={consentPageUrl} bbox={consentBbox}
+                <CanvasCrop pageUrl={consentPageUrl} bbox={consentBbox} polygon={consentInfo?.polygon}
                   style={{ width: '100%', height: '50px', objectFit: 'contain' }}
                   onDataUrl={url => setUrl('consent', url)} />
               </div>
@@ -89,7 +89,7 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
                 onMouseMove={e => handleZoom('remarks', e.clientX, e.clientY - 20)}
                 onMouseLeave={() => onZoom(null)}
               >
-                <CanvasCrop pageUrl={remarksPageUrl} bbox={remarksBbox}
+                <CanvasCrop pageUrl={remarksPageUrl} bbox={remarksBbox} polygon={remarksInfo?.polygon}
                   style={{ width: '100%', height: '50px', objectFit: 'contain' }}
                   onDataUrl={url => setUrl('remarks', url)} />
               </div>

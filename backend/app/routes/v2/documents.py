@@ -88,12 +88,13 @@ def get_document_details(doc_id: str):
                     raw_dict = json.loads(row[0])
             finally:
                 put_conn(conn)
-                
-            # 1. Enrich Q1 - Q25 coordinates
+                           # 1. Enrich Q1 - Q25 coordinates
             if raw_dict:
                 for q_num in range(1, 26):
                     q_key = f"q{q_num}"
-                    if q_key not in v2:
+                    expected_page = 2 if q_num >= 13 else 1
+                    
+                    if q_key not in v2 or not v2[q_key].get("bbox"):
                         tbl_res = get_sdq_row_bbox_from_table(raw_dict, q_num)
                         if tbl_res:
                             poly, bbox, page_num = tbl_res
@@ -102,16 +103,85 @@ def get_document_details(doc_id: str):
                                 "bbox": bbox,
                                 "polygon": poly
                             }
+                    elif q_key in v2:
+                        # Enforce correct page number even if coordinates exist in database
+                        v2[q_key]["page"] = expected_page
+                            
+                # 1b. Enrich demographics and academic coordinates
+                field_pages = {
+                    "roll_number": 1, "class": 1, "dob": 1, "gender": 1,
+                    "math_pct": 2, "science_pct": 2, "language_pct": 2
+                }
+                for field_name, expected_page in field_pages.items():
+                    if field_name not in v2 or not v2[field_name].get("bbox"):
+                        res = get_field_bbox_from_table(raw_dict, field_name)
+                        if res:
+                            poly, bbox, page_num = res
+                            v2[field_name] = {
+                                "page": page_num,
+                                "bbox": bbox,
+                                "polygon": poly
+                            }
+                    elif field_name in v2:
+                        v2[field_name]["page"] = expected_page
+                            
+                # 1c. Enrich rank coordinates
+                if "rank" not in v2 or not v2["rank"].get("bbox"):
+                    res = get_rank_bbox(raw_dict)
+                    if res:
+                        poly, bbox, page_num = res
+                        v2["rank"] = {
+                            "page": page_num,
+                            "bbox": bbox,
+                            "polygon": poly
+                        }
+                elif "rank" in v2:
+                    v2["rank"]["page"] = 2
+                    
+            # 1d. Fill remaining empty coordinates with static template fallbacks
+            all_enrich_fields = [
+                "roll_number", "class", "dob", "gender",
+                "math_pct", "science_pct", "language_pct", "rank",
+                "consent", "remarks"
+            ]
+            for field_name in all_enrich_fields:
+                if field_name not in v2 or not v2[field_name].get("bbox"):
+                    fallback = get_static_fallback_bbox(field_name)
+                    if fallback:
+                        poly, bbox, page_num = fallback
+                        v2[field_name] = {
+                            "page": page_num,
+                            "bbox": bbox,
+                            "polygon": poly
+                        }
                             
             # 2. Enrich consent coordinates (page 1, standard relative region)
-            if "consent" not in v2:
+            #    Tick mark appears ~100px left of "हां" text (x≈3566), so start at 3400
+            if "consent" not in v2 or not v2["consent"].get("bbox"):
                 v2["consent"] = {
                     "page": 1,
-                    "bbox": [3550, 1430, 3950, 1550],
-                    "polygon": [3550, 1430, 3950, 1430, 3950, 1550, 3550, 1550]
+                    "bbox": [3400, 1380, 3960, 1560],
+                    "polygon": [3400, 1380, 3960, 1380, 3960, 1560, 3400, 1560]
                 }
-    except Exception:
-        pass
+            else:
+                v2["consent"]["page"] = 1
+            
+            # 3. Enrich remarks coordinates (page 2)
+            #    Question "क्या आपकी कोई अन्य टिप्पणी..." at y≈3631
+            #    Answer lines extend from y≈3700 to y≈4200
+            if "remarks" not in v2 or not v2["remarks"].get("bbox"):
+                v2["remarks"] = {
+                    "page": 2,
+                    "bbox": [100, 3550, 4400, 4200],
+                    "polygon": [100, 3550, 4400, 3550, 4400, 4200, 100, 4200]
+                }
+            else:
+                v2["remarks"]["page"] = 2
+                
+            # 4. Scale all coordinates from 300 DPI space to physical page image pixels
+            scale_coordinates_to_image_size(doc_id, v2)
+    except Exception as e:
+        print(f"Error during coordinate enrichment: {e}")
         
     return doc
 
@@ -155,18 +225,27 @@ def serve_page(doc_id: str, page_num: int):
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url=redirect_url)
 
+    # 1. Try file system for exact requested page, fallback to page 1 if page 2 not found
     page_path = PROCESSED_DIR / doc_id / f"page_{page_num}.jpg"
+    if not page_path.exists() and page_num == 2:
+        page_path = PROCESSED_DIR / doc_id / "page_1.jpg"
+        
     if page_path.exists():
         return FileResponse(str(page_path), media_type="image/jpeg",
                             headers={"Cache-Control": "public, max-age=86400"})
 
+    # 2. Try database files
     img_bytes = get_page_image_file(doc_id, page_num)
+    if not img_bytes and page_num == 2:
+        img_bytes = get_page_image_file(doc_id, 1)
     if img_bytes:
         return Response(content=img_bytes, media_type="image/jpeg",
                         headers={"Cache-Control": "public, max-age=86400"})
 
-    # Fallback to DB
+    # 3. Try database page_images
     img = get_page_image(doc_id, page_num)
+    if not img and page_num == 2:
+        img = get_page_image(doc_id, 1)
     if img:
         return Response(content=img, media_type="image/jpeg",
                         headers={"Cache-Control": "public, max-age=86400"})
@@ -587,8 +666,17 @@ def reprocess_document(doc_id: str):
         raise HTTPException(status_code=404, detail="Document not found")
     from app.database import get_pdf
     pdf_bytes = get_pdf(doc_id)
-    if not pdf_bytes:
-        raise HTTPException(status_code=400, detail="Original PDF data not found")
+    
+    # Check if page images exist in the file system
+    has_page_images = False
+    from app.image.storage import PROCESSED_DIR
+    page_1_path = PROCESSED_DIR / doc_id / "page_1.jpg"
+    if page_1_path.exists():
+        has_page_images = True
+        
+    if not pdf_bytes and not has_page_images:
+        raise HTTPException(status_code=400, detail="Original PDF data or processed page images not found")
+        
     update_document_status(doc_id, "processing")
     
     from app.processing.jobs.document_jobs import get_job_queue, process_document_background
@@ -818,3 +906,191 @@ async def event_stream(request: Request):
         )
     finally:
         unsubscribe(queue)
+
+
+def get_field_bbox_from_table(raw_dict: dict, field_name: str) -> Optional[tuple[list[float], list[float], int]]:
+    """Resolve demographics and academic field coordinates directly from raw Azure tables."""
+    # Map field name to page and anchor search text
+    field_mappings = {
+        "roll_number": (1, "रोल नंबर"),
+        "class": (1, "कक्षा"),
+        "dob": (1, "जन्म तिथि"),
+        "gender": (1, "लिंग"),
+        "math_pct": (2, "गणित/जीव"),
+        "science_pct": (2, "विज्ञान/रासायन"),
+        "language_pct": (2, "हिंदी"),
+    }
+    
+    if field_name not in field_mappings:
+        return None
+        
+    page_num, anchor = field_mappings[field_name]
+    
+    # Get raw page data
+    page_raw = raw_dict.get(f"page_{page_num}", {})
+    if not page_raw or "pages" not in page_raw:
+        page_raw = raw_dict
+        
+    tables = page_raw.get("tables", [])
+    if not tables:
+        for p in page_raw.get("pages", []):
+            p_num = p.get("pageNumber", p.get("page", 1))
+            if p_num == page_num:
+                tables = p.get("tables", [])
+                break
+                
+    if not tables:
+        return None
+        
+    # Search for anchor in column 0 of all tables on that page
+    for table in tables:
+        row_cells = {}
+        for cell in table.get("cells", []):
+            r_idx = cell.get("rowIndex")
+            c_idx = cell.get("columnIndex")
+            if r_idx is not None and c_idx is not None:
+                row_cells.setdefault(r_idx, {})[c_idx] = cell
+                
+        for r_idx, cols in row_cells.items():
+            if 0 in cols and 1 in cols:
+                label_cell = cols[0]
+                val_cell = cols[1]
+                
+                label_content = label_cell.get("content", "")
+                if anchor.lower() in label_content.lower():
+                    # Found it! Extract polygon from val_cell
+                    regions = val_cell.get("boundingRegions", [])
+                    if regions:
+                        poly = regions[0].get("polygon", [])
+                        unit = "pixel"
+                        for p in page_raw.get("pages", []):
+                            p_num = p.get("pageNumber", p.get("page", 1))
+                            if p_num == page_num:
+                                unit = p.get("unit", "pixel")
+                                break
+                        if unit == "inch":
+                            poly = [pt * 300.0 for pt in poly]
+                        if poly and len(poly) >= 8:
+                            xs = poly[0::2]
+                            ys = poly[1::2]
+                            bbox = [min(xs), min(ys), max(xs), max(ys)]
+                            return poly, bbox, page_num
+                            
+    return None
+
+
+def get_rank_bbox(raw_dict: dict) -> Optional[tuple[list[float], list[float], int]]:
+    """Resolve rank coordinates from page 2 lines."""
+    page_num = 2
+    page_raw = raw_dict.get(f"page_{page_num}", {})
+    if not page_raw or "pages" not in page_raw:
+        page_raw = raw_dict
+        
+    pages = page_raw.get("pages", [])
+    if not pages:
+        return None
+        
+    p = pages[0]
+    lines = p.get("lines", [])
+    for line in lines:
+        content = line.get("content", "")
+        if "रैंक" in content:
+            poly = line.get("polygon", [])
+            unit = p.get("unit", "pixel")
+            if unit == "inch":
+                poly = [pt * 300.0 for pt in poly]
+            if poly and len(poly) >= 8:
+                xs = poly[0::2]
+                ys = poly[1::2]
+                bbox = [min(xs), min(ys), max(xs), max(ys)]
+                return poly, bbox, page_num
+    return None
+
+
+def get_static_fallback_bbox(field_name: str) -> Optional[tuple[list[float], list[float], int]]:
+    """Get standard static template coordinate coordinates for a field."""
+    from app.image.roi import ROIS_P1_POINTS, ROIS_P2_POINTS, ROIS_REMARKS_POINTS
+    scale = 300.0 / 72.0
+    
+    p2_keys = {'math_pct', 'science_pct', 'language_pct', 'rank', 'remarks'}
+    
+    page_num = 1
+    if field_name in p2_keys:
+        page_num = 2
+    elif field_name.startswith("q"):
+        try:
+            q_num = int(field_name[1:])
+            if q_num >= 21:
+                page_num = 2
+        except ValueError:
+            pass
+            
+    rect = None
+    if page_num == 1:
+        if field_name in ROIS_P1_POINTS:
+            rect = ROIS_P1_POINTS[field_name]
+        elif field_name == "consent":
+            rect = (470.0, 190.0, 555.0, 240.0)
+    else:
+        if field_name in ROIS_P2_POINTS:
+            rect = ROIS_P2_POINTS[field_name]
+        elif field_name == "remarks":
+            rect = ROIS_REMARKS_POINTS['remarks']
+            
+    if rect:
+        x0, y0, x1, y1 = rect
+        bbox = [x0 * scale, y0 * scale, x1 * scale, y1 * scale]
+        polygon = [
+            bbox[0], bbox[1],
+            bbox[2], bbox[1],
+            bbox[2], bbox[3],
+            bbox[0], bbox[3]
+        ]
+        return polygon, bbox, page_num
+        
+    return None
+
+
+def scale_coordinates_to_image_size(doc_id: str, v2: dict):
+    """Scale all coordinates in v2_trust from 300 DPI to physical page image dimensions."""
+    page_dims = {}
+    
+    for field_name, val in v2.items():
+        if not isinstance(val, dict):
+            continue
+            
+        page_num = val.get("page", 1)
+        
+        # Load page dimensions if not cached
+        if page_num not in page_dims:
+            img = _get_page(doc_id, page_num)
+            if img is not None:
+                h, w = img.shape[:2]
+                page_dims[page_num] = (w, h)
+            else:
+                page_dims[page_num] = None
+                
+        dims = page_dims[page_num]
+        if not dims:
+            continue
+            
+        img_w, img_h = dims
+        scale_x, scale_y = _get_azure_scale(doc_id, page_num, img_w, img_h)
+        
+        # Scale bbox
+        bbox = val.get("bbox")
+        if bbox and len(bbox) >= 4:
+            val["bbox"] = [
+                bbox[0] * scale_x,
+                bbox[1] * scale_y,
+                bbox[2] * scale_x,
+                bbox[3] * scale_y
+            ]
+            
+        # Scale polygon
+        poly = val.get("polygon")
+        if poly and len(poly) >= 8:
+            val["polygon"] = [
+                pt * scale_x if i % 2 == 0 else pt * scale_y
+                for i, pt in enumerate(poly)
+            ]

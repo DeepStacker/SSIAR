@@ -68,48 +68,62 @@ class AzureOCRPlugin(OCREngine):
         if not self.is_available():
             return None
         self._init_client()
-        try:
-            import io
-            _, jpeg_buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            buf = io.BytesIO(jpeg_buf.tobytes())
-            poller = self._client.begin_analyze_document(
-                "prebuilt-read",
-                body=buf,
-                content_type="image/jpeg"
-            )
-            result = poller.result(timeout=15)
-            texts = []
-            confs = []
-            for page in result.pages:
-                for line in (page.lines or []):
-                    texts.append(line.content)
-                for word in (page.words or []):
-                    confs.append(word.confidence)
-            combined_text = " ".join(texts)
-            avg_conf = float(np.mean(confs)) if confs else 0.0
-            return OCREngineResult(combined_text, avg_conf, self.name())
-        except Exception as e:
-            print(f"AzureOCRPlugin Error on {field_name}: {e}")
-            return None
+        import io
+        import time
+        _, jpeg_buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        
+        max_retries = 3
+        backoff = 1.0
+        for attempt in range(max_retries):
+            try:
+                buf = io.BytesIO(jpeg_buf.tobytes())
+                poller = self._client.begin_analyze_document(
+                    "prebuilt-read",
+                    body=buf,
+                    content_type="image/jpeg"
+                )
+                result = poller.result(timeout=20)
+                texts = []
+                confs = []
+                for page in result.pages:
+                    for line in (page.lines or []):
+                        texts.append(line.content)
+                    for word in (page.words or []):
+                        confs.append(word.confidence)
+                combined_text = " ".join(texts)
+                avg_conf = float(np.mean(confs)) if confs else 0.0
+                return OCREngineResult(combined_text, avg_conf, self.name())
+            except Exception as e:
+                print(f"AzureOCRPlugin Error on {field_name} (attempt {attempt+1}/{max_retries}): {e}")
+                if attempt == max_retries - 1:
+                    return None
+                time.sleep(backoff * (2 ** attempt))
 
     def recognize_page(self, page_img: np.ndarray) -> Optional[Any]:
         if not self.is_available():
             return None
         self._init_client()
-        try:
-            import io
-            _, jpeg_buf = cv2.imencode('.jpg', page_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            buf = io.BytesIO(jpeg_buf.tobytes())
-            poller = self._client.begin_analyze_document(
-                "prebuilt-layout",
-                body=buf,
-                content_type="image/jpeg"
-            )
-            result = poller.result(timeout=30)
-            return result
-        except Exception as e:
-            print(f"AzureOCRPlugin recognize_page Error: {e}")
-            return None
+        import io
+        import time
+        _, jpeg_buf = cv2.imencode('.jpg', page_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        
+        max_retries = 4
+        backoff = 2.0
+        for attempt in range(max_retries):
+            try:
+                buf = io.BytesIO(jpeg_buf.tobytes())
+                poller = self._client.begin_analyze_document(
+                    "prebuilt-layout",
+                    body=buf,
+                    content_type="image/jpeg"
+                )
+                result = poller.result(timeout=45)
+                return result
+            except Exception as e:
+                print(f"AzureOCRPlugin recognize_page Error (attempt {attempt+1}/{max_retries}): {e}")
+                if attempt == max_retries - 1:
+                    return None
+                time.sleep(backoff * (2 ** attempt))
 
 _azure_plugin = None
 

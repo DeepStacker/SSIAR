@@ -217,13 +217,6 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
     return () => window.removeEventListener('keydown', handler);
   }, [onClose, onVerify, pageViewer]);
 
-  useEffect(() => {
-    if (activeFields.length > 0) {
-      const firstKey = activeFields[0].key;
-      const el = fieldRefs.current[firstKey];
-      if (el) setTimeout(() => el.focus(), 100);
-    }
-  }, [doc.id, activeFields]);
 
   useEffect(() => {
     const init: Record<string, boolean> = {};
@@ -367,6 +360,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
                         <CanvasCrop
                           pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
                           bbox={v2Trust[f.key].bbox}
+                          polygon={v2Trust[f.key].polygon}
                           style={{ width: '220px', height: '54px', objectFit: 'contain', background: 'rgba(0,0,0,0.3)' }}
                           className="rounded block cursor-zoom-in"
                           onDataUrl={url => { cropDataUrls.current[f.key] = url; }}

@@ -89,7 +89,7 @@ const SdqGridComponent: React.FC<Props> = ({ docId, responses, checkboxConf, v2T
                     onMouseMove={e => handleZoom(q, e.clientX, e.clientY - 20)}
                     onMouseLeave={() => onZoom(null)}
                   >
-                    <CanvasCrop pageUrl={pageUrl} bbox={qBbox}
+                    <CanvasCrop pageUrl={pageUrl} bbox={qBbox} polygon={qInfo?.polygon}
                       style={{ width: '160px', height: '50px', objectFit: 'contain' }}
                       onDataUrl={url => { dataUrls.current[q] = url; }} />
                   </div>

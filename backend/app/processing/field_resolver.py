@@ -143,40 +143,73 @@ def resolve_field(
             anchor_el = el
             break
             
-    # Calculate calculated_bbox (either anchor-relative or template fallback)
-    scale = 300.0 / 72.0
+    # Calculate calculated_bbox and calculated_poly (either anchor-relative or template fallback)
+    std_w = 595.0
+    std_h = 842.0
+    scale_x = page.width / std_w
+    scale_y = page.height / std_h
+    
     calculated_bbox = None
-    if anchor_el:
-        ax0, ay0, ax1, ay1 = anchor_el.bbox
-        fw = field_def.width * scale
-        fh = field_def.height * scale
+    calculated_poly = None
+    
+    if anchor_el and anchor_el.polygon and len(anchor_el.polygon) >= 8:
+        poly = anchor_el.polygon
+        p0 = (poly[0], poly[1])
+        p1 = (poly[2], poly[3])
+        p2 = (poly[4], poly[5])
+        p3 = (poly[6], poly[7])
         
-        if direction == "below":
-            bx0 = ax0
-            by0 = ay1 + 5.0
-            bx1 = ax0 + fw
-            by1 = by0 + fh
-        elif direction == "right":
-            bx0 = ax1 + 5.0
-            by0 = ay0
-            bx1 = bx0 + fw
-            by1 = ay0 + fh
-        elif direction == "above":
-            bx0 = ax0
-            by0 = max(0.0, ay0 - fh - 5.0)
-            bx1 = ax0 + fw
-            by1 = ay0 - 5.0
+        # Unit vector along text baseline direction
+        dx = p1[0] - p0[0]
+        dy = p1[1] - p0[1]
+        len_u = (dx * dx + dy * dy) ** 0.5
+        u = (dx / len_u, dy / len_u) if len_u > 0 else (1.0, 0.0)
+        
+        # Unit vector perpendicular to text direction (pointing down)
+        dx_v = p3[0] - p0[0]
+        dy_v = p3[1] - p0[1]
+        len_v = (dx_v * dx_v + dy_v * dy_v) ** 0.5
+        v = (dx_v / len_v, dy_v / len_v) if len_v > 0 else (-u[1], u[0])
+        
+        fw = field_def.width * scale_x
+        fh = field_def.height * scale_y
+        gap = 5.0
+        
+        if direction == "right":
+            v0 = (p1[0] + gap * u[0], p1[1] + gap * u[1])
+            v1 = (v0[0] + fw * u[0], v0[1] + fw * u[1])
+            v2 = (v1[0] + fh * v[0], v1[1] + fh * v[1])
+            v3 = (v0[0] + fh * v[0], v0[1] + fh * v[1])
         elif direction == "left":
-            bx0 = max(0.0, ax0 - fw - 5.0)
-            by0 = ay0
-            bx1 = ax0 - 5.0
-            by1 = ay0 + fh
+            v1 = (p0[0] - gap * u[0], p0[1] - gap * u[1])
+            v0 = (v1[0] - fw * u[0], v1[1] - fw * u[1])
+            v2 = (v1[0] + fh * v[0], v1[1] + fh * v[1])
+            v3 = (v0[0] + fh * v[0], v0[1] + fh * v[1])
+        elif direction == "below":
+            v0 = (p3[0] + gap * v[0], p3[1] + gap * v[1])
+            v1 = (v0[0] + fw * u[0], v0[1] + fw * u[1])
+            v2 = (v1[0] + fh * v[0], v1[1] + fh * v[1])
+            v3 = (v0[0] + fh * v[0], v0[1] + fh * v[1])
+        elif direction == "above":
+            v3 = (p0[0] - gap * v[0], p0[1] - gap * v[1])
+            v2 = (p1[0] - gap * v[0], p1[1] - gap * v[1])
+            v0 = (v3[0] - fh * v[0], v3[1] - fh * v[1])
+            v1 = (v2[0] - fh * v[0], v2[1] - fh * v[1])
         else: # around
-            bx0 = max(0.0, ax0 - fw/2.0)
-            by0 = ay1 + 5.0
-            bx1 = ax0 + fw/2.0
-            by1 = by0 + fh
-        calculated_bbox = [bx0, by0, bx1, by1]
+            v0 = (p3[0] - (fw / 2.0) * u[0] + gap * v[0], p3[1] - (fw / 2.0) * u[1] + gap * v[1])
+            v1 = (v0[0] + fw * u[0], v0[1] + fw * u[1])
+            v2 = (v1[0] + fh * v[0], v1[1] + fh * v[1])
+            v3 = (v0[0] + fh * v[0], v0[1] + fh * v[1])
+            
+        calculated_poly = [
+            v0[0], v0[1],
+            v1[0], v1[1],
+            v2[0], v2[1],
+            v3[0], v3[1]
+        ]
+        xs = [v0[0], v1[0], v2[0], v3[0]]
+        ys = [v0[1], v1[1], v2[1], v3[1]]
+        calculated_bbox = [min(xs), min(ys), max(xs), max(ys)]
     else:
         # Fall back to template coordinates
         from app.image.roi import ROIS_P1_POINTS, ROIS_P2_POINTS, ROIS_REMARKS_POINTS
@@ -194,7 +227,39 @@ def resolve_field(
                 
         if rect:
             x0, y0, x1, y1 = rect
-            calculated_bbox = [x0 * scale, y0 * scale, x1 * scale, y1 * scale]
+            calculated_bbox = [x0 * scale_x, y0 * scale_y, x1 * scale_x, y1 * scale_y]
+            
+            # Apply page-level rotation to fallback coordinates if rotated
+            angle_deg = getattr(page, "angle", 0.0)
+            if abs(angle_deg) > 0.05:
+                import math
+                theta = math.radians(angle_deg)
+                cx = page.width / 2.0
+                cy = page.height / 2.0
+                
+                def rotate_point(px, py):
+                    tx = px - cx
+                    ty = py - cy
+                    rx = tx * math.cos(theta) - ty * math.sin(theta)
+                    ry = tx * math.sin(theta) + ty * math.cos(theta)
+                    return rx + cx, ry + cy
+                    
+                rx0, ry0 = rotate_point(calculated_bbox[0], calculated_bbox[1])
+                rx1, ry1 = rotate_point(calculated_bbox[2], calculated_bbox[1])
+                rx2, ry2 = rotate_point(calculated_bbox[2], calculated_bbox[3])
+                rx3, ry3 = rotate_point(calculated_bbox[0], calculated_bbox[3])
+                
+                calculated_poly = [rx0, ry0, rx1, ry1, rx2, ry2, rx3, ry3]
+                xs = [rx0, rx1, rx2, rx3]
+                ys = [ry0, ry1, ry2, ry3]
+                calculated_bbox = [min(xs), min(ys), max(xs), max(ys)]
+            else:
+                calculated_poly = [
+                    calculated_bbox[0], calculated_bbox[1],
+                    calculated_bbox[2], calculated_bbox[1],
+                    calculated_bbox[2], calculated_bbox[3],
+                    calculated_bbox[0], calculated_bbox[3]
+                ]
     
     # Find candidate elements near the anchor using direction-aware tolerance
     # For right/left: cross-axis (dy) should be tight (field height)
@@ -230,6 +295,14 @@ def resolve_field(
     if not candidates:
         # Fallback: try a broader search (max 250 pixels)
         candidates = find_text_near(page, anchor_text, direction, 250.0)
+        
+    # If the field is remarks, we only want candidates that are reasonably close (within 150px vertically)
+    # to avoid jumping over empty answer space into the next section/table.
+    if field_def.name == "remarks" and candidates:
+        anchor_bottom = anchor_el.bbox[3] if anchor_el else 3640.0
+        # If the closest candidate is further than 200px down, discard candidates to force template fallback bbox
+        if candidates[0].bbox[1] - anchor_bottom > 200.0:
+            candidates = []
     
     if not candidates:
         calculated_poly = [
@@ -248,6 +321,7 @@ def resolve_field(
     polygon = value_el.polygon
     
     # Merge consecutive words on the same row (e.g. "40" and "%")
+    # Crucial: Ensure we do not merge words across distinct column/table boundaries.
     if value_el.element_type == "word":
         curr_el = value_el
         merged_elements = [value_el]
@@ -258,7 +332,8 @@ def resolve_field(
                     # Check vertical alignment (same row) and immediate horizontal proximity
                     dy = abs((el.bbox[1] + el.bbox[3]) / 2.0 - (curr_el.bbox[1] + curr_el.bbox[3]) / 2.0)
                     dx = el.bbox[0] - curr_el.bbox[2]
-                    if dy < 30.0 and 0.0 <= dx < 100.0:
+                    # Ensure they are vertically aligned, close horizontally, and not jumping columns
+                    if dy < 20.0 and 0.0 <= dx < 80.0:
                         next_el = el
                         break
             if next_el:
@@ -339,6 +414,13 @@ def _get_field_page(field_name: str, pages: list) -> int:
     # Default to page 1
     if field_name in p2_fields:
         return 2
+    if field_name.startswith("q"):
+        try:
+            q_num = int(field_name[1:])
+            if q_num >= 21:
+                return 2
+        except ValueError:
+            pass
     return 1
 
 

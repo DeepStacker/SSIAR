@@ -212,48 +212,55 @@ def resolve_page_selection_marks(
                 rel_cx = mark.bbox[0] / page_width
                 consent_val = "Yes" if rel_cx < 0.83 else "No"
                 break
-        # 2. Density-based check fallback
+        # 2. Text-based detection: check if Azure found the consent text words
+        #    and whether "हां" or "नहीं" appears individually (circled/marked)
+        if consent_val == "Unanswered":
+            consent_words = [
+                el for el in page_elements
+                if el.element_type == "word" and el.bbox[1] < page_height * 0.30
+                and el.bbox[0] > page_width * 0.70
+            ]
+            for w in consent_words:
+                text = w.text.strip().lower()
+                # If Azure detected "हां" as a separate word (not combined "हां/नहीं")
+                if text == "हां" or text == "हाँ":
+                    consent_val = "Yes"
+                    break
+                if text == "नहीं":
+                    consent_val = "No"
+                    break
+        # 3. Density-based fallback with corrected coordinates
+        #    From visual inspection: the tick mark (✓) appears BEFORE the "हां" text
+        #    "हां" text starts at x≈3566, tick mark is at x≈3420-3570
+        #    "नहीं" text starts at x≈3800, so tick for "No" would be at x≈3700-3810
+        #    The tick mark zone is the 150px-wide strip just left of each label
         if consent_val == "Unanswered" and page_img is not None:
-            if len(consent_marks) >= 2:
-                ratios = {}
-                for idx, mark in enumerate(consent_marks):
-                    x1, y1, x2, y2 = mark.bbox
-                    poly = [x1, y1, x2, y1, x2, y2, x1, y2]
-                    ratio = _check_checkbox_density(page_img, poly, page_width, page_height, "pixel")
-                    ratios[idx] = (ratio, mark)
-                if ratios:
-                    darkest_idx = max(ratios.keys(), key=lambda k: ratios[k][0])
-                    lightest_idx = min(ratios.keys(), key=lambda k: ratios[k][0])
-                    max_r = ratios[darkest_idx][0]
-                    min_r = ratios[lightest_idx][0]
-                    if max_r - min_r >= 0.035:
-                        best_mark = ratios[darkest_idx][1]
-                        rel_cx = best_mark.bbox[0] / page_width
-                        consent_val = "Yes" if rel_cx < 0.83 else "No"
-            else:
-                # If Azure missed the marks completely, fallback to checking standard regions
-                # Yes: x from 3550 to 3700, y from 1430 to 1550 (on 4500x6000 page)
-                # No: x from 3800 to 3950, y from 1430 to 1550
-                scale_x = page_width / 4500.0
-                scale_y = page_height / 6000.0
-                yes_poly = [
-                    3550 * scale_x, 1430 * scale_y,
-                    3700 * scale_x, 1430 * scale_y,
-                    3700 * scale_x, 1550 * scale_y,
-                    3550 * scale_x, 1550 * scale_y
-                ]
-                no_poly = [
-                    3800 * scale_x, 1430 * scale_y,
-                    3950 * scale_x, 1430 * scale_y,
-                    3950 * scale_x, 1550 * scale_y,
-                    3800 * scale_x, 1550 * scale_y
-                ]
-                yes_ratio = _check_checkbox_density(page_img, yes_poly, page_width, page_height, "pixel")
-                no_ratio = _check_checkbox_density(page_img, no_poly, page_width, page_height, "pixel")
-                max_r = max(yes_ratio, no_ratio)
-                min_r = min(yes_ratio, no_ratio)
-                if max_r - min_r >= 0.035:
-                    consent_val = "Yes" if yes_ratio == max_r else "No"
+            import cv2 as _cv2
+            img_h, img_w = page_img.shape[:2]
+            # Scale from 4500x6000 standard coordinates to actual image size
+            sx = img_w / 4500.0
+            sy = img_h / 6000.0
+            # Tick-mark zones (just left of text labels)
+            # Yes tick zone: x=3400-3570, y=1380-1560
+            yes_x0, yes_y0 = int(3400 * sx), int(1380 * sy)
+            yes_x1, yes_y1 = int(3570 * sx), int(1560 * sy)
+            # No tick zone: x=3700-3820, y=1380-1560
+            no_x0, no_y0 = int(3700 * sx), int(1380 * sy)
+            no_x1, no_y1 = int(3820 * sx), int(1560 * sy)
+            
+            gray = _cv2.cvtColor(page_img, _cv2.COLOR_BGR2GRAY) if len(page_img.shape) == 3 else page_img
+            _, binary = _cv2.threshold(gray, 150, 255, _cv2.THRESH_BINARY_INV)
+            
+            yes_region = binary[yes_y0:yes_y1, yes_x0:yes_x1]
+            no_region = binary[no_y0:no_y1, no_x0:no_x1]
+            
+            yes_density = float(np.mean(yes_region) / 255.0) if yes_region.size > 0 else 0
+            no_density = float(np.mean(no_region) / 255.0) if no_region.size > 0 else 0
+            
+            # A tick mark adds ~0.03-0.10 density above the baseline printed text
+            diff = abs(yes_density - no_density)
+            if diff >= 0.025:
+                consent_val = "Yes" if yes_density > no_density else "No"
     else:
         table = tables[0]
         
@@ -350,35 +357,50 @@ def process_document_background(
         }, user_id=user_id)
         
         # 2. Render and process
-        from app.image.pdf import render_pdf_to_arrays
-        raw_pages = render_pdf_to_arrays(pdf_bytes)
-        
-        # Apply bilateral denoising, CLAHE contrast enhancement, and strong Laplacian sharpening to make checkboxes and pen strokes highly readable.
         pages = []
-        for img in raw_pages:
-            try:
-                # 1. Bilateral filter to reduce noise (like compression artifacts) while keeping edges sharp
-                denoised = cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
-                # 2. CLAHE (Local Contrast Equalization) in LAB space
-                lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
-                l, a, b = cv2.split(lab)
-                clahe = cv2.createCLAHE(clipLimit=4.5, tileGridSize=(8, 8))
-                cl = clahe.apply(l)
-                limg = cv2.merge((cl, a, b))
-                enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
-                
-                # 3. Stronger Laplacian sharpening filter to make thin pen strokes pop out
-                kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]], dtype=np.float32)
-                sharpened = cv2.filter2D(enhanced, -1, kernel)
-                pages.append(sharpened)
-            except Exception:
-                pages.append(img)
-        
-        # Save page images to database
-        from app.database import store_page_image
-        for i, page_img in enumerate(pages):
-            _, jpeg_buf = cv2.imencode('.jpg', page_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            store_page_image(doc_id, i + 1, jpeg_buf.tobytes())
+        if pdf_bytes:
+            from app.image.pdf import render_pdf_to_arrays
+            raw_pages = render_pdf_to_arrays(pdf_bytes)
+            
+            # Apply bilateral denoising, CLAHE contrast enhancement, and strong Laplacian sharpening to make checkboxes and pen strokes highly readable.
+            for img in raw_pages:
+                try:
+                    # 1. Bilateral filter to reduce noise (like compression artifacts) while keeping edges sharp
+                    denoised = cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
+                    # 2. CLAHE (Local Contrast Equalization) in LAB space
+                    lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
+                    l, a, b = cv2.split(lab)
+                    clahe = cv2.createCLAHE(clipLimit=4.5, tileGridSize=(8, 8))
+                    cl = clahe.apply(l)
+                    limg = cv2.merge((cl, a, b))
+                    enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+                    
+                    # 3. Stronger Laplacian sharpening filter to make thin pen strokes pop out
+                    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]], dtype=np.float32)
+                    sharpened = cv2.filter2D(enhanced, -1, kernel)
+                    pages.append(sharpened)
+                except Exception:
+                    pages.append(img)
+            
+            # Save page images to database
+            from app.database import store_page_image
+            for i, page_img in enumerate(pages):
+                _, jpeg_buf = cv2.imencode('.jpg', page_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                store_page_image(doc_id, i + 1, jpeg_buf.tobytes())
+        else:
+            # Load existing page images from disk
+            from app.image.storage import PROCESSED_DIR
+            i = 1
+            while True:
+                page_path = PROCESSED_DIR / doc_id / f"page_{i}.jpg"
+                if not page_path.exists():
+                    page_path = PROCESSED_DIR / doc_id / f"page_{i}.png"
+                if not page_path.exists():
+                    break
+                img = cv2.imread(str(page_path))
+                if img is not None:
+                    pages.append(img)
+                i += 1
         
         # 3. Classify pages
         from app.image.pdf import classify_document
@@ -416,11 +438,26 @@ def process_document_background(
         from app.processing.azure_processor import normalize_azure_response
         cached_raw = _load_cached_azure_response(doc_id)
         
+        # Check if the cached response is complete for all physical pages
+        is_cache_complete = False
         if cached_raw:
+            is_cache_complete = True
+            for idx in range(len(pages)):
+                pg_key = f"page_{idx+1}"
+                sub_res = cached_raw.get(pg_key, {})
+                if not sub_res or not isinstance(sub_res, dict) or not sub_res.get("pages"):
+                    is_cache_complete = False
+                    break
+                    
+        if is_cache_complete:
             print(f"[{doc_id}] Reusing cached Azure response (skipping API call)")
             raw_responses = cached_raw
             combined_normalized = normalize_azure_response(doc_id, cached_raw)
         else:
+            if cached_raw:
+                print(f"[{doc_id}] Cached Azure response is incomplete! Regenerating...")
+            cached_raw = None
+            
             # 4b. Send to Azure Document Intelligence (whole pages) in parallel
             from app.ocr.plugin import AzureOCRPlugin
             plugin = AzureOCRPlugin()
@@ -445,13 +482,23 @@ def process_document_background(
                         azure_full_page_results[idx] = result
             
             # 5. Normalize Azure response
+            # 5. Normalize Azure response
             raw_responses = {}
+            use_detection = len(pages) != 2
             for i, (page_img, azure_res) in enumerate(
                 zip(pages, azure_full_page_results or [None] * len(pages))
             ):
                 if azure_res:
                     normalized = normalize_azure_response(doc_id, azure_res)
-                    raw_responses[f"page_{i+1}"] = normalized.raw_response
+                    
+                    detected_page = i + 1
+                    if use_detection:
+                        page_text = ""
+                        if normalized.pages:
+                            page_text = " ".join(el.text for el in normalized.pages[0].elements)
+                        detected_page = detect_form_page(page_text)
+                        
+                    raw_responses[f"page_{detected_page}"] = normalized.raw_response
             
             # Store raw Azure response for future reuse
             _store_azure_response(doc_id, raw_responses)
@@ -494,6 +541,8 @@ def process_document_background(
         )
         from app.processing.validation_engine import check_cross_field_consistency_v2
         
+        from app.processing.templates import init_templates_v2
+        init_templates_v2()
         template = get_template("sdq_student_form_v1")
         extracted_fields = {}
         validation_results = {}
@@ -640,7 +689,9 @@ def _load_cached_azure_response(doc_id: str) -> Optional[dict]:
         cur.execute("SELECT raw_response FROM azure_responses WHERE document_id = ?", (doc_id,))
         row = cur.fetchone()
         if row and row[0]:
-            return json.loads(row[0])
+            res = json.loads(row[0])
+            if isinstance(res, dict) and any(bool(v) for v in res.values()):
+                return res
     except Exception:
         pass
     finally:
@@ -730,6 +781,19 @@ def _store_processed_results(
     )
 
 
+def detect_form_page(page_text: str) -> int:
+    """Detect if a physical page text corresponds to Form Page 1 or Form Page 2."""
+    p1_indicators = ["रोल नंबर", "जन्म तिथि", "लिंग", "सहमत"]
+    p2_indicators = ["शैक्षणिक", "टिप्पणी", "रैंक", "यूनिट टेस्ट", "उदास", "रोता"]
+    
+    p1_score = sum(1 for ind in p1_indicators if ind in page_text)
+    p2_score = sum(1 for ind in p2_indicators if ind in page_text)
+    
+    if p2_score > p1_score:
+        return 2
+    return 1
+
+
 def _combine_normalized_responses(doc_id: str, azure_results: list) -> Optional[object]:
     """Combine multiple page-level Azure responses into a single normalized response."""
     from app.processing.azure_processor import normalize_azure_response
@@ -739,15 +803,26 @@ def _combine_normalized_responses(doc_id: str, azure_results: list) -> Optional[
         return None
     
     combined = NormalizedAzureResponse(document_id=doc_id)
+    use_detection = len(azure_results) != 2
     
     for i, result in enumerate(azure_results):
         if result is None:
             continue
         normalized = normalize_azure_response(f"{doc_id}_p{i+1}", result)
+        
+        detected_page = i + 1
+        if use_detection:
+            page_text = ""
+            if normalized.pages:
+                page_text = " ".join(el.text for el in normalized.pages[0].elements)
+            detected_page = detect_form_page(page_text)
+            print(f"[{doc_id}] Detected physical page {i+1} as Form Page {detected_page}")
+            
         for page_obj in normalized.pages:
-            page_obj.page = i + 1
+            page_obj.page = detected_page
         combined.pages.extend(normalized.pages)
-        combined.raw_response.update(normalized.raw_response)
+        # Store page-level raw response under page_N keys to match cache format
+        combined.raw_response[f"page_{detected_page}"] = normalized.raw_response
     
     return combined
 

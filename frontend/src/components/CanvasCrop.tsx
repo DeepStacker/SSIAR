@@ -3,6 +3,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 interface CanvasCropProps {
   pageUrl: string;
   bbox: number[]; // [x0, y0, x1, y1] in Azure coordinate space
+  polygon?: number[]; // [x0, y0, x1, y1, x2, y2, x3, y3, ...]
   className?: string;
   style?: React.CSSProperties;
   paddingPercent?: number;
@@ -47,6 +48,7 @@ function getOrLoadImage(url: string, onReady: (img: HTMLImageElement) => void, o
 export const CanvasCrop: React.FC<CanvasCropProps> = ({
   pageUrl,
   bbox,
+  polygon,
   className,
   style,
   paddingPercent = 0.05,
@@ -58,7 +60,7 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
   const dataUrlRef = useRef<string>('');
 
   useEffect(() => {
-    if (!bbox || bbox.length < 4) {
+    if ((!bbox || bbox.length < 4) && (!polygon || polygon.length < 8)) {
       setError(true);
       setLoading(false);
       return;
@@ -81,33 +83,72 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
       const imgW = img.naturalWidth;
       const imgH = img.naturalHeight;
 
-      let [x0, y0, x1, y1] = bbox;
-      x0 = Math.max(0, x0);
-      y0 = Math.max(0, y0);
-      x1 = Math.min(imgW, x1);
-      y1 = Math.min(imgH, y1);
+      if (polygon && polygon.length >= 8) {
+        const x0 = polygon[0];
+        const y0 = polygon[1];
+        const x1 = polygon[2];
+        const y1 = polygon[3];
+        const x2 = polygon[4];
+        const y2 = polygon[5];
+        const x3 = polygon[6];
+        const y3 = polygon[7];
 
-      const w = x1 - x0;
-      const h = y1 - y0;
+        const w = Math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2);
+        const h = Math.sqrt((x3 - x0) ** 2 + (y3 - y0) ** 2);
 
-      if (w <= 0 || h <= 0) {
-        setError(true);
-        setLoading(false);
-        return;
+        if (w <= 0 || h <= 0) {
+          setError(true);
+          setLoading(false);
+          return;
+        }
+
+        const theta = Math.atan2(y1 - y0, x1 - x0);
+
+        const padX = w * paddingPercent;
+        const padY = h * paddingPercent;
+
+        const cropW = Math.ceil(w + 2 * padX);
+        const cropH = Math.ceil(h + 2 * padY);
+
+        canvas.width = cropW;
+        canvas.height = cropH;
+
+        ctx.save();
+        ctx.translate(padX, padY);
+        ctx.rotate(-theta);
+        ctx.translate(-x0, -y0);
+        ctx.drawImage(img, 0, 0);
+        ctx.restore();
+      } else {
+        let [x0, y0, x1, y1] = bbox;
+        x0 = Math.max(0, x0);
+        y0 = Math.max(0, y0);
+        x1 = Math.min(imgW, x1);
+        y1 = Math.min(imgH, y1);
+
+        const w = x1 - x0;
+        const h = y1 - y0;
+
+        if (w <= 0 || h <= 0) {
+          setError(true);
+          setLoading(false);
+          return;
+        }
+
+        const padX = w * paddingPercent;
+        const padY = h * paddingPercent;
+
+        const cropX = Math.max(0, Math.floor(x0 - padX));
+        const cropY = Math.max(0, Math.floor(y0 - padY));
+        const cropW = Math.min(imgW - cropX, Math.ceil(w + 2 * padX));
+        const cropH = Math.min(imgH - cropY, Math.ceil(h + 2 * padY));
+
+        canvas.width = cropW;
+        canvas.height = cropH;
+
+        ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
       }
 
-      const padX = w * paddingPercent;
-      const padY = h * paddingPercent;
-
-      const cropX = Math.max(0, Math.floor(x0 - padX));
-      const cropY = Math.max(0, Math.floor(y0 - padY));
-      const cropW = Math.min(imgW - cropX, Math.ceil(w + 2 * padX));
-      const cropH = Math.min(imgH - cropY, Math.ceil(h + 2 * padY));
-
-      canvas.width = cropW;
-      canvas.height = cropH;
-
-      ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
       setLoading(false);
 
       // Generate data URL for zoom popup
@@ -127,7 +168,7 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
     );
 
     return () => { isMounted = false; };
-  }, [pageUrl, bbox, paddingPercent, onDataUrl]);
+  }, [pageUrl, bbox, polygon, paddingPercent, onDataUrl]);
 
   // Expose the latest data URL via ref for parent hover handlers
   const getDataUrl = useCallback(() => dataUrlRef.current, []);
