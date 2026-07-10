@@ -91,6 +91,31 @@ def resolve_field_from_tables(
                             
                     # Get average confidence of words inside cell or default
                     conf = 1.0
+                    spans = val_cell.get("spans", [])
+                    word_confidences = []
+                    # Locate word elements within the spans in the parent page raw data
+                    pages_list = page_raw.get("pages", [])
+                    target_page_raw = None
+                    for p in pages_list:
+                        p_num = p.get("pageNumber", p.get("page", 1))
+                        if p_num == page_num:
+                            target_page_raw = p
+                            break
+                    if not target_page_raw and pages_list:
+                        target_page_raw = pages_list[0]
+                        
+                    if target_page_raw and spans:
+                        words = target_page_raw.get("words", [])
+                        for span in spans:
+                            offset = span.get("offset", 0)
+                            length = span.get("length", 0)
+                            for word in words:
+                                w_span = word.get("span", {})
+                                w_offset = w_span.get("offset", 0)
+                                if w_offset >= offset and w_offset < offset + length:
+                                    word_confidences.append(word.get("confidence", 1.0))
+                    if word_confidences:
+                        conf = sum(word_confidences) / len(word_confidences)
                     
                     return val_text, conf, bbox, poly
                     

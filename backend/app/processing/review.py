@@ -18,6 +18,9 @@ def create_review_task(
     original_value: str,
     priority: str = "low_trust",
     reviewer_id: Optional[str] = None,
+    page_number: Optional[int] = None,
+    confidence_score: Optional[float] = None,
+    error_details: Optional[str] = None,
 ) -> str:
     """Create a review task for a specific field."""
     conn = get_db_connection()
@@ -26,9 +29,9 @@ def create_review_task(
         now_str = datetime.now().isoformat()
         cur.execute(
             """INSERT INTO review_tasks 
-               (document_id, field_name, original_value, priority, status, created_at)
-               VALUES (?, ?, ?, ?, 'pending', ?)""",
-            (document_id, field_name, original_value, priority, now_str)
+               (document_id, field_name, original_value, priority, status, created_at, page_number, confidence_score, error_details)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
+            (document_id, field_name, original_value, priority, now_str, page_number, confidence_score, error_details)
         )
         conn.commit()
         task_id = cur.lastrowid
@@ -41,29 +44,106 @@ def get_pending_review_tasks(
     reviewer_id: Optional[str] = None,
     priority: Optional[str] = None,
     limit: int = 50,
-) -> list[dict]:
-    """Get pending review tasks."""
+    document_id: Optional[str] = None,
+    field_type: Optional[str] = None,
+    error_type: Optional[str] = None,
+    sort_by: str = "priority",
+    sort_dir: str = "asc",
+) -> tuple[list[dict], int]:
+    """Get pending review tasks enriched with document metadata and coordinates, along with grand total count."""
+    import json
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        conditions = ["status = 'pending'"]
+        conditions = ["r.status = 'pending'"]
         params = []
         
         if reviewer_id:
-            conditions.append("reviewer_id = ?")
+            conditions.append("r.reviewer_id = ?")
             params.append(reviewer_id)
         if priority:
-            conditions.append("priority = ?")
+            conditions.append("r.priority = ?")
             params.append(priority)
-        
+        if document_id:
+            conditions.append("r.document_id = ?")
+            params.append(document_id)
+        if field_type == "sdq":
+            conditions.append("r.field_name LIKE 'q%'")
+        elif field_type == "demographic":
+            conditions.append("r.field_name NOT LIKE 'q%'")
+        if error_type:
+            conditions.append("r.error_details = ?")
+            params.append(error_type)
+            
         where = " AND ".join(conditions)
+        
+        # Get total unpaginated count matching filters
         cur.execute(
-            f"SELECT * FROM review_tasks WHERE {where} ORDER BY "
-            "CASE priority WHEN 'critical' THEN 0 WHEN 'low_trust' THEN 1 ELSE 2 END, "
-            "created_at ASC LIMIT ?",
+            f"SELECT COUNT(*) FROM review_tasks r "
+            f"LEFT JOIN documents d ON r.document_id = d.id "
+            f"WHERE {where}",
+            params
+        )
+        total_count = cur.fetchone()[0]
+        
+        # Determine sorting clause
+        sort_dir_sql = "DESC" if sort_dir.lower() == "desc" else "ASC"
+        
+        if sort_by == "priority":
+            order_by = f"CASE r.priority WHEN 'critical' THEN 0 WHEN 'low_trust' THEN 1 ELSE 2 END {sort_dir_sql}, r.created_at ASC"
+        elif sort_by == "confidence":
+            order_by = f"r.confidence_score {sort_dir_sql}, r.created_at ASC"
+        elif sort_by == "filename":
+            order_by = f"d.filename {sort_dir_sql}, r.created_at ASC"
+        elif sort_by == "created_at":
+            order_by = f"r.created_at {sort_dir_sql}"
+        else:
+            order_by = f"CASE r.priority WHEN 'critical' THEN 0 WHEN 'low_trust' THEN 1 ELSE 2 END ASC, r.created_at ASC"
+            
+        cur.execute(
+            f"SELECT r.*, d.filename FROM review_tasks r "
+            f"LEFT JOIN documents d ON r.document_id = d.id "
+            f"WHERE {where} ORDER BY {order_by} LIMIT ?",
             params + [limit]
         )
-        return [dict(r) for r in cur.fetchall()]
+        
+        rows = [dict(r) for r in cur.fetchall()]
+        
+        # Enrich coordinates from form_data confidence_scores
+        for row in rows:
+            doc_id = row["document_id"]
+            field_name = row["field_name"]
+            
+            cur.execute("SELECT confidence_scores FROM form_data WHERE document_id = ?", (doc_id,))
+            fd_row = cur.fetchone()
+            if fd_row and fd_row[0]:
+                try:
+                    cs = json.loads(fd_row[0])
+                    v2_trust = cs.get("v2_trust", {})
+                    field_data = v2_trust.get(field_name, {})
+                    
+                    if not row.get("page_number") and "page" in field_data:
+                        row["page_number"] = field_data["page"]
+                    if not row.get("confidence_score") and "trust_confidence" in field_data:
+                        row["confidence_score"] = field_data["trust_confidence"]
+                        
+                    row["bbox"] = field_data.get("bbox")
+                    row["polygon"] = field_data.get("polygon")
+                except Exception:
+                    row["bbox"] = None
+                    row["polygon"] = None
+            else:
+                row["bbox"] = None
+                row["polygon"] = None
+                
+            # Default fallback for page number if still missing
+            if not row.get("page_number"):
+                if field_name.startswith("q") and field_name[1:].isdigit():
+                    row["page_number"] = 2 if int(field_name[1:]) >= 13 else 1
+                else:
+                    row["page_number"] = 2 if field_name in ("math_pct", "science_pct", "language_pct", "rank", "remarks") else 1
+                    
+        return rows, total_count
     finally:
         put_conn(conn)
 
@@ -92,7 +172,15 @@ def submit_review(
         field_name = task["field_name"]
         original_value = task["original_value"]
         
-        # Update task
+        # Update this task and any duplicate pending tasks for the same field in this document
+        cur.execute(
+            """UPDATE review_tasks 
+               SET corrected_value = ?, status = 'completed', reviewer_id = ?, reviewed_at = ?
+               WHERE document_id = ? AND field_name = ? AND status = 'pending'""",
+            (corrected_value, reviewer_id, now_str, doc_id, field_name)
+        )
+        
+        # Ensure the specific task_id is marked completed (in case it wasn't pending, though it should be)
         cur.execute(
             """UPDATE review_tasks 
                SET corrected_value = ?, status = 'completed', reviewer_id = ?, reviewed_at = ?
@@ -189,11 +277,11 @@ def submit_review(
         )
         remaining = cur.fetchone()[0]
         if remaining == 0:
-            # Mark document as approved
-            update_document_status(doc_id, "approved")
+            # Mark document as verified
+            update_document_status(doc_id, "verified")
             notify_sse("document_updated", {
                 "doc_id": doc_id,
-                "status": "approved",
+                "status": "verified",
                 "escalation_level": doc.get("escalation_level", "level_1") if doc else "level_1"
             }, user_id=reviewer_id)
     finally:

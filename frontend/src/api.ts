@@ -453,10 +453,63 @@ export const api = {
   getEventsUrl: (): string => {
     const token = getToken();
     return `${API_BASE}/events${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  },
+
+  getDlqTasks: async (filters?: {
+    document_id?: string;
+    field_type?: 'demographic' | 'sdq';
+    priority?: 'critical' | 'low_trust';
+    error_type?: string;
+    sort_by?: string;
+    sort_dir?: 'asc' | 'desc';
+  }): Promise<{ tasks: DlqTask[]; total: number }> => {
+    const params = new URLSearchParams();
+    if (filters) {
+      if (filters.document_id) params.set('document_id', filters.document_id);
+      if (filters.field_type) params.set('field_type', filters.field_type);
+      if (filters.priority) params.set('priority', filters.priority);
+      if (filters.error_type) params.set('error_type', filters.error_type);
+      if (filters.sort_by) params.set('sort_by', filters.sort_by);
+      if (filters.sort_dir) params.set('sort_dir', filters.sort_dir);
+    }
+    const qs = params.toString();
+    return fetchJson<{ tasks: DlqTask[]; total: number }>(`${API_BASE}/v2/review/tasks${qs ? `?${qs}` : ''}`);
+  },
+
+  submitDlqResolution: async (taskId: number, value: string): Promise<any> => {
+    console.log(`[DLQ] Submitting task ${taskId} with value: "${value}"`);
+    const response = await fetch(`${API_BASE}/v2/review/tasks/${taskId}/submit?corrected_value=${encodeURIComponent(value)}`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[DLQ] Submit failed: status=${response.status}, body=${errText}`);
+      throw new Error(`Failed to submit resolution: ${response.status} - ${errText}`);
+    }
+    const result = await response.json();
+    console.log(`[DLQ] Submit success for task ${taskId}:`, result);
+    return result;
   }
 };
 
-export type ViewMode = 'dashboard' | 'reporting' | 'analytics';
+export interface DlqTask {
+  id: number;
+  document_id: string;
+  filename: string;
+  field_name: string;
+  original_value: string;
+  corrected_value: string | null;
+  priority: 'critical' | 'low_trust';
+  status: 'pending' | 'completed';
+  page_number: number;
+  confidence_score: number;
+  error_details: string;
+  bbox?: number[];
+  polygon?: number[];
+}
+
+export type ViewMode = 'dashboard' | 'reporting' | 'analytics' | 'dlq';
 export type TabType = 'all' | 'needs_review' | 'verified' | 'processing' | 'failed';
 export type SortKey = 'filename' | 'roll_number' | 'status' | 'created_at';
 export type ReportFormat = 'excel' | 'csv';

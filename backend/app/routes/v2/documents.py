@@ -622,6 +622,54 @@ def verify_document(doc_id: str, payload: VerifyDataRequest):
         remarks=payload.remarks, confidence_scores=cs, verified=1,
     )
     update_document_status(doc_id, "verified", doc.get("escalation_level", "level_1"))
+    
+    # Automatically complete any pending review tasks for this document
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, field_name FROM review_tasks WHERE document_id = ? AND status = 'pending'", (doc_id,))
+        pending_tasks = cur.fetchall()
+        now_str = datetime.now().isoformat()
+        reviewer_id = get_current_user_id() or "system"
+        
+        for task in pending_tasks:
+            task_id = task["id"]
+            field_name = task["field_name"]
+            
+            # Map corrected value from the verification payload
+            val = None
+            if field_name == "roll_number":
+                val = payload.roll_number
+            elif field_name == "class":
+                val = payload.class_val
+            elif field_name == "dob":
+                val = payload.dob
+            elif field_name == "gender":
+                val = payload.gender
+            elif field_name == "consent":
+                val = payload.consent
+            elif field_name == "remarks":
+                val = payload.remarks
+            elif field_name in ("math_pct", "science_pct", "language_pct", "rank"):
+                val = payload.academic_scores.get(field_name, "")
+            elif field_name.startswith("q") and field_name[1:].isdigit():
+                q_val = payload.responses.get(field_name, 0)
+                if isinstance(q_val, list):
+                    val = ",".join(map(str, q_val))
+                else:
+                    val = str(q_val)
+                    
+            if val is not None:
+                cur.execute(
+                    "UPDATE review_tasks SET corrected_value = ?, status = 'completed', reviewer_id = ?, reviewed_at = ? WHERE id = ?",
+                    (val, reviewer_id, now_str, task_id)
+                )
+        conn.commit()
+    except Exception as e:
+        print(f"Failed to auto-resolve review tasks for {doc_id}: {e}")
+    finally:
+        put_conn(conn)
+
     SSE("document_updated", {"doc_id": doc_id, "status": "verified"}, user_id=get_current_user_id())
     return {"message": "Form successfully verified"}
 

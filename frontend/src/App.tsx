@@ -16,6 +16,7 @@ import { VerifiedView } from './components/VerifiedView';
 import { ProcessingView } from './components/ProcessingView';
 import { FailedView } from './components/FailedView';
 import { AnalyticsView } from './components/AnalyticsView';
+import { DlqView } from './components/DlqView';
 import { Toast } from './components/Toast';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -533,6 +534,8 @@ function AppInner() {
             onClassFilterChange={setAnalyticsClassFilter}
             onGenderFilterChange={setAnalyticsGenderFilter}
           />
+        ) : view === 'dlq' ? (
+          <DlqView onClose={() => setView('dashboard')} />
         ) : (
           <>
             <StatCards

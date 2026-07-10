@@ -88,7 +88,9 @@ class TestV2Pipeline(unittest.TestCase):
         }
         
         normalized = normalize_azure_response("doc_test2", raw)
-        responses, consent = resolve_page_selection_marks(normalized.pages[0].elements, is_page_2=False)
+        responses, consent, conf, bboxes, polys = resolve_page_selection_marks(
+            normalized.pages[0].elements, is_page_2=False, raw_response=raw
+        )
         
         self.assertEqual(consent, "No") # Consent Yes is index 0, No is index 1. Index 1 selected -> "No"
         self.assertEqual(responses.get("q1"), 1) # Yes is Column 1
@@ -148,7 +150,7 @@ class TestV2Pipeline(unittest.TestCase):
         # Verify form data is updated and document is approved (since no pending tasks left)
         updated_doc = get_document(doc_id)
         self.assertEqual(updated_doc["roll_number"], "999999")
-        self.assertEqual(updated_doc["status"], "approved")
+        self.assertEqual(updated_doc["status"], "verified")
 
 if __name__ == "__main__":
     unittest.main()

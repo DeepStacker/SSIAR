@@ -23,28 +23,49 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 def list_review_tasks(
     priority: Optional[str] = Query(None),
     limit: int = Query(50),
+    document_id: Optional[str] = Query(None),
+    field_type: Optional[str] = Query(None),
+    error_type: Optional[str] = Query(None),
+    sort_by: str = Query("priority"),
+    sort_dir: str = Query("asc"),
 ):
     """Get all pending review tasks."""
     uid = get_current_user_id()
-    tasks = get_pending_review_tasks(
+    tasks, total_count = get_pending_review_tasks(
         reviewer_id=uid if priority == "mine" else None,
-        priority=priority if priority != "mine" else None,
+        priority=priority if (priority and priority != "mine") else None,
         limit=limit,
+        document_id=document_id,
+        field_type=field_type,
+        error_type=error_type,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
-    return {"tasks": tasks, "total": len(tasks)}
+    return {"tasks": tasks, "total": total_count}
 
 
 @router.post("/api/v2/review/tasks/{task_id}/submit")
 def submit_review_task(
     task_id: int,
-    corrected_value: str,
+    corrected_value: str = Query(""),
 ):
     """Submit a correction for a review task."""
+    import logging
+    logger = logging.getLogger("review")
     uid = get_current_user_id()
-    success = submit_review(task_id, corrected_value, uid or "system")
-    if not success:
-        raise HTTPException(status_code=404, detail="Review task not found")
-    return {"message": "Review submitted successfully", "task_id": task_id}
+    logger.info(f"DLQ submit: task_id={task_id}, corrected_value='{corrected_value}', uid={uid}")
+    try:
+        success = submit_review(task_id, corrected_value, uid or "system")
+        if not success:
+            logger.warning(f"DLQ submit: task {task_id} not found")
+            raise HTTPException(status_code=404, detail="Review task not found")
+        logger.info(f"DLQ submit: task {task_id} resolved successfully")
+        return {"message": "Review submitted successfully", "task_id": task_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"DLQ submit error for task {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/api/v2/review/stats")

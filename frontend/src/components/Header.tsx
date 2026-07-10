@@ -47,6 +47,14 @@ export const Header: React.FC<Props> = ({ view, onViewChange }) => {
         >
           Analytics
         </Button>
+        <Button
+          variant={view === 'dlq' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => onViewChange('dlq')}
+          aria-current={view === 'dlq' ? 'page' : undefined}
+        >
+          DLQ Resolution
+        </Button>
         {view === 'analytics' && (
           <Button variant="outline" size="sm" onClick={() => window.print()} aria-label="Print analytics report" className="no-print">
             <Printer size={14} /> Print Report
