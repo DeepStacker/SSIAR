@@ -138,9 +138,10 @@ def validate_gender(text: str) -> Tuple[str, bool, float, str]:
         return "", False, 1.0, "empty"
         
     clean = text.strip().upper()
-    if "FEMALE" in clean or "FEM" in clean or clean in ("F", "W", "FEM"):
+    # Support English/Hindi words and common OCR misreadings
+    if any(tok in clean for tok in ("FEMALE", "FEM", "महिला", "लड़की", "स्त्री", "FE", "W", "F")):
         return "F", True, 0.0, "ok"
-    if "MALE" in clean or clean in ("M", "N", "H"):
+    if any(tok in clean for tok in ("MALE", "MAL", "पुरुष", "लड़का", "छात्र", "MAHA", "MATE", "M", "N", "H", "NALE")):
         return "M", True, 0.0, "ok"
         
     return clean, False, 0.6, "unrecognized_gender"
@@ -238,15 +239,16 @@ def get_normalized_value(field_name: str, text: str) -> Tuple[str, bool]:
 # Cross-Field Consistency Checks
 # ---------------------------------------------------------------------------
 
-def check_cross_field_consistency(fields: Dict[str, Any]) -> Tuple[bool, float, str]:
+def check_cross_field_consistency(fields: Dict[str, Any]) -> Tuple[bool, float, str, list[str]]:
     """
     Validates cross-field constraints:
-      1. Class + DOB age agreement. (Class C should mean Age = C + 5 +/- 2 years)
+      1. Class + DOB age agreement. (Class C should mean Age = C + 5 +/- 3 years)
       2. Roll Number format checks
       3. Consistency of Marks vs Rank
     """
     penalty = 0.0
     reasons = []
+    inconsistent_fields = []
     
     # 1. Class vs Age Check
     class_val = fields.get("class")
@@ -263,9 +265,10 @@ def check_cross_field_consistency(fields: Dict[str, Any]) -> Tuple[bool, float, 
                 
                 # Expected age: class + 5
                 expected_age = c + 5
-                if abs(age - expected_age) > 2:
+                if abs(age - expected_age) > 3:
                     penalty += 0.25
                     reasons.append(f"age_class_mismatch(class={c}, age={age})")
+                    inconsistent_fields.extend(["class", "dob"])
         except Exception:
             pass
             
@@ -287,8 +290,9 @@ def check_cross_field_consistency(fields: Dict[str, Any]) -> Tuple[bool, float, 
             if avg_score > 90.0 and r_val > 500:
                 penalty += 0.20
                 reasons.append(f"rank_marks_inconsistency(avg_pct={avg_score:.1f}%, rank={r_val})")
+                inconsistent_fields.extend(["math_pct", "science_pct", "language_pct", "rank"])
     except Exception:
         pass
         
     is_consistent = penalty < 0.4
-    return is_consistent, penalty, "; ".join(reasons)
+    return is_consistent, penalty, "; ".join(reasons), list(set(inconsistent_fields))

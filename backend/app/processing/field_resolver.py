@@ -64,7 +64,15 @@ def resolve_field_from_tables(
                 val_cell = cols[1]
                 
                 label_content = label_cell.get("content", "")
-                if anchor_text.lower() in label_content.lower():
+                
+                # Check for match (either substring or split part match)
+                is_match = False
+                if "/" in anchor_text:
+                    is_match = any(part.strip().lower() in label_content.lower() for part in anchor_text.split("/") if part.strip())
+                else:
+                    is_match = anchor_text.lower() in label_content.lower()
+                    
+                if is_match:
                     # Match found! Extract value content and coordinates
                     val_text = val_cell.get("content", "").strip()
                     
@@ -312,21 +320,24 @@ def resolve_field(
     # For right/left: cross-axis (dy) should be strictly constrained to same row (max 150 pixels)
     # For above/below: cross-axis (dx) should be constrained to same column (max 150 pixels)
     if direction in ("right", "left"):
-        tolerance = 150.0
+        tolerance = 45.0 if field_def.name == "rank" else 150.0
     else:
         tolerance = 150.0
     candidates = find_text_near(page, anchor_text, direction, tolerance)
     
     if not candidates:
         # Fallback: try a broader search (max 250 pixels)
-        candidates = find_text_near(page, anchor_text, direction, 250.0)
+        # Avoid huge vertical jumps for the rank field to prevent mixing with subject rows
+        candidates = find_text_near(page, anchor_text, direction, 60.0 if field_def.name == "rank" else 250.0)
         
     # If the field is remarks, we only want candidates that are reasonably close (within 150px vertically)
     # to avoid jumping over empty answer space into the next section/table.
     if field_def.name == "remarks" and candidates:
         anchor_bottom = anchor_el.bbox[3] if anchor_el else 3640.0
-        # If the closest candidate is further than 200px down, discard candidates to force template fallback bbox
-        if candidates[0].bbox[1] - anchor_bottom > 200.0:
+        # If the candidate is a printed form label, discard candidates to force template fallback bbox
+        if candidates[0].text in ("प्रतिशत", "भाषा", "गणित", "विज्ञान", "हिंदी"):
+            candidates = []
+        elif candidates[0].bbox[1] - anchor_bottom > 200.0:
             candidates = []
     
     if not candidates:

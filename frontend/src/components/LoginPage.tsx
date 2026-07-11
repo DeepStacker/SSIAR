@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Loader2 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
@@ -20,85 +21,62 @@ export const LoginPage: React.FC = () => {
       } else {
         await login(email, password);
       }
-    } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed');
     }
   };
 
   return (
-    <div className="app-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-      <Card className="p-8" style={{ width: '380px', maxWidth: '90vw' }}>
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <img src="/logo.png" alt="SSIAR" className="h-10 w-auto mx-auto" style={{ marginBottom: '8px' }} />
-          <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>
+    <div className="flex min-h-screen items-center justify-center p-4">
+      <Card className="w-full max-w-sm p-8">
+        <div className="mb-6 text-center">
+          <img src="/logo.png" alt="SSIAR" className="mx-auto mb-2 h-10 w-auto" />
+          <h2 className="text-lg font-semibold text-foreground">
             {isRegister ? 'Create Account' : 'Sign In'}
           </h2>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+          <p className="mt-1 text-xs text-muted-foreground">
             {isRegister ? 'Register a new account' : 'Enter your credentials to continue'}
           </p>
         </div>
 
         {error && (
-          <div style={{
-            padding: '8px 12px', marginBottom: '16px',
-            background: 'var(--accent-rose)', color: '#fff',
-            borderRadius: '6px', fontSize: '13px',
-          }}>
+          <div className="mb-4 rounded-md bg-destructive px-3 py-2 text-xs text-destructive-foreground">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>
-              Email
-            </label>
-            <input
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Email</label>
+            <Input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
               placeholder="you@example.com"
-              style={{
-                width: '100%', padding: '8px 12px', borderRadius: '6px',
-                border: '1px solid var(--border)', background: 'var(--bg-secondary)',
-                color: 'var(--text-primary)', fontSize: '14px',
-                boxSizing: 'border-box',
-              }}
             />
           </div>
-          <div>
-            <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>
-              Password
-            </label>
-            <input
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Password</label>
+            <Input
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
               minLength={6}
               placeholder="At least 6 characters"
-              style={{
-                width: '100%', padding: '8px 12px', borderRadius: '6px',
-                border: '1px solid var(--border)', background: 'var(--bg-secondary)',
-                color: 'var(--text-primary)', fontSize: '14px',
-                boxSizing: 'border-box',
-              }}
             />
           </div>
-          <Button type="submit" disabled={loading} style={{ marginTop: '4px' }}>
-            {loading ? <Loader2 size={14} className="animate-spin" /> : null}
+          <Button type="submit" disabled={loading} className="mt-1">
+            {loading && <Loader2 size={14} className="mr-2 animate-spin" />}
             {isRegister ? 'Register' : 'Sign In'}
           </Button>
         </form>
 
-        <div style={{ textAlign: 'center', marginTop: '16px' }}>
+        <div className="mt-4 text-center">
           <button
             onClick={() => { setIsRegister(!isRegister); setError(''); }}
-            style={{
-              background: 'none', border: 'none', color: 'var(--accent-violet)',
-              fontSize: '13px', cursor: 'pointer', textDecoration: 'underline',
-            }}
+            className="bg-none cursor-pointer border-none text-xs text-[var(--accent-violet)] underline"
           >
             {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Register"}
           </button>

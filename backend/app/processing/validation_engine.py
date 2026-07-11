@@ -166,10 +166,10 @@ def _validate_by_type(
 def check_cross_field_consistency_v2(
     fields: dict[str, str],
     validation_results: dict[str, ValidationResult],
-) -> tuple[bool, float, str]:
+) -> tuple[bool, float, str, list[str]]:
     """
     Check consistency across multiple fields.
-    Returns: (is_consistent, penalty_score, reason)
+    Returns: (is_consistent, penalty_score, reason, inconsistent_fields)
     """
     from app.validation.fields import check_cross_field_consistency
     return check_cross_field_consistency(fields)

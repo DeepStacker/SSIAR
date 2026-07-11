@@ -1,3 +1,5 @@
+import type { LucideIcon } from 'lucide-react'
+
 export const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
 const getToken = (): string | null => localStorage.getItem('ssiar_token');
@@ -113,6 +115,7 @@ export interface Document {
   gender?: string;
   consent?: string;
   verified_by_human?: number;
+  error_message?: string;
   classification?: {
     type: "mobile_photo" | "scanned" | "photocopy" | "fax_like";
     dpi: number;
@@ -135,6 +138,8 @@ export interface DocumentDetails extends Document {
     ocr: Record<string, number>;
     checkbox: Record<string, string>;
     multi_ticks?: Record<string, number[]>;
+    review_fields?: string[];
+    v2_trust?: Record<string, { trust_confidence?: number; bbox?: number[]; page?: number; polygon?: number[] }>;
   };
   quality_report?: {
     blur: number;
@@ -157,7 +162,7 @@ export interface EditHistoryEntry {
 
 export interface ExportFilters {
   format?: "excel" | "csv";
-  lang?: "en" | "hi";
+  lang?: string;
   status?: string;
   class?: string;
   date_from?: string;
@@ -191,7 +196,7 @@ export interface BatchFolderResponse {
 
 export const api = {
   // Upload scanned PDFs
-  uploadFiles: async (files: File[], autoVerify?: boolean, split?: boolean): Promise<any> => {
+  uploadFiles: async (files: File[], autoVerify?: boolean, split?: boolean): Promise<{ message: string; document_ids: string[]; auto_verify: boolean }> => {
     const formData = new FormData();
     files.forEach(file => formData.append("files", file));
     const params = new URLSearchParams();
@@ -248,7 +253,7 @@ export const api = {
       academic_scores: Record<string, string>;
       remarks: string;
     }
-  ): Promise<any> => {
+  ): Promise<{ message: string }> => {
     const response = await fetch(`${API_BASE}/documents/${docId}/verify`, {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -261,19 +266,18 @@ export const api = {
   },
 
   // Delete a document from SQLite and shared folders
-  deleteDocument: async (docId: string): Promise<any> => {
+  deleteDocument: async (docId: string): Promise<{ message: string }> => {
     const response = await fetch(`${API_BASE}/documents/${docId}`, {
       method: "DELETE",
       headers: authHeaders(),
     });
-    if (!response.ok) {
-      throw new Error("Failed to delete document");
-    }
+    if (response.status === 401) { clearAuth(); window.location.href = '/'; throw new Error('Session expired'); }
+    if (!response.ok) throw new Error("Delete failed");
     return response.json();
   },
 
   // Reprocess a single document — re-runs the full pipeline
-  reprocessDocument: async (docId: string): Promise<any> => {
+  reprocessDocument: async (docId: string): Promise<{ message: string }> => {
     const response = await fetch(`${API_BASE}/documents/${docId}/reprocess`, {
       method: "POST",
       headers: authHeaders(),
@@ -305,7 +309,7 @@ export const api = {
   },
 
   // #33: Bulk operations
-  bulkDelete: async (docIds: string[]): Promise<any> => {
+  bulkDelete: async (docIds: string[]): Promise<{ message: string }> => {
     const response = await fetch(`${API_BASE}/documents/bulk-delete`, {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -315,7 +319,7 @@ export const api = {
     return response.json();
   },
 
-  bulkVerify: async (docIds: string[]): Promise<any> => {
+  bulkVerify: async (docIds: string[]): Promise<{ message: string }> => {
     const response = await fetch(`${API_BASE}/documents/bulk-verify`, {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -325,13 +329,22 @@ export const api = {
     return response.json();
   },
 
-  bulkReprocess: async (docIds: string[]): Promise<any> => {
+  bulkReprocess: async (docIds: string[]): Promise<{ message: string }> => {
     const response = await fetch(`${API_BASE}/documents/bulk-reprocess`, {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ doc_ids: docIds }),
     });
     if (!response.ok) throw new Error("Bulk reprocess failed");
+    return response.json();
+  },
+
+  recoverStuckDocuments: async (): Promise<{ recovered: number; message: string }> => {
+    const response = await fetch(`${API_BASE}/documents/recover-stuck`, {
+      method: "POST",
+      headers: { ...authHeaders() },
+    });
+    if (!response.ok) throw new Error("Recovery failed");
     return response.json();
   },
 
@@ -375,63 +388,63 @@ export const api = {
   },
 
   // Analytics endpoints
-  getAnalyticsSummary: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+  getAnalyticsSummary: async (filters?: { class?: string; gender?: string }) => {
     const params = new URLSearchParams();
     if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
     if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
     const qs = params.toString();
     return fetchJson(`${API_BASE}/analytics/summary${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsDemographics: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+  getAnalyticsDemographics: async (filters?: { class?: string; gender?: string }) => {
     const params = new URLSearchParams();
     if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
     if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
     const qs = params.toString();
     return fetchJson(`${API_BASE}/analytics/demographics${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsQuestionnaire: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+  getAnalyticsQuestionnaire: async (filters?: { class?: string; gender?: string }) => {
     const params = new URLSearchParams();
     if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
     if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
     const qs = params.toString();
     return fetchJson(`${API_BASE}/analytics/questionnaire${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsAcademic: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+  getAnalyticsAcademic: async (filters?: { class?: string; gender?: string }) => {
     const params = new URLSearchParams();
     if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
     if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
     const qs = params.toString();
     return fetchJson(`${API_BASE}/analytics/academic${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsCorrelations: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+  getAnalyticsCorrelations: async (filters?: { class?: string; gender?: string }) => {
     const params = new URLSearchParams();
     if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
     if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
     const qs = params.toString();
     return fetchJson(`${API_BASE}/analytics/correlations${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsOutliers: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+  getAnalyticsOutliers: async (filters?: { class?: string; gender?: string }) => {
     const params = new URLSearchParams();
     if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
     if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
     const qs = params.toString();
     return fetchJson(`${API_BASE}/analytics/outliers${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsDataQuality: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+  getAnalyticsDataQuality: async (filters?: { class?: string; gender?: string }) => {
     const params = new URLSearchParams();
     if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
     if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
     const qs = params.toString();
     return fetchJson(`${API_BASE}/analytics/data-quality${qs ? `?${qs}` : ''}`);
   },
-  getAnalyticsProcessing: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+  getAnalyticsProcessing: async (filters?: { class?: string; gender?: string }) => {
     const params = new URLSearchParams();
     if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
     if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
     const qs = params.toString();
     return fetchJson(`${API_BASE}/analytics/processing${qs ? `?${qs}` : ''}`);
   },
-  getPerFieldConfidence: async (filters?: { class?: string; gender?: string }): Promise<any> => {
+  getPerFieldConfidence: async (filters?: { class?: string; gender?: string }) => {
     const params = new URLSearchParams();
     if (filters?.class && filters.class !== 'all') params.set('class', filters.class);
     if (filters?.gender && filters.gender !== 'all') params.set('gender', filters.gender);
@@ -476,20 +489,16 @@ export const api = {
     return fetchJson<{ tasks: DlqTask[]; total: number }>(`${API_BASE}/v2/review/tasks${qs ? `?${qs}` : ''}`);
   },
 
-  submitDlqResolution: async (taskId: number, value: string): Promise<any> => {
-    console.log(`[DLQ] Submitting task ${taskId} with value: "${value}"`);
+  submitDlqResolution: async (taskId: number, value: string): Promise<{ message: string }> => {
     const response = await fetch(`${API_BASE}/v2/review/tasks/${taskId}/submit?corrected_value=${encodeURIComponent(value)}`, {
       method: "POST",
       headers: authHeaders(),
     });
     if (!response.ok) {
       const errText = await response.text();
-      console.error(`[DLQ] Submit failed: status=${response.status}, body=${errText}`);
       throw new Error(`Failed to submit resolution: ${response.status} - ${errText}`);
     }
-    const result = await response.json();
-    console.log(`[DLQ] Submit success for task ${taskId}:`, result);
-    return result;
+    return response.json();
   }
 };
 
@@ -533,6 +542,6 @@ export interface StatCardItem {
   label: string;
   value: number;
   color: string;
-  icon: any;
+  icon: LucideIcon;
   pulse?: boolean;
 }

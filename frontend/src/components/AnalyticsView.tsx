@@ -33,6 +33,8 @@ interface SummaryData {
   processed_today: number;
   needs_review?: number;
   pending_review?: number;
+  throughput_window_days?: number;
+  throughput_forms_per_min?: number;
 }
 
 interface DemographicsData {
@@ -40,42 +42,35 @@ interface DemographicsData {
   gender_distribution: Array<{ gender: string; count: number }>;
   age_gender_heatmap: Array<{ age: string; Male: number; Female: number; Other: number }>;
   age_distribution: Array<{ age: string; count: number }>;
-  [key: string]: any;
 }
 
 interface QuestionnaireData {
   reliability: Array<{ domain: string; cronbach_alpha: number; consistency: string }>;
   questions: Array<{ question_id: string; domain: string; text: string; text_hi: string; not_true: number; somewhat_true: number; certainly_true: number; total: number }>;
   domain_scores: Record<string, { mean: number; sd: number; min: number; max: number; gender_split?: Record<string, number> }>;
-  [key: string]: any;
 }
 
 interface AcademicData {
   averages: Record<string, number>;
   top_vs_bottom_difficulties: { low_difficulty_group_academic: number; high_difficulty_group_academic: number } | null;
   class_averages: Array<{ class: string; Mathematics: number; Science: number; Language: number }>;
-  [key: string]: any;
 }
 
 interface CorrelationsData {
   correlation_matrix: Array<{ domain: string; "Math %": number; "Science %": number; "Language %": number; Rank: number }>;
-  [key: string]: any;
 }
 
 interface OutliersData {
   outliers: Array<{ class: string; roll_number: string; gender: string; metric_type: string; value: string }>;
-  [key: string]: any;
 }
 
 interface ProcessingData {
   hourly_breakdown: Array<{ hour: string; count: number }>;
   escalation_distribution: Array<{ level: string; count: number }>;
-  [key: string]: any;
 }
 
 interface FieldConfData {
   field_confidence: Array<{ field: string; average: number }>;
-  [key: string]: any;
 }
 
 interface DataQualityData {
@@ -83,7 +78,6 @@ interface DataQualityData {
   needs_review: number;
   issues: Array<{ escalation_level: string; filename: string; issues: Array<{ field: string; value: string; reason: string }> }>;
   total_documents?: number;
-  [key: string]: any;
 }
 
 function SkeletonCard({ className = '' }: { className?: string }) {
@@ -292,35 +286,35 @@ export function AnalyticsView({ onBack, classFilter, genderFilter, ...rest }: An
               api.getPerFieldConfidence().catch(() => null),
               api.getQueueStatus().catch(() => null),
             ]);
-            setSummary(sumRes);
-            setProcessing(procRes);
-            setFieldConf(confRes);
+            setSummary(sumRes as SummaryData);
+            setProcessing(procRes as ProcessingData);
+            setFieldConf(confRes as FieldConfData);
             setQueueStatus(qsRes);
             break;
           }
           case 'demographics':
-            setDemographics(await api.getAnalyticsDemographics().catch(() => null));
+            setDemographics(await api.getAnalyticsDemographics().catch(() => null) as DemographicsData);
             break;
           case 'sdq':
           case 'domains': {
             if (!loadedTabs.current.has('sdq') || !loadedTabs.current.has('domains')) {
               loadedTabs.current.add('sdq');
               loadedTabs.current.add('domains');
-              setQuestionnaire(await api.getAnalyticsQuestionnaire().catch(() => null));
+              setQuestionnaire(await api.getAnalyticsQuestionnaire().catch(() => null) as QuestionnaireData);
             }
             break;
           }
           case 'academic':
-            setAcademic(await api.getAnalyticsAcademic().catch(() => null));
+            setAcademic(await api.getAnalyticsAcademic().catch(() => null) as AcademicData);
             break;
           case 'correlations':
-            setCorrelations(await api.getAnalyticsCorrelations({ class: classFilter, gender: genderFilter }).catch(() => null));
+            setCorrelations(await api.getAnalyticsCorrelations({ class: classFilter, gender: genderFilter }).catch(() => null) as CorrelationsData);
             break;
           case 'outliers':
-            setOutliers(await api.getAnalyticsOutliers({ class: classFilter, gender: genderFilter }).catch(() => null));
+            setOutliers(await api.getAnalyticsOutliers({ class: classFilter, gender: genderFilter }).catch(() => null) as OutliersData);
             break;
           case 'data-quality':
-            setDataQuality(await api.getAnalyticsDataQuality({ class: classFilter, gender: genderFilter }).catch(() => null));
+            setDataQuality(await api.getAnalyticsDataQuality({ class: classFilter, gender: genderFilter }).catch(() => null) as DataQualityData);
             break;
         }
       } catch (err) {
@@ -539,18 +533,18 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                       </Card>
                       <Card size="sm">
                         <CardContent>
-                          <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Throughput (forms/min, {(summary as any).throughput_window_days || 14}d)</span>
-                          <h3 className="text-3xl font-extrabold text-[var(--text-primary)] mt-1.5">
-                            {(summary as any).throughput_forms_per_min != null
-                              ? (summary as any).throughput_forms_per_min.toFixed(4)
+                          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Throughput (forms/min, {summary.throughput_window_days ?? 14}d)</span>
+                          <span className="text-2xl font-bold text-foreground">
+                            {summary.throughput_forms_per_min != null
+                              ? summary.throughput_forms_per_min.toFixed(4)
                               : '—'}
-                          </h3>
+                          </span>
                         </CardContent>
                       </Card>
                       <Card size="sm">
                         <CardContent>
-                          <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Processing Today</span>
-                          <h3 className="text-3xl font-extrabold text-[var(--text-primary)] mt-1.5">{summary.processed_today}</h3>
+                          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Processing Today</span>
+                          <h3 className="text-3xl font-extrabold text-foreground mt-1.5">{summary.processed_today}</h3>
                         </CardContent>
                       </Card>
                     </div>
@@ -587,7 +581,7 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                                     paddingAngle={4} dataKey="count" nameKey="level"
                                     label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
                                   >
-                                    {processing.escalation_distribution.map((_: any, i: number) => (
+                                    {processing.escalation_distribution.map((_, i: number) => (
                                       <Cell key={i} fill={COLORS[i % COLORS.length]} />
                                     ))}
                                   </Pie>
@@ -692,7 +686,7 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                                   nameKey="gender"
                                   label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
                                 >
-                                  {demographics.gender_distribution.map((_: any, index: number) => (
+                                  {demographics.gender_distribution.map((_, index: number) => (
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                   ))}
                                 </Pie>

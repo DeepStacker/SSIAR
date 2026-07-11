@@ -89,7 +89,7 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
     { key: 'language_pct', label: 'Language %' },
     { key: 'rank', label: 'Rank' },
   ];
-  const acad = details.academic_scores || {} as any;
+  const acad: Record<string, string> = details.academic_scores || {};
 
   const getVal = (key: string) => {
     if (key === 'roll_number') return details.roll_number || '';
@@ -99,13 +99,31 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
     return (acad as Record<string, string>)[key] || '';
   };
 
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !pageViewer) {
+        onClose();
+      }
+      if (e.altKey && e.key === '1') {
+        e.preventDefault();
+        setPageViewer(1);
+      }
+      if (e.altKey && e.key === '2') {
+        e.preventDefault();
+        setPageViewer(2);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose, pageViewer]);
+
   const setVal = (key: string, val: string) => {
     if (!onDetailsChange) return;
     if (key === 'roll_number') onDetailsChange({ ...details, roll_number: val });
     else if (key === 'class') onDetailsChange({ ...details, class: val });
     else if (key === 'dob') onDetailsChange({ ...details, dob: val });
     else if (key === 'gender') onDetailsChange({ ...details, gender: val });
-    else onDetailsChange({ ...details, academic_scores: { ...acad, [key]: val } });
+    else onDetailsChange({ ...details, academic_scores: { ...acad, [key]: val } as typeof details.academic_scores });
   };
 
   const handleSave = async () => {
@@ -142,7 +160,7 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
         else if (key === 'class') newDetails.class = result.value;
         else if (key === 'dob') newDetails.dob = result.value;
         else if (key === 'gender') newDetails.gender = result.value;
-        else newDetails.academic_scores = { ...acad, [key]: result.value };
+        else newDetails.academic_scores = { ...acad, [key]: result.value } as typeof newDetails.academic_scores;
         onDetailsChange(newDetails);
       }
       show(result.message || `Field reprocessed: ${result.value}`, 'success');
@@ -213,7 +231,7 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
                       {v2Trust[f.key]?.bbox ? (
                         <CanvasCrop
                           pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
-                          bbox={v2Trust[f.key].bbox}
+                          bbox={v2Trust[f.key]!.bbox as number[]}
                           style={{ width: '120px', height: '30px', objectFit: 'contain', border: '1px solid var(--color-border)' }}
                           className="bg-black/15 rounded cursor-zoom-in"
                           onDataUrl={url => { cropDataUrls.current[f.key] = url; }}
@@ -318,7 +336,7 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
       </div>
 
       <ZoomPopup zoom={zoomImg} />
-      {pageViewer && <PageViewer docId={doc.id} pageNum={pageViewer} onClose={() => setPageViewer(null)} />}
+      {pageViewer && <PageViewer docId={doc.id} pageNum={pageViewer} onClose={() => setPageViewer(null)} onChangePage={setPageViewer} />}
     </div>
   );
 };

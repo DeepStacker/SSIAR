@@ -158,24 +158,24 @@ async def get_document_details(doc_id: str):
                         }
                             
             # 2. Enrich consent coordinates (page 1, standard relative region)
-            #    Tick mark appears ~100px left of "हां" text (x≈3566), so start at 3400
+            #    "हां/नहीं" label is at y ≈ 965, x ≈ 1743 on 300 DPI page, tick is inside/adjacent
             if "consent" not in v2 or not v2["consent"].get("bbox"):
                 v2["consent"] = {
                     "page": 1,
-                    "bbox": [3400, 1380, 3960, 1560],
-                    "polygon": [3400, 1380, 3960, 1380, 3960, 1560, 3400, 1560]
+                    "bbox": [1550, 920, 2050, 1070],
+                    "polygon": [1550, 920, 2050, 920, 2050, 1070, 1550, 1070]
                 }
             else:
                 v2["consent"]["page"] = 1
             
             # 3. Enrich remarks coordinates (page 2)
-            #    Question "क्या आपकी कोई अन्य टिप्पणी..." at y≈3631
-            #    Answer lines extend from y≈3700 to y≈4200
+            #    Question "क्या आपकी कोई अन्य टिप्पणी..." starts around y ≈ 2258
+            #    Write-in lines area sits below the question from y ≈ 2330 to y ≈ 2980
             if "remarks" not in v2 or not v2["remarks"].get("bbox"):
                 v2["remarks"] = {
                     "page": 2,
-                    "bbox": [100, 3550, 4400, 4200],
-                    "polygon": [100, 3550, 4400, 3550, 4400, 4200, 100, 4200]
+                    "bbox": [200, 2300, 2400, 2980],
+                    "polygon": [200, 2300, 2400, 2300, 2400, 2980, 200, 2980]
                 }
             else:
                 v2["remarks"]["page"] = 2
@@ -721,6 +721,39 @@ def bulk_verify(payload: BulkRequest):
     return {"message": f"Verified {count} document(s)"}
 
 
+@router.post("/api/documents/recover-stuck")
+def recover_stuck_documents():
+    from datetime import datetime, timedelta
+    from app.database import get_db_connection, put_conn, USE_POSTGRES
+    cutoff = (datetime.now() - timedelta(minutes=10)).isoformat()
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, filename FROM documents WHERE status = 'processing' AND created_at < ?",
+            (cutoff,)
+        )
+        stuck = cur.fetchall()
+        if not stuck:
+            return {"recovered": 0, "message": "No stuck documents found"}
+        cur.execute(
+            "UPDATE documents SET status = 'failed', escalation_level = 'level_4' WHERE status = 'processing' AND created_at < ?",
+            (cutoff,)
+        )
+        conn.commit()
+        for row in stuck:
+            doc_id = row[0]
+            SSE("document_updated", {
+                "doc_id": doc_id, "status": "failed", "escalation_level": "level_4"
+            })
+        return {
+            "recovered": len(stuck),
+            "message": f"Marked {len(stuck)} stuck document(s) as failed"
+        }
+    finally:
+        put_conn(conn)
+
+
 @router.post("/api/documents/{doc_id}/reprocess")
 def reprocess_document(doc_id: str):
     doc = get_document(doc_id)
@@ -1019,7 +1052,15 @@ def get_field_bbox_from_table(raw_dict: dict, field_name: str) -> Optional[tuple
                 val_cell = cols[1]
                 
                 label_content = label_cell.get("content", "")
-                if anchor.lower() in label_content.lower():
+                
+                # Check for match (either substring or split part match)
+                is_match = False
+                if "/" in anchor:
+                    is_match = any(part.strip().lower() in label_content.lower() for part in anchor.split("/") if part.strip())
+                else:
+                    is_match = anchor.lower() in label_content.lower()
+                    
+                if is_match:
                     # Found it! Extract polygon from val_cell
                     regions = val_cell.get("boundingRegions", [])
                     if regions:

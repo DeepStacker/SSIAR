@@ -81,7 +81,8 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
               value={remarks} onChange={e => onRemarksChange(e.target.value)} />
             {remarksBbox ? (
               <div
-                style={{ width: '100%', height: '50px', background: 'white', borderRadius: '6px', cursor: 'zoom-in', marginTop: '8px', overflow: 'hidden' }}
+                className="bg-background"
+                style={{ width: '100%', height: '50px', borderRadius: '6px', cursor: 'zoom-in', marginTop: '8px', overflow: 'hidden' }}
                 onMouseEnter={e => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   handleZoom('remarks', rect.left + rect.width / 2, rect.top);

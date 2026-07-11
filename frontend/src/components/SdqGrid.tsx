@@ -136,13 +136,20 @@ const SdqGridComponent: React.FC<Props> = ({ docId, responses, checkboxConf, v2T
   );
 };
 
+const shallowEqual = (a: Record<string, unknown>, b: Record<string, unknown>) => {
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  return ka.every(k => a[k] === b[k]);
+};
+
 const propsAreEqual = (prev: Props, next: Props) => {
   return prev.docId === next.docId
     && prev.onChange === next.onChange
     && prev.onZoom === next.onZoom
-    && JSON.stringify(prev.responses) === JSON.stringify(next.responses)
-    && JSON.stringify(prev.checkboxConf) === JSON.stringify(next.checkboxConf)
-    && JSON.stringify(prev.multiTicks) === JSON.stringify(next.multiTicks)
+    && shallowEqual(prev.responses as Record<string, unknown>, next.responses as Record<string, unknown>)
+    && shallowEqual(prev.checkboxConf, next.checkboxConf as Record<string, unknown>)
+    && shallowEqual(prev.multiTicks as Record<string, unknown>, next.multiTicks as Record<string, unknown>)
     && prev.v2Trust === next.v2Trust;
 };
 

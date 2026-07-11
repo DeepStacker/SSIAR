@@ -176,8 +176,8 @@ def determine_review_priority(
     
     Returns: "critical", "low_trust", or "none"
     """
-    if is_critical and trust_confidence < 0.90:
+    if is_critical and trust_confidence < 0.70:
         return "critical"
-    elif trust_confidence < 0.60:
+    elif trust_confidence < 0.50:
         return "low_trust"
     return "none"

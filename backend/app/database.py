@@ -634,23 +634,14 @@ def get_corrections_log() -> list:
 
 
 def delete_document(doc_id: str):
-    from app.auth import get_current_user_id
     from app.image.storage import delete_document_files
-    uid = get_current_user_id()
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        if uid:
-            cur.execute(
-                "DELETE FROM documents WHERE id = %s AND user_id = %s" if USE_POSTGRES else
-                "DELETE FROM documents WHERE id = ? AND user_id = ?",
-                (doc_id, uid)
-            )
-        else:
-            cur.execute(
-                "DELETE FROM documents WHERE id = %s" if USE_POSTGRES else
-                "DELETE FROM documents WHERE id = ?", (doc_id,)
-            )
+        cur.execute(
+            "DELETE FROM documents WHERE id = %s" if USE_POSTGRES else
+            "DELETE FROM documents WHERE id = ?", (doc_id,)
+        )
         conn.commit()
     finally:
         put_conn(conn)

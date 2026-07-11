@@ -1,10 +1,11 @@
 import React from 'react';
-import { Download } from 'lucide-react';
+import { Download, FileWarning } from 'lucide-react';
 import { Document, ReportFormat } from '../api';
 import { api } from '../api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 
 interface Props {
   documents: Document[];
@@ -40,7 +41,7 @@ export const ReportingView: React.FC<Props> = ({
   const getExportLink = (fmt: ReportFormat, lang?: string, docIds?: string) =>
     api.getExportUrl({
       format: fmt,
-      lang: lang as any,
+      lang: lang,
       status: reportStatus || undefined,
       class: reportClass || undefined,
       date_from: dateFrom || undefined,
@@ -49,14 +50,19 @@ export const ReportingView: React.FC<Props> = ({
     });
 
   const statusBadge = (status: string) => {
-    const map: Record<string, { variant: "default" | "secondary" | "destructive" | "outline", label: string }> = {
-      processing: { variant: "secondary", label: "Processing" },
-      needs_review: { variant: "outline", label: "Needs Review" },
-      verified: { variant: "default", label: "Verified" },
-      failed: { variant: "destructive", label: "Failed" },
+    const map: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; dot: string; label: string }> = {
+      processing: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
+      needs_review: { variant: "secondary", dot: "bg-amber-500", label: "Needs Review" },
+      verified: { variant: "default", dot: "bg-emerald-500", label: "Verified" },
+      failed: { variant: "destructive", dot: "bg-rose-500", label: "Failed" },
     };
-    const s = map[status] || { variant: "outline" as const, label: status };
-    return <Badge variant={s.variant}>{s.label}</Badge>;
+    const s = map[status] || { variant: "outline" as const, dot: "bg-muted-foreground", label: status };
+    return (
+      <Badge variant={s.variant} className="gap-1.5 text-[11px] px-2.5 py-0.5 font-normal rounded-full">
+        <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+        {s.label}
+      </Badge>
+    );
   };
 
   return (
@@ -125,38 +131,46 @@ export const ReportingView: React.FC<Props> = ({
             onChange={onToggleSelectAll} className="accent-[var(--accent-violet)]" />
           Matching Documents ({reportResults.length})
         </div>
-        <div className="max-h-[500px] overflow-y-auto">
+        <div className="max-h-[500px] overflow-y-auto [&_thead]:sticky [&_thead]:top-0 [&_thead]:bg-card [&_thead]:z-10">
           {reportResults.length === 0 ? (
-            <div className="p-10 text-center text-[var(--text-muted)] text-sm">No documents match the selected filters.</div>
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                <FileWarning size={20} className="text-muted-foreground/60" />
+              </div>
+              <span className="text-sm text-muted-foreground font-medium">No documents match the selected filters</span>
+              <span className="text-xs text-muted-foreground/60">Try adjusting your filter criteria</span>
+            </div>
           ) : (
-            <table className="w-full caption-bottom text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap w-[30px]"></th>
-                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap">Filename</th>
-                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap">Roll Number</th>
-                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap">Class</th>
-                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap">Status</th>
-                  <th className="h-10 px-2 text-left align-middle font-medium whitespace-nowrap">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reportResults.map(doc => (
-                  <tr key={doc.id} className="border-b transition-colors hover:bg-muted/50 cursor-pointer"
-                    style={{ background: selectedReportDocs.has(doc.id) ? 'rgba(139,92,246,0.08)' : undefined }}>
-                    <td className="p-2 align-middle" onClick={e => e.stopPropagation()}>
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-8"></TableHead>
+                  <TableHead className="text-xs text-muted-foreground font-medium">Filename</TableHead>
+                  <TableHead className="text-xs text-muted-foreground font-medium">Roll Number</TableHead>
+                  <TableHead className="text-xs text-muted-foreground font-medium">Class</TableHead>
+                  <TableHead className="text-xs text-muted-foreground font-medium">Status</TableHead>
+                  <TableHead className="text-xs text-muted-foreground font-medium text-right">Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reportResults.map((doc, idx) => (
+                  <TableRow key={doc.id}
+                    className={`cursor-pointer ${selectedReportDocs.has(doc.id) ? 'bg-violet-500/[0.04] hover:bg-violet-500/[0.06]' : 'hover:bg-muted/50'} ${idx % 2 === 0 && !selectedReportDocs.has(doc.id) ? 'bg-muted/20' : ''}`}>
+                    <TableCell onClick={e => e.stopPropagation()} className="py-2">
                       <input type="checkbox" checked={selectedReportDocs.has(doc.id)}
-                        onChange={() => onToggleSelect(doc.id)} className="accent-[var(--accent-violet)]" />
-                    </td>
-                    <td className="p-2 align-middle font-medium text-sm" onClick={() => onOpenDoc(doc)}>{doc.filename}</td>
-                    <td className="p-2 align-middle" onClick={() => onOpenDoc(doc)}>{doc.roll_number || '—'}</td>
-                    <td className="p-2 align-middle" onClick={() => onOpenDoc(doc)}>{doc.class || '—'}</td>
-                    <td className="p-2 align-middle" onClick={() => onOpenDoc(doc)}>{statusBadge(doc.status)}</td>
-                    <td className="p-2 align-middle text-xs text-[var(--text-muted)]" onClick={() => onOpenDoc(doc)}>{doc.created_at?.slice(0, 10)}</td>
-                  </tr>
+                        onChange={() => onToggleSelect(doc.id)} className="accent-violet-500" />
+                    </TableCell>
+                    <TableCell className="font-medium text-sm py-2 max-w-[220px]" onClick={() => onOpenDoc(doc)}>
+                      <span className="truncate block" title={doc.filename}>{doc.filename}</span>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground py-2 tabular-nums" onClick={() => onOpenDoc(doc)}>{doc.roll_number || '—'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground py-2 tabular-nums" onClick={() => onOpenDoc(doc)}>{doc.class || '—'}</TableCell>
+                    <TableCell className="py-2" onClick={() => onOpenDoc(doc)}>{statusBadge(doc.status)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground py-2 text-right tabular-nums" onClick={() => onOpenDoc(doc)}>{doc.created_at?.slice(0, 10)}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
         </div>
       </Card>

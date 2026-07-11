@@ -40,7 +40,7 @@ export const UploadZone: React.FC<Props> = ({
     setUploadingFilename(files[0].name);
     setLocalUploading(true);
     try {
-      onUpload(files);
+      await onUpload(files);
     } catch (err) {
       show(err instanceof Error ? err.message : 'Upload failed', 'error');
     } finally {
@@ -61,48 +61,42 @@ export const UploadZone: React.FC<Props> = ({
 
   return (
     <Card
-      style={{ marginBottom: '20px' }}
-      className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${isDragOver ? 'border-[var(--accent-violet)] bg-[var(--bg-highlight)]' : 'border-[var(--color-border)]'}`}
+      className={`relative mb-6 border-2 border-dashed rounded-xl p-5 transition-all ${
+        isDragOver
+          ? 'border-violet-500 bg-violet-500/5'
+          : 'border-border hover:border-violet-300 hover:bg-violet-500/[0.02]'
+      }`}
       onDragOver={e => { e.preventDefault(); onDragOver(true); }}
       onDragLeave={() => onDragOver(false)}
       onDrop={handleDrop}
     >
-      <input ref={fileInputRef} type="file" multiple accept=".pdf" onChange={handleFileInput} style={{ display: 'none' }} aria-describedby={descriptionId} />
-      <div className="flex items-center gap-4 flex-wrap">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => fileInputRef.current?.click()}
-          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); }}}
-          className="cursor-pointer flex items-center gap-2.5 flex-1 min-w-[200px]"
-        >
-          <div style={{ background: isUploading ? 'rgba(139,92,246,0.1)' : 'rgba(16,185,129,0.1)', padding: '10px', borderRadius: '50%' }}>
-            {isUploading ? <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent-violet)' }} /> : <Upload size={22} style={{ color: 'var(--accent-emerald)' }} />}
-          </div>
-          <div>
-            <div className="font-semibold text-sm">{isUploading ? `Uploading ${uploadingFilename}...` : 'Upload or drop PDFs'}</div>
-            <div id={descriptionId} className="text-xs text-muted-foreground">{isUploading ? 'Processing...' : 'Select multiple files for bulk processing'}</div>
-          </div>
+      <div className="absolute inset-0 cursor-pointer z-0" onClick={() => !isUploading && fileInputRef.current?.click()} />
+      <input ref={fileInputRef} type="file" multiple accept=".pdf" onChange={handleFileInput} className="hidden" aria-describedby={descriptionId} />
+      <div className="flex items-center justify-center gap-4 relative z-10">
+        <div className={`p-3 rounded-xl ${isUploading ? 'bg-violet-500/10' : 'bg-muted'}`}>
+          {isUploading ? <Loader2 size={24} className="animate-spin text-violet-500" /> : <Upload size={24} className="text-muted-foreground" />}
         </div>
-        <label className="flex items-center gap-1.5 cursor-pointer text-xs whitespace-nowrap">
+        <div>
+          <div className="font-medium text-sm">{isUploading ? `Uploading ${uploadingFilename}...` : 'Upload or drop PDFs'}</div>
+          <div id={descriptionId} className="text-xs text-muted-foreground mt-0.5">{isUploading ? 'Processing...' : 'Select multiple files for bulk processing'}</div>
+        </div>
+      </div>
+      <div className="flex items-center justify-center gap-4 mt-4 relative z-10">
+        <label className="flex items-center gap-1.5 cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}>
           <input type="checkbox" checked={autoVerify} onChange={e => onAutoVerifyChange(e.target.checked)} className="accent-violet-500" />
           Auto-verify
         </label>
-        <label className="flex items-center gap-1.5 cursor-pointer text-xs whitespace-nowrap">
+        <label className="flex items-center gap-1.5 cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}>
           <input type="checkbox" checked={splitPages} onChange={e => onSplitPagesChange(e.target.checked)} className="accent-cyan-500" />
           Split 2-page forms
         </label>
-        <div>
-          {failedCount > 0 && (
-            <Button variant="outline" size="sm" onClick={onRetryAllFailed} className="text-rose-500 whitespace-nowrap">
-              <RotateCcw size={14} /> Retry {failedCount}
-            </Button>
-          )}
-        </div>
+        {failedCount > 0 && (
+          <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); onRetryAllFailed(); }} className="text-rose-500 h-7 text-xs">
+            <RotateCcw size={12} /> Retry {failedCount}
+          </Button>
+        )}
       </div>
-      {!isUploading && (
-        <div className="text-xs text-muted-foreground mt-3">Max {MAX_FILE_SIZE_MB}MB per file</div>
-      )}
+      <div className="text-center text-[10px] text-muted-foreground mt-2 relative z-10">{isUploading ? 'Processing...' : `Max ${MAX_FILE_SIZE_MB}MB per file`}</div>
     </Card>
   );
 };

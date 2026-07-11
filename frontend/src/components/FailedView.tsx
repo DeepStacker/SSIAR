@@ -23,7 +23,7 @@ export const FailedView: React.FC<Props> = ({ doc, onClose, onReprocess }) => {
     }
   };
 
-  const errorMsg = (doc as any).error_message;
+  const errorMsg = doc.error_message;
 
   return (
     <div className="app-container">
