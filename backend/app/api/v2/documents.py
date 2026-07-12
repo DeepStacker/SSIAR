@@ -23,10 +23,10 @@ from app.core.events import notify as SSE
 from app.image.crops import extract_crop, get_crop_page, generate_crop_jpeg
 from app.image.page_utils import get_page, get_azure_scale, cache_crop_set, _cache_crop
 from app.image.coordinate_resolver import (
-    get_sdq_row_bbox_from_table,
-    get_field_bbox_from_table,
-    get_rank_bbox,
-    get_static_fallback_bbox,
+    get_sdq_row_polygon_from_table,
+    get_field_polygon_from_table,
+    get_rank_polygon,
+    get_static_fallback_polygon,
     scale_coordinates_to_image_size,
 )
 from app.config import TEMP_DIR, R2_PUBLIC_URL, use_r2
@@ -83,11 +83,11 @@ def _enrich_coordinates(doc: dict, doc_id: str) -> None:
             for q_num in range(1, 26):
                 q_key = f"q{q_num}"
                 expected_page = 2 if q_num >= 13 else 1
-                if q_key not in v2 or not v2[q_key].get("bbox"):
-                    tbl_res = get_sdq_row_bbox_from_table(raw_dict, q_num)
+                if q_key not in v2 or not v2[q_key].get("polygon"):
+                    tbl_res = get_sdq_row_polygon_from_table(raw_dict, q_num)
                     if tbl_res:
-                        poly, bbox, page_num = tbl_res
-                        v2[q_key] = {"page": page_num, "bbox": bbox, "polygon": poly}
+                        poly, page_num = tbl_res
+                        v2[q_key] = {"page": page_num, "polygon": poly}
                 elif q_key in v2:
                     v2[q_key]["page"] = expected_page
 
@@ -96,19 +96,19 @@ def _enrich_coordinates(doc: dict, doc_id: str) -> None:
                 "math_pct": 2, "science_pct": 2, "language_pct": 2
             }
             for field_name, expected_page in field_pages.items():
-                if field_name not in v2 or not v2[field_name].get("bbox"):
-                    res = get_field_bbox_from_table(raw_dict, field_name)
+                if field_name not in v2 or not v2[field_name].get("polygon"):
+                    res = get_field_polygon_from_table(raw_dict, field_name)
                     if res:
-                        poly, bbox, page_num = res
-                        v2[field_name] = {"page": page_num, "bbox": bbox, "polygon": poly}
+                        poly, page_num = res
+                        v2[field_name] = {"page": page_num, "polygon": poly}
                 elif field_name in v2:
                     v2[field_name]["page"] = expected_page
 
-            if "rank" not in v2 or not v2["rank"].get("bbox"):
-                res = get_rank_bbox(raw_dict)
+            if "rank" not in v2 or not v2["rank"].get("polygon"):
+                res = get_rank_polygon(raw_dict)
                 if res:
-                    poly, bbox, page_num = res
-                    v2["rank"] = {"page": page_num, "bbox": bbox, "polygon": poly}
+                    poly, page_num = res
+                    v2["rank"] = {"page": page_num, "polygon": poly}
             elif "rank" in v2:
                 v2["rank"]["page"] = 2
 
@@ -118,19 +118,19 @@ def _enrich_coordinates(doc: dict, doc_id: str) -> None:
             "consent", "remarks"
         ]
         for field_name in all_enrich_fields:
-            if field_name not in v2 or not v2[field_name].get("bbox"):
-                fallback = get_static_fallback_bbox(field_name)
+            if field_name not in v2 or not v2[field_name].get("polygon"):
+                fallback = get_static_fallback_polygon(field_name)
                 if fallback:
-                    poly, bbox, page_num = fallback
-                    v2[field_name] = {"page": page_num, "bbox": bbox, "polygon": poly}
+                    poly, page_num = fallback
+                    v2[field_name] = {"page": page_num, "polygon": poly}
 
-        if "consent" not in v2 or not v2["consent"].get("bbox"):
-            v2["consent"] = {"page": 1, "bbox": [1550, 920, 2050, 1070], "polygon": [1550, 920, 2050, 920, 2050, 1070, 1550, 1070]}
+        if "consent" not in v2 or not v2["consent"].get("polygon"):
+            v2["consent"] = {"page": 1, "polygon": [1550, 920, 2050, 920, 2050, 1070, 1550, 1070]}
         else:
             v2["consent"]["page"] = 1
 
-        if "remarks" not in v2 or not v2["remarks"].get("bbox"):
-            v2["remarks"] = {"page": 2, "bbox": [200, 2300, 2400, 2980], "polygon": [200, 2300, 2400, 2300, 2400, 2980, 200, 2980]}
+        if "remarks" not in v2 or not v2["remarks"].get("polygon"):
+            v2["remarks"] = {"page": 2, "polygon": [200, 2300, 2400, 2300, 2400, 2980, 200, 2980]}
         else:
             v2["remarks"]["page"] = 2
 

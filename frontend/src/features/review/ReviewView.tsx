@@ -362,10 +362,9 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
                       onMouseEnter={e => handleCropEnter(e, f.key)}
                       onMouseMove={e => handleCropMove(e, f.key)}
                       onMouseLeave={handleCropLeave}>
-                      {v2Trust[f.key]?.bbox ? (
+                      {v2Trust[f.key]?.polygon ? (
                         <CanvasCrop
                           pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
-                          bbox={v2Trust[f.key]!.bbox as number[]}
                           polygon={v2Trust[f.key]!.polygon as number[] | undefined}
                           className="w-[220px] h-[54px] object-contain bg-black/30 rounded block cursor-zoom-in"
                           onDataUrl={url => { cropDataUrls.current[f.key] = url; }}

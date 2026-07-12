@@ -6,6 +6,7 @@ Checkbox density analysis and selection mark resolution for document pages.
 import numpy as np
 import cv2
 from typing import Optional, Any
+from app.processing.azure_processor import polygon_bounds
 
 
 def check_checkbox_density(page_img: np.ndarray, poly: list[float], page_w: float, page_h: float, unit: str = "pixel") -> float:
@@ -102,20 +103,20 @@ def resolve_page_selection_marks(
     if page_num == 1:
         consent_marks = [
             m for m in page_elements
-            if m.element_type == "selection_mark" and m.bbox[1] < page_height * 0.38
+            if m.element_type == "selection_mark" and polygon_bounds(m.polygon)[1] < page_height * 0.38
         ]
         # 1. Check if Azure detected selected state
         for mark in consent_marks:
             if mark.text == "\u2713":
-                rel_cx = mark.bbox[0] / page_width
+                rel_cx = polygon_bounds(mark.polygon)[0] / page_width
                 consent_val = "Yes" if rel_cx < 0.83 else "No"
                 break
         # 2. Text-based detection
         if consent_val == "Unanswered":
             consent_words = [
                 el for el in page_elements
-                if el.element_type == "word" and el.bbox[1] < page_height * 0.30
-                and el.bbox[0] > page_width * 0.70
+                if el.element_type == "word"                  and polygon_bounds(el.polygon)[1] < page_height * 0.30
+                and polygon_bounds(el.polygon)[0] > page_width * 0.70
             ]
             for w in consent_words:
                 text = w.text.strip().lower()

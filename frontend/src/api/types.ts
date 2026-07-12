@@ -35,7 +35,7 @@ export interface DocumentDetails extends Document {
     checkbox: Record<string, string>;
     multi_ticks?: Record<string, number[]>;
     review_fields?: string[];
-    v2_trust?: Record<string, { trust_confidence?: number; bbox?: number[]; page?: number; polygon?: number[] }>;
+    v2_trust?: Record<string, { trust_confidence?: number; page?: number; polygon?: number[] }>;
   };
   quality_report?: {
     blur: number;
@@ -100,7 +100,6 @@ export interface DlqTask {
   page_number: number;
   confidence_score: number;
   error_details: string;
-  bbox?: number[];
   polygon?: number[];
 }
 

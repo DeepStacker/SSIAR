@@ -2,7 +2,6 @@ import React, { useRef, useEffect, useState } from 'react';
 
 interface CanvasCropProps {
   pageUrl: string;
-  bbox?: number[]; // [x0, y0, x1, y1] in Azure coordinate space
   polygon?: number[]; // [x0, y0, x1, y1, x2, y2, x3, y3, ...]
   className?: string;
   style?: React.CSSProperties;

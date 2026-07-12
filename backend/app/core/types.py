@@ -110,10 +110,32 @@ class TrustConfidence:
 @dataclass
 class NormalizedElement:
     text: str
-    bbox: list[float]
+    polygon: list[float]
     confidence: float
-    polygon: list[float] = field(default_factory=list)
     element_type: str = "word"
+
+
+@dataclass
+class NormalizedParagraph:
+    content: str
+    polygon: list[float]  # from boundingRegions
+    role: str             # "title", "pageFooter", "none"
+
+
+@dataclass
+class NormalizedTableCell:
+    row_index: int
+    col_index: int
+    content: str
+    polygon: list[float]  # from boundingRegions
+    is_header: bool       # from kind="columnHeader"
+
+
+@dataclass
+class NormalizedTable:
+    row_count: int
+    col_count: int
+    cells: list[NormalizedTableCell]
 
 
 @dataclass
@@ -123,6 +145,9 @@ class NormalizedPage:
     width: float
     height: float
     elements: list[NormalizedElement] = field(default_factory=list)
+    lines: list[NormalizedElement] = field(default_factory=list)
+    paragraphs: list[NormalizedParagraph] = field(default_factory=list)
+    tables: list[NormalizedTable] = field(default_factory=list)
 
 
 @dataclass

@@ -571,8 +571,8 @@ export const DeadLetterQueueView: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-center bg-muted p-0.5 rounded-lg shrink-0">
-                <Button variant="ghost" size="sm" onClick={() => activeTask.bbox && setPreviewMode('crop')}
-                  className={c('h-7 px-3 text-[10px] font-bold', !activeTask.bbox ? 'opacity-40 cursor-not-allowed' : '', previewMode === 'crop' ? 'bg-card shadow-sm' : '')}>
+                <Button variant="ghost" size="sm" onClick={() => activeTask.polygon && setPreviewMode('crop')}
+                  className={c('h-7 px-3 text-[10px] font-bold', !activeTask.polygon ? 'opacity-40 cursor-not-allowed' : '', previewMode === 'crop' ? 'bg-card shadow-sm' : '')}>
                   <Scan size={12} className="mr-1" /> Field
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setPreviewMode('full')}

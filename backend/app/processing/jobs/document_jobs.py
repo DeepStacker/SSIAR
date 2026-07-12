@@ -273,21 +273,19 @@ def process_document_background(
         extracted_fields = {}
         validation_results = {}
         trust_confidences = {}
-        bboxes = {}
         polygons = {}
         resolved_pages = {}
 
         for fd in template.fields:
             try:
-                text, conf, found, bbox, poly, res_page = resolve_field(fd, combined_normalized)
+                text, conf, found, _, poly, res_page = resolve_field(fd, combined_normalized)
                 normalized_text = normalize_value(text, fd.type) if found else ""
             except Exception as e:
                 print(f"[{doc_id}] Field resolution failed for {fd.name}: {e}")
-                text, conf, found, bbox, poly, res_page = "", 0.0, False, None, None, 1
+                text, conf, found, _, poly, res_page = "", 0.0, False, None, None, 1
                 normalized_text = ""
 
             extracted_fields[fd.name] = normalized_text
-            bboxes[fd.name] = bbox
             polygons[fd.name] = poly
             resolved_pages[fd.name] = res_page
 
@@ -336,7 +334,6 @@ def process_document_background(
             tc.cross_field_score = 1.0
 
             trust_confidences[q_key] = tc
-            bboxes[q_key] = cb_bboxes.get(q_key)
             polygons[q_key] = cb_polygons.get(q_key)
             resolved_pages[q_key] = cb_resolved_pages.get(q_key, 2 if q_num >= 13 else 1)
 
@@ -349,7 +346,6 @@ def process_document_background(
         consent_tc.ambiguity_score = 0.0
         consent_tc.cross_field_score = 1.0
         trust_confidences["consent"] = consent_tc
-        bboxes["consent"] = cb_bboxes.get("consent", [1550.0, 920.0, 2050.0, 1070.0])
         polygons["consent"] = cb_polygons.get("consent", [1550.0, 920.0, 2050.0, 920.0, 2050.0, 1070.0, 1550.0, 1070.0])
         resolved_pages["consent"] = 1
 
@@ -438,7 +434,7 @@ def process_document_background(
         _store_processed_results(
             doc_id, extracted_fields, validation_results,
             trust_confidences, cross_reason, review_fields,
-            escalation, responses, consent, bboxes, resolved_pages, polygons
+            escalation, responses, consent, resolved_pages, polygons
         )
 
         _update_doc_status(doc_id, status, escalation, user_id=user_id)
@@ -518,7 +514,6 @@ def _store_processed_results(
     escalation: str,
     responses: dict,
     consent: str,
-    bboxes: dict,
     resolved_pages: dict,
     polygons: dict
 ):
@@ -550,7 +545,6 @@ def _store_processed_results(
             "validation_score": tc.validation_score,
             "ambiguity_score": tc.ambiguity_score,
             "cross_field_score": tc.cross_field_score,
-            "bbox": bboxes.get(fn),
             "polygon": polygons.get(fn),
             "page": resolved_pages.get(fn),
         }

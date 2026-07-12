@@ -133,18 +133,9 @@ def get_pending_review_tasks(
                         row["confidence_score"] = field_data["trust_confidence"]
                         
                     # Scale coordinates from 300 DPI space to actual image pixels (matching documents.py detail scaling)
-                    bbox = field_data.get("bbox")
                     polygon = field_data.get("polygon")
                     page_num = field_data.get("page", 1)
                     
-                    if not polygon and bbox and len(bbox) >= 4:
-                        polygon = [
-                            bbox[0], bbox[1],
-                            bbox[2], bbox[1],
-                            bbox[2], bbox[3],
-                            bbox[0], bbox[3]
-                        ]
-                        
                     is_fallback = False
                     if not polygon or len(polygon) < 8:
                         from app.image.page_utils import get_page

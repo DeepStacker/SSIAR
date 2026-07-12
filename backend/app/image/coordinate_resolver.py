@@ -11,7 +11,7 @@ from app.database import get_document, get_db_connection, put_conn
 # ── Resolve from Azure table model ───────────────────────────────────────
 
 
-def get_sdq_row_bbox_from_table(raw_dict: dict, q_num: int) -> Optional[tuple[list[float], list[float], int]]:
+def get_sdq_row_polygon_from_table(raw_dict: dict, q_num: int) -> Optional[tuple[list[float], int]]:
     """Determine the bounding box and polygon of the three checkbox cells
     for a specific question using Azure's table model."""
     page_num = 2 if q_num >= 13 else 1
@@ -80,17 +80,16 @@ def get_sdq_row_bbox_from_table(raw_dict: dict, q_num: int) -> Optional[tuple[li
     pad_x = (x1 - x0) * 0.02
     pad_y = (y1 - y0) * 0.10
 
-    bbox = [x0 - pad_x, y0 - pad_y, x1 + pad_x, y1 + pad_y]
     polygon = [
         x0 - pad_x, y0 - pad_y,
         x1 + pad_x, y0 - pad_y,
         x1 + pad_x, y1 + pad_y,
         x0 - pad_x, y1 + pad_y
     ]
-    return polygon, bbox, page_num
+    return polygon, page_num
 
 
-def get_field_bbox_from_table(raw_dict: dict, field_name: str) -> Optional[tuple[list[float], list[float], int]]:
+def get_field_polygon_from_table(raw_dict: dict, field_name: str) -> Optional[tuple[list[float], int]]:
     """Resolve demographics and academic field coordinates directly from raw Azure tables."""
     field_mappings = {
         "roll_number": (1, "रोल नंबर"),
@@ -155,15 +154,12 @@ def get_field_bbox_from_table(raw_dict: dict, field_name: str) -> Optional[tuple
                         if unit == "inch":
                             poly = [pt * 300.0 for pt in poly]
                         if poly and len(poly) >= 8:
-                            xs = poly[0::2]
-                            ys = poly[1::2]
-                            bbox = [min(xs), min(ys), max(xs), max(ys)]
-                            return poly, bbox, page_num
+                            return poly, page_num
 
     return None
 
 
-def get_rank_bbox(raw_dict: dict) -> Optional[tuple[list[float], list[float], int]]:
+def get_rank_polygon(raw_dict: dict) -> Optional[tuple[list[float], int]]:
     """Resolve rank coordinates from page 2 lines."""
     page_num = 2
     page_raw = raw_dict.get(f"page_{page_num}", {})
@@ -184,14 +180,11 @@ def get_rank_bbox(raw_dict: dict) -> Optional[tuple[list[float], list[float], in
             if unit == "inch":
                 poly = [pt * 300.0 for pt in poly]
             if poly and len(poly) >= 8:
-                xs = poly[0::2]
-                ys = poly[1::2]
-                bbox = [min(xs), min(ys), max(xs), max(ys)]
-                return poly, bbox, page_num
+                return poly, page_num
     return None
 
 
-def get_static_fallback_bbox(field_name: str) -> Optional[tuple[list[float], list[float], int]]:
+def get_static_fallback_polygon(field_name: str) -> Optional[tuple[list[float], int]]:
     """Get standard static template coordinate coordinates for a field."""
     from app.image.roi import ROIS_P1_POINTS, ROIS_P2_POINTS, ROIS_REMARKS_POINTS
     scale = 300.0 / 72.0
@@ -223,14 +216,14 @@ def get_static_fallback_bbox(field_name: str) -> Optional[tuple[list[float], lis
 
     if rect:
         x0, y0, x1, y1 = rect
-        bbox = [x0 * scale, y0 * scale, x1 * scale, y1 * scale]
+        s = scale
         polygon = [
-            bbox[0], bbox[1],
-            bbox[2], bbox[1],
-            bbox[2], bbox[3],
-            bbox[0], bbox[3]
+            x0 * s, y0 * s,
+            x1 * s, y0 * s,
+            x1 * s, y1 * s,
+            x0 * s, y1 * s
         ]
-        return polygon, bbox, page_num
+        return polygon, page_num
 
     return None
 
@@ -264,15 +257,6 @@ def scale_coordinates_to_image_size(doc_id: str, v2: dict):
 
         img_w, img_h = dims
         scale_x, scale_y = get_azure_scale(doc_id, page_num, img_w, img_h)
-
-        bbox = val.get("bbox")
-        if bbox and len(bbox) >= 4:
-            val["bbox"] = [
-                bbox[0] * scale_x,
-                bbox[1] * scale_y,
-                bbox[2] * scale_x,
-                bbox[3] * scale_y
-            ]
 
         poly = val.get("polygon")
         if poly and len(poly) >= 8:

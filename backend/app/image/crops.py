@@ -100,7 +100,7 @@ def resolve_crop_polygon(doc_id: str, crop_name: str) -> tuple[Optional[list[flo
 
     Returns ``(polygon, res_page, is_fallback)``.
     """
-    from app.image.coordinate_resolver import get_sdq_row_bbox_from_table, get_field_bbox_from_table, get_rank_bbox, get_static_fallback_bbox
+    from app.image.coordinate_resolver import get_sdq_row_polygon_from_table, get_field_polygon_from_table, get_rank_polygon, get_static_fallback_polygon
     from app.image.page_utils import get_page, get_azure_scale
 
     polygon = None
@@ -125,9 +125,9 @@ def resolve_crop_polygon(doc_id: str, crop_name: str) -> tuple[Optional[list[flo
             if crop_name.startswith("q"):
                 try:
                     q_num = int(crop_name[1:])
-                    tbl_res = get_sdq_row_bbox_from_table(raw_dict, q_num)
+                    tbl_res = get_sdq_row_polygon_from_table(raw_dict, q_num)
                     if tbl_res:
-                        polygon, _, res_page = tbl_res
+                        polygon, res_page = tbl_res
                 except Exception:
                     pass
             else:
@@ -161,16 +161,6 @@ def resolve_crop_polygon(doc_id: str, crop_name: str) -> tuple[Optional[list[flo
             field_info = v2_trust.get(crop_name, {}) if isinstance(v2_trust, dict) else {}
             polygon = field_info.get("polygon")
             res_page = field_info.get("page")
-
-            if not polygon:
-                bbox = field_info.get("bbox")
-                if bbox and len(bbox) >= 4:
-                    polygon = [
-                        bbox[0], bbox[1],
-                        bbox[2], bbox[1],
-                        bbox[2], bbox[3],
-                        bbox[0], bbox[3]
-                    ]
 
     if not polygon or len(polygon) < 8:
         res_page = res_page or get_crop_page(crop_name) or 1
