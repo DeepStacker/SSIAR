@@ -201,7 +201,7 @@ async def v3_documents_verify(doc_id: str, request: Request):
         data = VerifyDataRequest(**body)
     except Exception as e:
         return APIResponse.error(422, "VALIDATION_ERROR", str(e))
-    return await _call_async(_doc_verify, doc_id, data)
+    return _call(_doc_verify, doc_id, data)
 
 
 @v3_router.get("/documents/{doc_id}/history", dependencies=[_Auth])

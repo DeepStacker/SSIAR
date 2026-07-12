@@ -4,14 +4,14 @@ import type { Document, DocumentDetails } from '@/api';
 import { api } from '@/api';
 import { exportToCsv } from '@/lib/utils';
 import { DocumentHeader } from '@/features/layout/DocumentHeader';
-import { ZoomPopup } from '@/components/ZoomPopup';
 import { PageViewer } from '@/features/layout/PageViewer';
+import { ZoomPopup } from '@/components/ZoomPopup';
 import { useToast } from '@/context/ToastContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { CanvasCrop } from '@/features/review/CanvasCrop';
 import { SdqGrid } from '@/features/review/SdqGrid';
+import { CanvasCrop } from '@/features/review/CanvasCrop';
 import { useCropZoom } from '@/features/review/useCropZoom';
 
 interface Props {
@@ -21,52 +21,33 @@ interface Props {
   onDetailsChange?: (d: DocumentDetails) => void;
 }
 
+const FIELDS = [
+  { key: 'roll_number', label: 'Roll Number' },
+  { key: 'class', label: 'Class' },
+  { key: 'dob', label: 'Date of Birth' },
+  { key: 'gender', label: 'Gender' },
+  { key: 'math_pct', label: 'Math %' },
+  { key: 'science_pct', label: 'Science %' },
+  { key: 'language_pct', label: 'Language %' },
+  { key: 'rank', label: 'Rank' },
+];
+
 export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetailsChange }) => {
-  const [reprocessingField, setReprocessingField] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pageViewer, setPageViewer] = useState<1 | 2 | null>(null);
   const { show } = useToast();
   const v2Trust = details.confidence_scores?.v2_trust || {};
+  const acad = (details.academic_scores || {}) as Record<string, string>;
 
-  const { zoomImg, setZoomImg, cropRefs, cropDataUrls, handleCropEnter, handleCropMove, handleCropLeave, handleInputFocus, handleInputBlur } = useCropZoom(0);
-
-  const fields = [
-    { key: 'roll_number', label: 'Roll Number' },
-    { key: 'class', label: 'Class' },
-    { key: 'dob', label: 'DOB' },
-    { key: 'gender', label: 'Gender' },
-    { key: 'math_pct', label: 'Math %' },
-    { key: 'science_pct', label: 'Science %' },
-    { key: 'language_pct', label: 'Language %' },
-    { key: 'rank', label: 'Rank' },
-  ];
-  const acad: Record<string, string> = details.academic_scores || {};
+  const { zoomImg, setZoomImg, cropRefs, cropDataUrls, handleCropEnter, handleCropMove, handleCropLeave } = useCropZoom(0);
 
   const getVal = (key: string) => {
     if (key === 'roll_number') return details.roll_number || '';
     if (key === 'class') return details.class || '';
     if (key === 'dob') return details.dob || '';
     if (key === 'gender') return details.gender || '';
-    return (acad as Record<string, string>)[key] || '';
+    return acad[key] || '';
   };
-
-  React.useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !pageViewer) {
-        onClose();
-      }
-      if (e.altKey && e.key === '1') {
-        e.preventDefault();
-        setPageViewer(1);
-      }
-      if (e.altKey && e.key === '2') {
-        e.preventDefault();
-        setPageViewer(2);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose, pageViewer]);
 
   const setVal = (key: string, val: string) => {
     if (!onDetailsChange) return;
@@ -93,156 +74,131 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
       show(result.message || 'Changes saved', 'success');
     } catch (e: any) {
       show(e.message || 'Save failed', 'error');
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
-  const handleReprocessField = async (key: string) => {
-    setReprocessingField(key);
-    try {
-      const result = await api.reprocessField(doc.id, key);
-      if (result.updated && result.value && onDetailsChange) {
-        const newDetails = { ...details };
-        const newConf = { ...details.confidence_scores };
-        newConf.ocr = { ...(newConf.ocr || {}), [key]: result.confidence };
-        newDetails.confidence_scores = newConf;
-        if (key === 'roll_number') newDetails.roll_number = result.value;
-        else if (key === 'class') newDetails.class = result.value;
-        else if (key === 'dob') newDetails.dob = result.value;
-        else if (key === 'gender') newDetails.gender = result.value;
-        else newDetails.academic_scores = { ...acad, [key]: result.value } as typeof newDetails.academic_scores;
-        onDetailsChange(newDetails);
-      }
-      show(result.message || `Field reprocessed: ${result.value}`, 'success');
-    } catch (e: any) {
-      show(e.message || 'Field reprocess failed', 'error');
-    } finally {
-      setReprocessingField(null);
-    }
-  };
-
-  const handleExport = () => {
-    exportToCsv(
-      ['Field', 'Value'],
-      [
-        ['Roll Number', details.roll_number || ''],
-        ['Class', details.class || ''],
-        ['DOB', details.dob || ''],
-        ['Gender', details.gender || ''],
-        ['Math %', String(details.academic_scores?.math_pct ?? '')],
-        ['Science %', String(details.academic_scores?.science_pct ?? '')],
-        ['Language %', String(details.academic_scores?.language_pct ?? '')],
-        ['Rank', String(details.academic_scores?.rank ?? '')],
-      ],
-      `${doc.filename.replace(/\.\w+$/, '')}_verified.csv`
-    );
-  };
+  React.useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !pageViewer) onClose();
+      if (e.altKey && e.key === '1') { e.preventDefault(); setPageViewer(1); }
+      if (e.altKey && e.key === '2') { e.preventDefault(); setPageViewer(2); }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose, pageViewer]);
 
   return (
-    <div className="app-container">
-      <DocumentHeader title="SSIAR — Verified View" onClose={onClose} />
+    <div className="flex flex-col h-full">
+      <DocumentHeader title="Verified Document" filename={doc.filename} onClose={onClose} />
 
-      <div className="flex justify-end gap-2 px-5 py-3">
-        <Button variant="outline" size="sm" onClick={handleExport}>
-          <Download size={14} /> Export
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setPageViewer(1)}>
-          Page 1
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setPageViewer(2)}>
-          Page 2
-        </Button>
-        <Button variant="default" size="sm" onClick={handleSave} disabled={saving}>
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {saving ? ' Saving...' : ' Save Changes'}
-        </Button>
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border">
+        <div className="flex items-center gap-2 text-sm">
+          <Check size={16} className="text-emerald-500" />
+          <span className="font-medium">{doc.filename}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => handleExport(doc, details)}>
+            <Download size={14} /> Export CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setPageViewer(1)}>Page 1</Button>
+          <Button variant="outline" size="sm" onClick={() => setPageViewer(2)}>Page 2</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            Save Changes
+          </Button>
+        </div>
       </div>
 
-      <div className="px-5 pb-5">
+      <div className="flex-1 overflow-auto p-6 space-y-6">
         <Card>
-          <CardContent className="p-5">
-            <h3 className="text-sm mb-4 flex items-center gap-1 text-success">
-              <Check size={14} /> Verified — {doc.filename}
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              {fields.map(f => (
-                <div key={f.key}>
-                  <label className="text-xs block text-muted-foreground">{f.label}</label>
-                  <div className="flex items-center gap-2 py-1">
-                    <Input
-                      className="w-[100px] text-sm font-medium"
-                      value={getVal(f.key)} onChange={e => setVal(f.key, e.target.value)}
-                      onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
-                    />
-                    <div ref={el => { cropRefs.current[f.key] = el; }} className="leading-none"
-                      onMouseEnter={e => handleCropEnter(e, f.key)}
-                      onMouseMove={e => handleCropMove(e, f.key)}
-                      onMouseLeave={handleCropLeave}>
-                      {v2Trust[f.key]?.polygon ? (
-                        <CanvasCrop
-                          pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
-                          polygon={v2Trust[f.key]?.polygon as number[] | undefined}
-                          className="w-[120px] h-[30px] object-contain border border-border bg-black/15 rounded cursor-zoom-in"
-                          onDataUrl={url => { cropDataUrls.current[f.key] = url; }}
-                        />
-                      ) : (
-                        <div className="w-[120px] h-[30px] bg-black/15 rounded border border-border" />
-                      )}
+          <CardContent className="p-6">
+            <h3 className="text-sm font-semibold mb-4">Student Information</h3>
+            <div className="grid grid-cols-4 gap-x-6 gap-y-4">
+              {FIELDS.map(f => {
+                const trust = v2Trust[f.key];
+                return (
+                  <div key={f.key}>
+                    <label className="text-xs text-muted-foreground block mb-1">{f.label}</label>
+                    <div className="flex items-center gap-2">
+                      <div ref={el => { cropRefs.current[f.key] = el; }}
+                        onMouseEnter={e => handleCropEnter(e, f.key)}
+                        onMouseMove={e => handleCropMove(e, f.key)}
+                        onMouseLeave={handleCropLeave}
+                        className="shrink-0 cursor-zoom-in">
+                        {trust?.polygon ? (
+                          <CanvasCrop
+                            pageUrl={api.getPageUrl(doc.id, trust?.page || 1)}
+                            polygon={trust?.polygon as number[] | undefined}
+                            className="w-[80px] h-[28px] object-contain border border-border bg-black/10 rounded"
+                            onDataUrl={url => { cropDataUrls.current[f.key] = url; }} />
+                        ) : (
+                          <div className="w-[80px] h-[28px] bg-black/10 rounded border border-border" />
+                        )}
+                      </div>
+                      <Input
+                        value={getVal(f.key)}
+                        onChange={e => setVal(f.key, e.target.value)}
+                        className="text-sm font-medium flex-1" />
                     </div>
-                    {reprocessingField === f.key ? (
-                      <Loader2 size={14} className="animate-spin shrink-0 text-primary" />
-                    ) : (
-                      <Button variant="ghost" size="xs" onClick={() => handleReprocessField(f.key)}
-                        title="Re-run OCR on this field"
-                        className="h-6 w-6 p-0 opacity-50">⟳</Button>
-                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-2 gap-6 mt-6 pt-6 border-t border-border">
               <div>
-                <label className="text-xs block text-muted-foreground">Consent</label>
-                <div className="flex items-center gap-2 py-1">
+                <label className="text-xs text-muted-foreground block mb-1">Consent</label>
+                <div className="flex gap-2">
                   {['Yes', 'No', 'Unanswered'].map(c => {
-                    const isConsentActive = (details.consent || 'Unanswered') === c;
+                    const active = (details.consent || 'Unanswered') === c;
                     return (
                       <button key={c} onClick={() => onDetailsChange?.({ ...details, consent: c })}
-                        className={`
-                          px-3 h-9 rounded-md text-xs font-semibold border transition-colors
-                          ${isConsentActive
-                            ? 'bg-primary text-primary-foreground border-primary'
-                            : 'border-border hover:bg-secondary'
-                          }
-                        `}
-                      >{c}</button>
+                        className={`px-4 h-9 rounded-md text-sm font-medium border transition-colors ${
+                          active ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-secondary'
+                        }`}>{c}</button>
                     );
                   })}
                 </div>
               </div>
               <div>
-                <label className="text-xs block text-muted-foreground">Remarks</label>
-                <div className="flex items-center gap-2 py-1">
-                  <textarea
-                    className="w-full text-sm px-2 py-1 resize-y rounded h-[50px] bg-secondary border border-border"
-                    value={details.remarks || ''} onChange={e => {
-                      if (onDetailsChange) onDetailsChange({ ...details, remarks: e.target.value });
-                    }} />
-                </div>
+                <label className="text-xs text-muted-foreground block mb-1">Remarks</label>
+                <textarea value={details.remarks || ''}
+                  onChange={e => onDetailsChange?.({ ...details, remarks: e.target.value })}
+                  className="w-full text-sm p-2.5 rounded-md border border-border bg-background resize-y h-[60px]" />
               </div>
             </div>
           </CardContent>
         </Card>
-      </div>
 
-      <SdqGrid docId={doc.id} responses={details.responses || {}}
-        checkboxConf={details.confidence_scores?.checkbox || {}}
-        multiTicks={details.confidence_scores?.multi_ticks || {}}
-        v2Trust={v2Trust}
-        onChange={newResp => onDetailsChange?.({ ...details, responses: newResp })}
-        onZoom={setZoomImg} />
+        <SdqGrid
+          docId={doc.id}
+          responses={details.responses || {}}
+          checkboxConf={details.confidence_scores?.checkbox || {}}
+          multiTicks={details.confidence_scores?.multi_ticks || {}}
+          v2Trust={v2Trust}
+          onZoom={setZoomImg}
+          onChange={newResp => onDetailsChange?.({ ...details, responses: newResp })} />
+      </div>
 
       <ZoomPopup zoom={zoomImg} />
       {pageViewer && <PageViewer docId={doc.id} pageNum={pageViewer} onClose={() => setPageViewer(null)} onChangePage={setPageViewer} />}
     </div>
   );
 };
+
+function handleExport(doc: Document, details: DocumentDetails) {
+  exportToCsv(
+    ['Field', 'Value'],
+    [
+      ['Roll Number', details.roll_number || ''],
+      ['Class', details.class || ''],
+      ['DOB', details.dob || ''],
+      ['Gender', details.gender || ''],
+      ['Math %', String(details.academic_scores?.math_pct ?? '')],
+      ['Science %', String(details.academic_scores?.science_pct ?? '')],
+      ['Language %', String(details.academic_scores?.language_pct ?? '')],
+      ['Rank', String(details.academic_scores?.rank ?? '')],
+    ],
+    `${doc.filename.replace(/\.\w+$/, '')}_verified.csv`
+  );
+}

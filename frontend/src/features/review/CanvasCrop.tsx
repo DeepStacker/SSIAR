@@ -93,13 +93,8 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
 
     const [x0, y0, x1, y1, x2, y2, x3, y3] = polygon;
 
-    if (x0 < 0 && x1 < 0 && x2 < 0 && x3 < 0) {
-      setError(true);
-      setLoading(false);
-      return;
-    }
-
-    if (x0 < 0 || y0 < 0 || x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0 || x3 < 0 || y3 < 0) {
+    const negCount = [x0, x1, x2, x3].filter(v => v < 0).length + [y0, y1, y2, y3].filter(v => v < 0).length;
+    if (negCount > 2) {
       setError(true);
       setLoading(false);
       return;
@@ -146,8 +141,6 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
 
       canvas.width = cropW * dpr;
       canvas.height = cropH * dpr;
-      canvas.style.width = `${cropW}px`;
-      canvas.style.height = `${cropH}px`;
 
       ctx.scale(dpr, dpr);
 

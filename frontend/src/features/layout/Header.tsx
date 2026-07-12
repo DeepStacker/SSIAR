@@ -21,7 +21,7 @@ const BREADCRUMB_LABELS: Record<ViewMode, string> = {
   users: 'Users',
 };
 
-export const Header: React.FC<Props> = ({ view }) => {
+export const Header: React.FC<Props> = ({ view, onViewChange }) => {
   const { dark, toggle } = useTheme();
   const { email, token, logout } = useAuth();
   const { show: showToast } = useToast();
@@ -76,15 +76,19 @@ export const Header: React.FC<Props> = ({ view }) => {
           </Button>
           <div className="hidden xl:flex items-center gap-2 text-xs">
             <button
-              onClick={() => view !== 'dashboard' && (window.location.hash = '')}
-              className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors"
+              onClick={() => onViewChange('dashboard')}
+              className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+              title="Go to Dashboard"
             >
               <Home size={12} />
             </button>
             <ChevronRight size={10} className="text-muted-foreground" />
-            <span className="font-semibold text-foreground tracking-wide">
+            <button
+              onClick={() => view !== 'dashboard' && onViewChange(view)}
+              className="font-medium text-foreground hover:text-primary transition-colors"
+            >
               {BREADCRUMB_LABELS[view] || view}
-            </span>
+            </button>
           </div>
         </div>
 

@@ -141,13 +141,6 @@ function AppInnerContents() {
     window.history.replaceState({}, '', url.toString());
   }, [ui.view]);
 
-  const pageTitle = doc.selectedDoc
-    ? null
-    : ui.view === 'reporting' ? 'Reporting'
-    : ui.view === 'analytics' ? 'Analytics'
-    : ui.view === 'dlq' ? 'DLQ Resolution'
-    : 'Dashboard';
-
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar
@@ -162,11 +155,6 @@ function AppInnerContents() {
         <Header view={ui.view} onViewChange={ui.setView} />
         <main className="flex-1 overflow-y-auto p-6">
           <div className="max-w-[1400px] mx-auto" onDragOver={e => e.preventDefault()} onDrop={e => e.preventDefault()}>
-            {pageTitle && (
-              <div className="mb-6">
-                <h1 className="text-lg font-bold tracking-tight">{pageTitle}</h1>
-              </div>
-            )}
             <AppContent
               onClose={closeDoc}
               onVerify={handlers.handleVerify}

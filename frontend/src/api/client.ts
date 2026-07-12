@@ -48,7 +48,7 @@ export const getAndClearReferrer = (): string | null => {
 export const redirectToLogin = () => {
   clearAuth();
   saveReferrer();
-  window.location.href = '/';
+  window.location.href = '/login';
 };
 
 // ── V3 response helpers ──

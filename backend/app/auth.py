@@ -28,20 +28,33 @@ def get_current_email() -> str | None:
 
 
 PBKDF2_ITERATIONS = 600_000
+_LEGACY_ITERATIONS = [100000, 260000, 390000]
 
 
 def hash_password(password: str) -> str:
     salt = os.urandom(16)
     dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, PBKDF2_ITERATIONS)
-    return salt.hex() + ":" + dk.hex()
+    return f"{salt.hex()}:{PBKDF2_ITERATIONS}:{dk.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
     try:
-        salt_hex, dk_hex = stored.split(":")
-        salt = bytes.fromhex(salt_hex)
-        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, PBKDF2_ITERATIONS)
-        return dk.hex() == dk_hex
+        parts = stored.split(":")
+        if len(parts) == 3:
+            salt_hex, iterations_str, dk_hex = parts
+            salt = bytes.fromhex(salt_hex)
+            iterations = int(iterations_str)
+            dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+            return dk.hex() == dk_hex
+        elif len(parts) == 2:
+            salt_hex, dk_hex = parts
+            salt = bytes.fromhex(salt_hex)
+            for iters in [PBKDF2_ITERATIONS] + _LEGACY_ITERATIONS:
+                dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iters)
+                if dk.hex() == dk_hex:
+                    return True
+            return False
+        return False
     except (ValueError, AttributeError):
         return False
 

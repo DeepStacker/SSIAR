@@ -82,12 +82,21 @@ async def login(payload: LoginRequest):
             if not verify_password(password, pw_hash):
                 return None, None, "invalid"
 
+            # Auto-upgrade legacy hashes
+            if pw_hash.count(":") == 1:
+                new_hash = hash_password(password)
+                cur.execute(
+                    "UPDATE users SET password_hash = %s WHERE id = %s" if USE_POSTGRES else
+                    "UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user_id)
+                )
+                conn.commit()
+
             return user_id, db_email, role
         finally:
             put_conn(conn)
 
     user_id, db_email, role = await loop.run_in_executor(None, _db_login)
-    if db_email == "invalid":
+    if not user_id or role == "invalid":
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_jwt(user_id, db_email, role)
     return {"token": token, "user_id": user_id, "email": db_email, "role": role}

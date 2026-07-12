@@ -1,5 +1,5 @@
 import { lazy, Suspense, memo, useRef } from 'react';
-import { Loader2, FileText, Clock, AlertTriangle, Check, X, RefreshCw, Upload, Eye, Activity, Users, ShieldOff } from 'lucide-react';
+import { Loader2, FileText, Clock, AlertTriangle, Check, X, RefreshCw, Activity, Users, ShieldOff } from 'lucide-react';
 import type { Document } from '@/api';
 import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '@/api';
 import { Card } from '@/components/ui/card';
@@ -210,16 +210,6 @@ export function AppContent(props: Props) {
         onTabClick={ui.setActiveTab}
       />
 
-      <div className="flex gap-3 mb-6">
-        <Button onClick={() => quickUploadRef.current?.click()}>
-          <Upload size={16} /> Upload Documents
-        </Button>
-        <Button variant="outline" onClick={() => ui.setActiveTab('needs_review')}>
-          <Eye size={16} /> Review Pending ({needsReviewCount})
-        </Button>
-        <input ref={quickUploadRef} type="file" multiple accept=".pdf" className="hidden" onChange={e => { if (e.target.files?.length) props.onUpload(Array.from(e.target.files)); e.target.value = ''; }} />
-      </div>
-
       <UploadZone
         uploading={ui.uploading}
         autoVerify={doc.autoVerify}
@@ -257,8 +247,8 @@ export function AppContent(props: Props) {
         onUpload={() => quickUploadRef.current?.click()}
       />
 
-      <div className="sticky bottom-0 left-0 right-0 z-20 mt-4">
-        <div className="rounded-lg border border-border bg-card px-5 py-2.5 flex items-center justify-between text-xs">
+      <div className="sticky bottom-0 left-0 right-0 z-20 mt-2">
+        <div className="border-t border-border px-0 py-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
           <div className="flex items-center gap-3 text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <Activity size={13} className={processingCount > 0 ? 'text-[var(--accent-amber)] animate-pulse' : 'text-muted-foreground'} />
