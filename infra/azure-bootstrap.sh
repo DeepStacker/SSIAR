@@ -25,7 +25,7 @@ cd ssiar
 
 # 4. Set up .env
 echo "[4/6] Configuring environment..."
-echo "AZURE_DOC_INTELLIGENCE_ENDPOINT=https://sumeru.cognitiveservices.azure.com/" > backend/.env
+echo "AZURE_DOC_INTELLIGENCE_ENDPOINT=https://YOUR_RESOURCE.cognitiveservices.azure.com/" > backend/.env
 echo "AZURE_DOC_INTELLIGENCE_KEY=REPLACE_WITH_YOUR_KEY" >> backend/.env
 echo "MAX_WORKERS=4" >> backend/.env
 echo "SURYA_ENABLED=0" >> backend/.env
