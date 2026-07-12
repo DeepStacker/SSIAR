@@ -1,5 +1,5 @@
 import React from 'react';
-import { ZoomImage } from '../api';
+import type { ZoomImage } from '@/api';
 
 interface Props {
   zoom: ZoomImage | null;

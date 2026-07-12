@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 from typing import Optional
-from app.processing.types import (
+from app.core.types import (
     FieldDefinition,
     TemplateConfig,
     ReviewPriority,

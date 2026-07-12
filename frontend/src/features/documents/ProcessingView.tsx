@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, FileCheck, CheckCircle2, Loader2 } from 'lucide-react';
-import type { Document } from '../api';
-import { Card, CardContent } from './ui/card';
+import type { Document } from '@/api';
+import { Card, CardContent } from '@/components/ui/card';
 
 const STEPS = [
   { label: 'Running OCR', icon: Search },

@@ -1,10 +1,10 @@
 import React from 'react';
 import { Search, Clock, AlertTriangle, Check, X, Eye, Download, RotateCcw, Trash2, ChevronUp, ChevronDown, FileWarning } from 'lucide-react';
-import type { Document, TabType, SortKey } from '../api';
-import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '../api';
-import { BulkActionBar } from './BulkActionBar';
+import type { Document, TabType, SortKey } from '@/api';
+import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '@/api';
+import { BulkActionBar } from '@/features/documents/BulkActionBar';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/StatusBadge';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell, TableFooter } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -16,20 +16,6 @@ const tabConfig: { key: TabType; label: string; icon: React.ReactNode | null }[]
   { key: 'verified', label: 'Verified', icon: <Check size={12} /> },
   { key: 'failed', label: 'Failed', icon: <X size={12} /> },
 ];
-
-const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; dot: string; icon: React.ReactNode; label: string }> = {
-  processing: { variant: 'outline', dot: 'bg-violet-500 animate-pulse', icon: <Clock size={10} />, label: 'Processing' },
-  uploaded: { variant: 'outline', dot: 'bg-violet-500 animate-pulse', icon: <Clock size={10} />, label: 'Processing' },
-  queued: { variant: 'outline', dot: 'bg-violet-500 animate-pulse', icon: <Clock size={10} />, label: 'Processing' },
-  azure_completed: { variant: 'outline', dot: 'bg-violet-500 animate-pulse', icon: <Clock size={10} />, label: 'Processing' },
-  validation_completed: { variant: 'outline', dot: 'bg-violet-500 animate-pulse', icon: <Clock size={10} />, label: 'Processing' },
-  needs_review: { variant: 'secondary', dot: 'bg-amber-500', icon: <AlertTriangle size={10} />, label: 'Needs Review' },
-  review_required: { variant: 'secondary', dot: 'bg-amber-500', icon: <AlertTriangle size={10} />, label: 'Needs Review' },
-  verified: { variant: 'default', dot: 'bg-emerald-500', icon: <Check size={10} />, label: 'Verified' },
-  approved: { variant: 'default', dot: 'bg-emerald-500', icon: <Check size={10} />, label: 'Verified' },
-  exported: { variant: 'default', dot: 'bg-emerald-500', icon: <Check size={10} />, label: 'Verified' },
-  failed: { variant: 'destructive', dot: 'bg-rose-500', icon: <X size={10} />, label: 'Failed' },
-};
 
 const matchStatus = (doc: Document, tab: TabType): boolean => {
   if (tab === 'all') return true;
@@ -153,7 +139,6 @@ export const DocumentTable: React.FC<Props> = ({
             </TableHeader>
             <TableBody>
               {filtered.map((doc, idx) => {
-                const sc = statusConfig[doc.status] || statusConfig.failed;
                 const isSelected = selectedIds.has(doc.id);
                 return (
                   <TableRow key={doc.id} onClick={() => onOpenDoc(doc)}
@@ -174,10 +159,7 @@ export const DocumentTable: React.FC<Props> = ({
                     <TableCell className="text-xs text-muted-foreground py-2 tabular-nums">{doc.roll_number || '—'}</TableCell>
                     <TableCell className="text-xs text-muted-foreground py-2 tabular-nums">{doc.class || '—'}</TableCell>
                     <TableCell className="py-2">
-                      <Badge variant={sc.variant} className="gap-1.5 text-[11px] px-2.5 py-0.5 font-normal rounded-full">
-                        <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
-                        {sc.label}
-                      </Badge>
+                      <StatusBadge status={doc.status} />
                     </TableCell>
                     <TableCell className="text-right text-xs text-muted-foreground py-2 whitespace-nowrap tabular-nums">
                       {doc.created_at?.slice(0, 10)}

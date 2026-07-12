@@ -7,7 +7,7 @@ Always stores the complete raw response for future re-processing.
 import json
 from datetime import datetime
 from typing import Optional, Any
-from app.processing.types import (
+from app.core.types import (
     NormalizedAzureResponse,
     NormalizedPage,
     NormalizedElement,

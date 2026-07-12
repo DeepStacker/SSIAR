@@ -6,7 +6,7 @@ Uses anchors & relationships to locate field values in Azure's normalized output
 """
 import re
 from typing import Optional
-from app.processing.types import (
+from app.core.types import (
     NormalizedAzureResponse,
     NormalizedPage,
     FieldDefinition,

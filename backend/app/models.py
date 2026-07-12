@@ -1,6 +1,5 @@
-from pydantic import BaseModel
-from typing import List, Dict, Any
-
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
 
 
 class VerifyDataRequest(BaseModel):
@@ -16,3 +15,25 @@ class VerifyDataRequest(BaseModel):
 
 class BulkRequest(BaseModel):
     doc_ids: List[str]
+
+
+class RegisterRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class MetricRecordRequest(BaseModel):
+    document_id: str
+    metric_name: str
+    metric_value: float
+    metric_unit: str = ""
+
+
+class BatchFolderRequest(BaseModel):
+    folder_path: str
+    auto_verify: bool = False

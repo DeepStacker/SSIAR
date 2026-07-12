@@ -1,8 +1,8 @@
 import React from 'react';
 import { Moon, Sun, LogOut, Printer } from 'lucide-react';
-import { useTheme } from '../context/ThemeContext';
-import { useAuth } from '../context/AuthContext';
-import type { ViewMode } from '../api';
+import { useTheme } from '@/context/ThemeContext';
+import { useAuth } from '@/context/AuthContext';
+import type { ViewMode } from '@/api';
 import { Button } from '@/components/ui/button';
 
 interface Props {

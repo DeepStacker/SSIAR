@@ -49,6 +49,7 @@ def get_pending_review_tasks(
     error_type: Optional[str] = None,
     sort_by: str = "priority",
     sort_dir: str = "asc",
+    user_id: Optional[str] = None,
 ) -> tuple[list[dict], int]:
     """Get pending review tasks enriched with document metadata and coordinates, along with grand total count."""
     import json
@@ -58,6 +59,9 @@ def get_pending_review_tasks(
         conditions = ["r.status = 'pending'"]
         params = []
         
+        if user_id:
+            conditions.append("d.user_id = ?")
+            params.append(user_id)
         if reviewer_id:
             conditions.append("r.reviewer_id = ?")
             params.append(reviewer_id)
@@ -114,7 +118,8 @@ def get_pending_review_tasks(
             doc_id = row["document_id"]
             field_name = row["field_name"]
             
-            cur.execute("SELECT confidence_scores FROM form_data WHERE document_id = ?", (doc_id,))
+            from app.database import USE_POSTGRES
+            cur.execute("SELECT confidence_scores FROM form_data WHERE document_id = %s" if USE_POSTGRES else "SELECT confidence_scores FROM form_data WHERE document_id = ?", (doc_id,))
             fd_row = cur.fetchone()
             if fd_row and fd_row[0]:
                 try:
@@ -142,8 +147,8 @@ def get_pending_review_tasks(
                         
                     is_fallback = False
                     if not polygon or len(polygon) < 8:
-                        from app.routes.v2.documents import _get_page
-                        img = _get_page(doc_id, page_num)
+                        from app.image.page_utils import get_page
+                        img = get_page(doc_id, page_num)
                         if img is not None:
                             h, w = img.shape[:2]
                             from app.image.crops import get_field_coordinates
@@ -151,11 +156,11 @@ def get_pending_review_tasks(
                             is_fallback = True
                             
                     if polygon and not is_fallback:
-                        from app.routes.v2.documents import _get_page, _get_azure_scale
-                        img = _get_page(doc_id, page_num)
+                        from app.image.page_utils import get_page, get_azure_scale
+                        img = get_page(doc_id, page_num)
                         if img is not None:
                             h, w = img.shape[:2]
-                            scale_x, scale_y = _get_azure_scale(doc_id, page_num, w, h)
+                            scale_x, scale_y = get_azure_scale(doc_id, page_num, w, h)
                             if polygon and len(polygon) >= 8:
                                 polygon = [
                                     pt * scale_x if idx % 2 == 0 else pt * scale_y
@@ -168,9 +173,9 @@ def get_pending_review_tasks(
             else:
                 # Direct fallback to static template coordinates if form_data is missing/incomplete
                 try:
-                    from app.routes.v2.documents import _get_page
+                    from app.image.page_utils import get_page
                     page_num = row.get("page_number") or (2 if field_name in ("math_pct", "science_pct", "language_pct", "rank", "remarks") or (field_name.startswith("q") and int(field_name[1:]) >= 13) else 1)
-                    img = _get_page(doc_id, page_num)
+                    img = get_page(doc_id, page_num)
                     if img is not None:
                         h, w = img.shape[:2]
                         from app.image.crops import get_field_coordinates
@@ -251,7 +256,7 @@ def submit_review(
         
     # Update form_data and document status outside the transaction to prevent locks
     from app.database import get_document, insert_or_update_form_data, update_document_status
-    from app.sse import notify as notify_sse
+    from app.core.events import notify as notify_sse
     
     doc = get_document(doc_id)
     if doc:

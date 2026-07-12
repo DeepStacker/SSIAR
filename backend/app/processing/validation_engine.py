@@ -16,7 +16,7 @@ Incorporates OCR character cleanup:
 import re
 from datetime import datetime
 from typing import Optional
-from app.processing.types import ValidationResult, FieldDefinition
+from app.core.types import ValidationResult, FieldDefinition
 
 
 # ── OCR Character Cleanup ─────────────────────────────────────────────────────

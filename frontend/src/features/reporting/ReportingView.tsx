@@ -1,9 +1,10 @@
 import React from 'react';
 import { Download, FileWarning } from 'lucide-react';
-import { Document, ReportFormat, STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '../api';
-import { api } from '../api';
+import type { Document, ReportFormat } from '@/api';
+import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '@/api';
+import { api } from '@/api';
+import { StatusBadge } from '@/components/StatusBadge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 
 interface Props {
@@ -57,28 +58,7 @@ export const ReportingView: React.FC<Props> = ({
       doc_ids: docIds,
     });
 
-  const statusBadge = (status: string) => {
-    const map: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; dot: string; label: string }> = {
-      processing: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
-      uploaded: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
-      queued: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
-      azure_completed: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
-      validation_completed: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
-      needs_review: { variant: "secondary", dot: "bg-amber-500", label: "Needs Review" },
-      review_required: { variant: "secondary", dot: "bg-amber-500", label: "Needs Review" },
-      verified: { variant: "default", dot: "bg-emerald-500", label: "Verified" },
-      approved: { variant: "default", dot: "bg-emerald-500", label: "Verified" },
-      exported: { variant: "default", dot: "bg-emerald-500", label: "Verified" },
-      failed: { variant: "destructive", dot: "bg-rose-500", label: "Failed" },
-    };
-    const s = map[status] || { variant: "outline" as const, dot: "bg-muted-foreground", label: status };
-    return (
-      <Badge variant={s.variant} className="gap-1.5 text-[11px] px-2.5 py-0.5 font-normal rounded-full">
-        <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-        {s.label}
-      </Badge>
-    );
-  };
+
 
   return (
     <>
@@ -185,7 +165,7 @@ export const ReportingView: React.FC<Props> = ({
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground py-2 tabular-nums" onClick={() => onOpenDoc(doc)}>{doc.roll_number || '—'}</TableCell>
                     <TableCell className="text-xs text-muted-foreground py-2 tabular-nums" onClick={() => onOpenDoc(doc)}>{doc.class || '—'}</TableCell>
-                    <TableCell className="py-2" onClick={() => onOpenDoc(doc)}>{statusBadge(doc.status)}</TableCell>
+                    <TableCell className="py-2" onClick={() => onOpenDoc(doc)}><StatusBadge status={doc.status} /></TableCell>
                     <TableCell className="text-xs text-muted-foreground py-2 text-right tabular-nums" onClick={() => onOpenDoc(doc)}>{doc.created_at?.slice(0, 10)}</TableCell>
                   </TableRow>
                 ))}

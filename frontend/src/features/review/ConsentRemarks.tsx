@@ -1,9 +1,9 @@
 import React, { useCallback } from 'react';
-import { ZoomImage } from '../api';
-import { api } from '../api';
+import type { ZoomImage } from '@/api';
+import { api } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { CanvasCrop, useCropDataUrls } from './CanvasCrop';
+import { CanvasCrop, useCropDataUrls } from '@/features/review/CanvasCrop';
 
 interface Props {
   docId: string;

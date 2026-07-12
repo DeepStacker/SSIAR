@@ -6,9 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Any
 
-from app.config import DATABASE_URL
+from app.config import DATABASE_URL, BASE_DIR as CFG_BASE_DIR
 
 USE_POSTGRES = DATABASE_URL.startswith("postgresql")
+
+DB_PATH = str(CFG_BASE_DIR / "shared" / "database" / "ssiar.db")
 
 if USE_POSTGRES:
     import psycopg2
@@ -36,7 +38,6 @@ if USE_POSTGRES:
 
 else:
     import sqlite3
-    from app.config import BASE_DIR as CFG_BASE_DIR
 
     _local = threading.local()
 
@@ -82,6 +83,8 @@ def init_db():
                     id TEXT PRIMARY KEY,
                     email TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'user',
+                    must_change_password INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL
                 )
             """)
@@ -93,7 +96,8 @@ def init_db():
                     classification TEXT,
                     escalation_level TEXT DEFAULT 'level_1',
                     created_at TEXT NOT NULL,
-                    user_id TEXT REFERENCES users(id)
+                    user_id TEXT REFERENCES users(id),
+                    error_message TEXT
                 )
             """)
             cur.execute("""
@@ -135,11 +139,6 @@ def init_db():
                     confidence_score REAL,
                     preprocessor_mode TEXT,
                     saved_at TEXT NOT NULL
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS schema_version (
-                    version INTEGER PRIMARY KEY
                 )
             """)
             cur.execute("""
@@ -198,12 +197,30 @@ def init_db():
                     cur.execute("ALTER TABLE review_tasks ADD COLUMN confidence_score REAL")
                 if "error_details" not in pg_cols:
                     cur.execute("ALTER TABLE review_tasks ADD COLUMN error_details TEXT")
+            # Documents table migrations
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'documents'
+            """)
+            doc_cols = [col[0] for col in cur.fetchall()]
+            if doc_cols and "error_message" not in doc_cols:
+                cur.execute("ALTER TABLE documents ADD COLUMN error_message TEXT")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_form_data_document_id ON form_data(document_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_edit_history_document_id ON edit_history(document_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_review_tasks_document_id ON review_tasks(document_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_review_tasks_status ON review_tasks(status)")
         else:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
                     email TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'user',
+                    must_change_password INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL
                 )
             """)
@@ -215,9 +232,14 @@ def init_db():
                     classification TEXT,
                     escalation_level TEXT DEFAULT 'level_1',
                     created_at TEXT NOT NULL,
-                    user_id TEXT REFERENCES users(id)
+                    user_id TEXT REFERENCES users(id),
+                    error_message TEXT
                 )
             """)
+            try:
+                cur.execute("ALTER TABLE documents ADD COLUMN error_message TEXT")
+            except Exception:
+                pass
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS form_data (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -260,11 +282,6 @@ def init_db():
                     preprocessor_mode TEXT,
                     saved_at TEXT NOT NULL,
                     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS schema_version (
-                    version INTEGER PRIMARY KEY
                 )
             """)
             cur.execute("""
@@ -312,6 +329,13 @@ def init_db():
                     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
                 )
             """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_form_data_document_id ON form_data(document_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_edit_history_document_id ON edit_history(document_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_review_tasks_document_id ON review_tasks(document_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_review_tasks_status ON review_tasks(status)")
             _run_migrations(cur)
         conn.commit()
         print(f"Database initialized ({'PostgreSQL' if USE_POSTGRES else 'SQLite'})")
@@ -338,6 +362,20 @@ def _run_migrations(cursor):
         except Exception:
             pass
 
+    # Migrate users table - add role and must_change_password columns
+    cursor.execute("PRAGMA table_info(users)")
+    user_columns = [col[1] for col in cursor.fetchall()]
+    if "role" not in user_columns:
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+        except Exception:
+            pass
+    if "must_change_password" not in user_columns:
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+
     # Migrate review_tasks in SQLite
     cursor.execute("PRAGMA table_info(review_tasks)")
     rt_columns = [col[1] for col in cursor.fetchall()]
@@ -357,20 +395,10 @@ def _run_migrations(cursor):
         except Exception:
             pass
 
-    # Create default admin user for backward compatibility with existing docs
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] == 0:
-        import hashlib, os, secrets
-        default_id = "default_admin"
-        default_email = "admin@ssiar.local"
-        salt = os.urandom(16)
-        dk = hashlib.pbkdf2_hmac("sha256", b"admin123", salt, 100_000)
-        pw_hash = salt.hex() + ":" + dk.hex()
-        cursor.execute(
-            "INSERT OR IGNORE INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
-            (default_id, default_email, pw_hash, __import__("datetime").datetime.now().isoformat())
-        )
-        cursor.execute("UPDATE documents SET user_id = ? WHERE user_id IS NULL", (default_id,))
+        print("No users found. First registration will create the initial user.")
+        cursor.execute("UPDATE documents SET user_id = 'orphan' WHERE user_id IS NULL")
 
 
 def insert_document(doc_id: str, filename: str, status: str = "processing",
@@ -521,21 +549,21 @@ def get_document(doc_id: str) -> Optional[dict]:
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
         if uid:
-            query = """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+            query = """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at, d.error_message,
                        f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
                        f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
                        FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = %s AND d.user_id = %s""" if USE_POSTGRES else \
-                    """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+                    """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at, d.error_message,
                        f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
                        f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
                        FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = ? AND d.user_id = ?"""
             params = (doc_id, uid)
         else:
-            query = """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+            query = """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at, d.error_message,
                        f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
                        f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
                        FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = %s""" if USE_POSTGRES else \
-                    """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+                    """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at, d.error_message,
                        f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
                        f.academic_scores, f.remarks, f.confidence_scores, f.quality_report, f.verified_by_human
                        FROM documents d LEFT JOIN form_data f ON d.id = f.document_id WHERE d.id = ?"""
@@ -581,7 +609,7 @@ def get_all_documents() -> list:
         cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
         if uid:
             cur.execute(
-                """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+                """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at, d.error_message,
                    f.roll_number, f.class, f.dob, f.gender, f.consent, f.verified_by_human
                    FROM documents d LEFT JOIN form_data f ON d.id = f.document_id
                    WHERE d.user_id = ?
@@ -590,7 +618,7 @@ def get_all_documents() -> list:
             )
         else:
             cur.execute(
-                """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at,
+                """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at, d.error_message,
                    f.roll_number, f.class, f.dob, f.gender, f.consent, f.verified_by_human
                    FROM documents d LEFT JOIN form_data f ON d.id = f.document_id
                    ORDER BY d.created_at DESC"""
@@ -635,15 +663,21 @@ def get_corrections_log() -> list:
         put_conn(conn)
 
 
-def delete_document(doc_id: str):
+def delete_document(doc_id: str, user_id: str | None = None):
     from app.image.storage import delete_document_files
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        cur.execute(
-            "DELETE FROM documents WHERE id = %s" if USE_POSTGRES else
-            "DELETE FROM documents WHERE id = ?", (doc_id,)
-        )
+        if user_id:
+            cur.execute(
+                "DELETE FROM documents WHERE id = %s AND user_id = %s" if USE_POSTGRES else
+                "DELETE FROM documents WHERE id = ? AND user_id = ?", (doc_id, user_id)
+            )
+        else:
+            cur.execute(
+                "DELETE FROM documents WHERE id = %s" if USE_POSTGRES else
+                "DELETE FROM documents WHERE id = ?", (doc_id,)
+            )
         conn.commit()
     finally:
         put_conn(conn)
@@ -659,7 +693,7 @@ def bulk_delete_documents(doc_ids: list) -> int:
         cur = conn.cursor()
         placeholders = ",".join("%s" if USE_POSTGRES else "?" for _ in doc_ids)
         if uid:
-            cur.execute(f"DELETE FROM documents WHERE id IN ({placeholders}) AND user_id = ?", [*doc_ids, uid])
+            cur.execute(f"DELETE FROM documents WHERE id IN ({placeholders}) AND user_id = {'%s' if USE_POSTGRES else '?'}", [*doc_ids, uid])
         else:
             cur.execute(f"DELETE FROM documents WHERE id IN ({placeholders})", doc_ids)
         conn.commit()
@@ -684,7 +718,6 @@ def get_pdf(doc_id: str) -> bytes:
     # Compile PDF from stored page images on-the-fly
     try:
         import fitz
-        from app.database import get_page_image
         doc = fitz.open()
         for page_num in (1, 2):
             img_bytes = get_page_image(doc_id, page_num)

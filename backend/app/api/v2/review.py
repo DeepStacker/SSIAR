@@ -6,15 +6,11 @@ Endpoints for task reviews and template queries.
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
 from app.auth import require_auth, get_current_user_id
-from app.processing.review import (
+from app.services.review_tasks import (
     get_pending_review_tasks,
     submit_review,
-    get_review_statistics,
 )
-from app.processing.templates import (
-    list_templates,
-    get_template,
-)
+
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -45,6 +41,7 @@ async def list_review_tasks(
             error_type=error_type,
             sort_by=sort_by,
             sort_dir=sort_dir,
+            user_id=uid,
         )
     )
     return {"tasks": tasks, "total": total_count}
@@ -75,40 +72,7 @@ async def submit_review_task(
         raise
     except Exception as e:
         logger.error(f"DLQ submit error for task {task_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error during review submission")
 
 
-@router.get("/api/v2/review/stats")
-async def review_statistics():
-    """Get review system statistics."""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, get_review_statistics)
 
-
-@router.get("/api/v2/templates")
-async def list_form_templates():
-    """List all available form templates."""
-    loop = asyncio.get_running_loop()
-    templates = await loop.run_in_executor(None, list_templates)
-    result = []
-    for tid in templates:
-        tmpl = await loop.run_in_executor(None, get_template, tid)
-        if tmpl:
-            result.append({
-                "template_id": tmpl.template_id,
-                "name": tmpl.name,
-                "version": tmpl.version,
-                "pages": tmpl.pages,
-                "fields": [f.name for f in tmpl.fields],
-            })
-    return {"templates": result}
-
-
-@router.get("/api/v2/templates/{template_id}")
-async def get_template_details(template_id: str):
-    """Get full template definition."""
-    loop = asyncio.get_running_loop()
-    tmpl = await loop.run_in_executor(None, get_template, template_id)
-    if not tmpl:
-        raise HTTPException(status_code=404, detail="Template not found")
-    return tmpl

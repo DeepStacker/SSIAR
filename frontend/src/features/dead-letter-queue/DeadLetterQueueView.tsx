@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, Search, ArrowUpDown, Check, AlertTriangle, ArrowRight, Sparkles, Image, Scan, BarChart, FileWarning, Hash, X, ArrowLeft, ArrowRightCircle } from 'lucide-react';
-import type { DlqTask } from '../api';
-import { api } from '../api';
-import { CanvasCrop } from './CanvasCrop';
+import type { DlqTask } from '@/api';
+import { api } from '@/api';
+import { CanvasCrop } from '@/features/review/CanvasCrop';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { useToast } from '../context/ToastContext';
+import { useToast } from '@/context/ToastContext';
 
 interface FullPagePreviewProps {
   pageUrl: string;
@@ -173,7 +173,7 @@ const DiffRow: React.FC<{ original: string; corrected: string }> = ({ original, 
 const c = (base: string, ...extras: (string | false | undefined | null)[]) =>
   [base, ...extras.filter(Boolean)].join(' ');
 
-export const DlqView: React.FC = () => {
+export const DeadLetterQueueView: React.FC = () => {
   const { show } = useToast();
 
   const [tasks, setTasks] = useState<DlqTask[]>([]);

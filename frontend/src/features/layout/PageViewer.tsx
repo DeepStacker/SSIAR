@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
-import { api } from '../api';
+import { api } from '@/api';
 
 interface Props {
   docId: string;

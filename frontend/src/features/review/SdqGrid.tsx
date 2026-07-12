@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ZoomImage } from '../api';
-import { api } from '../api';
+import type { ZoomImage } from '@/api';
+import { api } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
-import { CanvasCrop } from './CanvasCrop';
+import { CanvasCrop } from '@/features/review/CanvasCrop';
 
 interface Props {
   docId: string;

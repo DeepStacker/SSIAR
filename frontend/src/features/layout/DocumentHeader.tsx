@@ -8,7 +8,7 @@ interface Props {
   center?: React.ReactNode;
 }
 
-export const DocHeader: React.FC<Props> = ({ title, onClose, center }) => (
+export const DocumentHeader: React.FC<Props> = ({ title, onClose, center }) => (
   <header aria-label="Document header" className="flex items-center justify-between border-b pb-5 mb-8">
     <div className="flex items-center gap-3 text-lg font-extrabold">
       <h1 className="text-lg font-extrabold">{title}</h1>

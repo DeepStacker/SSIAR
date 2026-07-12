@@ -15,12 +15,12 @@ TEST_DB_DIR = os.path.join(PROJECT_ROOT, "shared", "database")
 os.makedirs(TEST_DB_DIR, exist_ok=True)
 TEST_DB_PATH = os.path.join(TEST_DB_DIR, "test_api_ssiar.db")
 
-import app.database as db_module
+import app.database.connection as db_module
 _ORIGINAL_DB_PATH = db_module.DB_PATH
 
 from app.main import app
 from app.processing.templates import init_templates
-from app.database import init_db, get_db_connection, get_corrections_log
+from app.database.connection import init_db, get_db_connection, get_corrections_log
 
 class TestSSIARApi(unittest.TestCase):
     @classmethod
@@ -39,6 +39,10 @@ class TestSSIARApi(unittest.TestCase):
         db_module.DB_PATH = _ORIGINAL_DB_PATH
         if os.path.exists(TEST_DB_PATH):
             os.remove(TEST_DB_PATH)
+
+    def setUp(self):
+        if not os.path.exists(self.sample_pdf):
+            self.skipTest(f"Sample PDF not found at {self.sample_pdf}")
 
     def test_upload_and_verify_flow(self):
         """Tests the end-to-end flow: Ingestion -> Classification -> Quality -> Correction Loop"""

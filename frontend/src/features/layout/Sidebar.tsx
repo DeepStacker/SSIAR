@@ -1,6 +1,6 @@
 import React from 'react';
 import { LayoutDashboard, FileText, BarChart3, AlertOctagon, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { ViewMode } from '../api';
+import type { ViewMode } from '@/api';
 import { cn } from '@/lib/utils';
 
 const navItems: { id: ViewMode; label: string; icon: React.ReactNode }[] = [

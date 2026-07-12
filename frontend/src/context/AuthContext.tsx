@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { API_BASE, scheduleTokenRefresh } from '../api';
+import { API_BASE, scheduleTokenRefresh } from '@/api';
 
 interface AuthState {
   token: string | null;

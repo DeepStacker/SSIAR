@@ -8,9 +8,13 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, Request
 import jwt
 
-JWT_SECRET = os.environ.get("JWT_SECRET", secrets.token_hex(32))
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable is required")
+if len(JWT_SECRET) < 32:
+    raise RuntimeError(f"JWT_SECRET must be at least 32 characters (got {len(JWT_SECRET)})")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = 24
+JWT_EXPIRY_HOURS = 1
 
 _auth_local = threading.local()
 
@@ -23,9 +27,12 @@ def get_current_email() -> str | None:
     return getattr(_auth_local, "email", None)
 
 
+PBKDF2_ITERATIONS = 600_000
+
+
 def hash_password(password: str) -> str:
     salt = os.urandom(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, PBKDF2_ITERATIONS)
     return salt.hex() + ":" + dk.hex()
 
 
@@ -33,7 +40,7 @@ def verify_password(password: str, stored: str) -> bool:
     try:
         salt_hex, dk_hex = stored.split(":")
         salt = bytes.fromhex(salt_hex)
-        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, PBKDF2_ITERATIONS)
         return dk.hex() == dk_hex
     except (ValueError, AttributeError):
         return False

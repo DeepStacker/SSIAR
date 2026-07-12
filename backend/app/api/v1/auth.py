@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from app.database import get_db_connection, put_conn, USE_POSTGRES
 from app.auth import hash_password, verify_password, create_jwt, require_auth, get_current_user_id, get_current_email
+from app.models import RegisterRequest, LoginRequest
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -8,14 +9,14 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 import asyncio
 
 @router.post("/register")
-async def register(payload: dict):
-    email = (payload.get("email") or "").strip().lower()
-    password = payload.get("password") or ""
+async def register(payload: RegisterRequest):
+    email = (payload.email or "").strip().lower()
+    password = payload.password or ""
 
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Valid email required")
-    if len(password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
     loop = asyncio.get_running_loop()
     def _db_register():
@@ -28,7 +29,7 @@ async def register(payload: dict):
                 (email,)
             )
             if cur.fetchone():
-                raise HTTPException(status_code=409, detail="Email already registered")
+                return None, "exists"
 
             user_id = __import__("uuid").uuid4().hex
             pw_hash = hash_password(password)
@@ -39,24 +40,23 @@ async def register(payload: dict):
                 (user_id, email, pw_hash, __import__("datetime").datetime.now().isoformat())
             )
             conn.commit()
-            return user_id
+            return user_id, None
         finally:
             put_conn(conn)
 
-    try:
-        user_id = await loop.run_in_executor(None, _db_register)
-        token = create_jwt(user_id, email)
-        return {"token": token, "user_id": user_id, "email": email}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    user_id, err = await loop.run_in_executor(None, _db_register)
+    if err == "exists":
+        raise HTTPException(status_code=400, detail="Email already registered")
+    if not user_id:
+        raise HTTPException(status_code=500, detail="Registration failed. Please try again.")
+    token = create_jwt(user_id, email)
+    return {"token": token, "user_id": user_id, "email": email}
 
 
 @router.post("/login")
-async def login(payload: dict):
-    email = (payload.get("email") or "").strip().lower()
-    password = payload.get("password") or ""
+async def login(payload: LoginRequest):
+    email = (payload.email or "").strip().lower()
+    password = payload.password or ""
 
     loop = asyncio.get_running_loop()
     def _db_login():
@@ -70,30 +70,21 @@ async def login(payload: dict):
             )
             row = cur.fetchone()
             if not row:
-                raise HTTPException(status_code=401, detail="Invalid email or password")
+                return None, "invalid"
 
             user_id, db_email, pw_hash = row[0], row[1], row[2]
             if not verify_password(password, pw_hash):
-                raise HTTPException(status_code=401, detail="Invalid email or password")
+                return None, "invalid"
 
             return user_id, db_email
         finally:
             put_conn(conn)
 
-    try:
-        user_id, db_email = await loop.run_in_executor(None, _db_login)
-        token = create_jwt(user_id, db_email)
-        return {"token": token, "user_id": user_id, "email": db_email}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/me")
-async def me(request: Request):
-    require_auth(request)
-    return {"user_id": get_current_user_id(), "email": get_current_email()}
+    user_id, db_email = await loop.run_in_executor(None, _db_login)
+    if db_email == "invalid":
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_jwt(user_id, db_email)
+    return {"token": token, "user_id": user_id, "email": db_email}
 
 
 @router.post("/refresh")

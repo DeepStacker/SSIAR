@@ -1,17 +1,17 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Check, Download, Loader2, Save } from 'lucide-react';
-import { Document, DocumentDetails, ZoomImage } from '../api';
-import { api } from '../api';
-import { exportToCsv } from '../lib/utils';
-import { DocHeader } from './DocHeader';
-import { ZoomPopup } from './ZoomPopup';
-import { PageViewer } from './PageViewer';
-import { useToast } from '../context/ToastContext';
+import type { Document, DocumentDetails, ZoomImage } from '@/api';
+import { api } from '@/api';
+import { exportToCsv } from '@/lib/utils';
+import { DocumentHeader } from '@/features/layout/DocumentHeader';
+import { ZoomPopup } from '@/components/ZoomPopup';
+import { PageViewer } from '@/features/layout/PageViewer';
+import { useToast } from '@/context/ToastContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { CanvasCrop } from './CanvasCrop';
-import { SdqGrid } from './SdqGrid';
+import { CanvasCrop } from '@/features/review/CanvasCrop';
+import { SdqGrid } from '@/features/review/SdqGrid';
 
 interface Props {
   doc: Document;
@@ -191,7 +191,7 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
 
   return (
     <div className="app-container">
-      <DocHeader title="SSIAR — Verified View" onClose={onClose} />
+      <DocumentHeader title="SSIAR — Verified View" onClose={onClose} />
 
       <div className="flex justify-end gap-2 px-5 py-3">
         <Button variant="outline" size="sm" onClick={handleExport}>

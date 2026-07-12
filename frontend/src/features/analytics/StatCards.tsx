@@ -1,5 +1,5 @@
 import React from 'react';
-import type { StatCardItem, EscBreakdown, TabType } from '../api';
+import type { StatCardItem, EscBreakdown, TabType } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 
 const styleMap: Record<string, { text: string; bg: string; ring: string }> = {

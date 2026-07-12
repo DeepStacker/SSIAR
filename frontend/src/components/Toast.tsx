@@ -1,5 +1,5 @@
 import React from 'react';
-import { useToast } from '../context/ToastContext';
+import { useToast } from '@/context/ToastContext';
 
 export const Toast: React.FC = () => {
   const { toast, dismiss } = useToast();

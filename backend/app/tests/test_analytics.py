@@ -1,35 +1,50 @@
 import json
 import os
+import uuid
 import unittest
 from fastapi.testclient import TestClient
 
-import app.database as db_module
+from app.database.connection import DB_PATH as _ORIGINAL_DB_PATH
 
 # Capture the original DB_PATH at module load (before any test modifies it)
 _TEST_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared", "database")
 os.makedirs(_TEST_DIR, exist_ok=True)
 TEST_DB_PATH = os.path.join(_TEST_DIR, "test_analytics_ssiar.db")
-_ORIGINAL_DB_PATH = db_module.DB_PATH  # read-only, don't mutate at module level
 
 from app.main import app
 from app.database import init_db
 
 class TestSSIARAnalytics(unittest.TestCase):
+    _token = ""
+
     @classmethod
     def setUpClass(cls):
-        db_module.DB_PATH = TEST_DB_PATH
+        import app.database.connection as conn_mod
+        conn_mod.DB_PATH = TEST_DB_PATH
         init_db()
         cls.client = TestClient(app)
+        # Register and login to get auth token
+        email = f"analytics-test-{uuid.uuid4().hex[:12]}@example.com"
+        pw = "TestPass!789"
+        r = cls.client.post("/api/auth/register", json={"email": email, "password": pw})
+        assert r.status_code == 200, f"Register failed: {r.text}"
+        r = cls.client.post("/api/auth/login", json={"email": email, "password": pw})
+        assert r.status_code == 200, f"Login failed: {r.text}"
+        cls._token = r.json()["token"]
 
     @classmethod
     def tearDownClass(cls):
-        db_module.DB_PATH = _ORIGINAL_DB_PATH
+        import app.database.connection as conn_mod
+        conn_mod.DB_PATH = _ORIGINAL_DB_PATH
         if os.path.exists(TEST_DB_PATH):
             os.remove(TEST_DB_PATH)
 
+    def _headers(self):
+        return {"Authorization": f"Bearer {self._token}"}
+
     def test_summary_analytics(self):
         """Test GET /api/analytics/summary returns required KPIs"""
-        response = self.client.get("/api/analytics/summary")
+        response = self.client.get("/api/analytics/summary", headers=self._headers())
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("total_forms", data)
@@ -41,7 +56,7 @@ class TestSSIARAnalytics(unittest.TestCase):
 
     def test_demographics_analytics(self):
         """Test GET /api/analytics/demographics returns distributions"""
-        response = self.client.get("/api/analytics/demographics")
+        response = self.client.get("/api/analytics/demographics", headers=self._headers())
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("class_distribution", data)
@@ -51,7 +66,7 @@ class TestSSIARAnalytics(unittest.TestCase):
 
     def test_questionnaire_analytics(self):
         """Test GET /api/analytics/questionnaire returns SDQ metrics"""
-        response = self.client.get("/api/analytics/questionnaire")
+        response = self.client.get("/api/analytics/questionnaire", headers=self._headers())
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("questions", data)
@@ -60,7 +75,7 @@ class TestSSIARAnalytics(unittest.TestCase):
 
     def test_academic_analytics(self):
         """Test GET /api/analytics/academic returns academic stats"""
-        response = self.client.get("/api/analytics/academic")
+        response = self.client.get("/api/analytics/academic", headers=self._headers())
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("averages", data)
@@ -69,21 +84,21 @@ class TestSSIARAnalytics(unittest.TestCase):
 
     def test_correlations_analytics(self):
         """Test GET /api/analytics/correlations returns correlation matrix"""
-        response = self.client.get("/api/analytics/correlations")
+        response = self.client.get("/api/analytics/correlations", headers=self._headers())
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("correlation_matrix", data)
 
     def test_outliers_analytics(self):
         """Test GET /api/analytics/outliers returns outlier list"""
-        response = self.client.get("/api/analytics/outliers")
+        response = self.client.get("/api/analytics/outliers", headers=self._headers())
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("outliers", data)
 
     def test_export_analytics(self):
         """Test GET /api/analytics/export/{format} returns data files"""
-        response = self.client.get("/api/analytics/export/csv")
+        response = self.client.get("/api/analytics/export/csv", headers=self._headers())
         self.assertIn(response.status_code, [200, 400])
         if response.status_code == 200:
             self.assertTrue(response.headers["content-type"].startswith("text/csv"))

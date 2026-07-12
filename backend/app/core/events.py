@@ -14,7 +14,7 @@ def notify(event_type: str, data: dict, user_id: Optional[str] = None):
                 continue
             try:
                 loop.call_soon_threadsafe(q.put_nowait, {"event": event_type, "data": data})
-            except:
+            except Exception:
                 dead.append((q, loop, sub_uid))
         for item in dead:
             _sse_subscribers.remove(item)

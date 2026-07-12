@@ -1,18 +1,17 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Check, Loader2, X, ArrowLeft, ArrowRight, RotateCcw, Hash, Percent, Calendar, User, GraduationCap, ListOrdered, Download } from 'lucide-react';
-import { Document, DocumentDetails } from '../api';
-import { ZoomImage } from '../api';
-import { api } from '../api';
-import { exportToCsv } from '../lib/utils';
-import { SdqGrid } from './SdqGrid';
-import { ConsentRemarks } from './ConsentRemarks';
-import { ZoomPopup } from './ZoomPopup';
-import { PageViewer } from './PageViewer';
-import { useToast } from '../context/ToastContext';
+import type { Document, DocumentDetails, ZoomImage } from '@/api';
+import { api } from '@/api';
+import { exportToCsv } from '@/lib/utils';
+import { SdqGrid } from '@/features/review/SdqGrid';
+import { ConsentRemarks } from '@/features/review/ConsentRemarks';
+import { ZoomPopup } from '@/components/ZoomPopup';
+import { PageViewer } from '@/features/layout/PageViewer';
+import { useToast } from '@/context/ToastContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { CanvasCrop } from './CanvasCrop';
+import { CanvasCrop } from '@/features/review/CanvasCrop';
 
 interface Props {
   doc: Document;
@@ -133,7 +132,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
     setFieldAccepted(prev => ({ ...prev, [key]: true }));
     setFlashField(key);
     setTimeout(() => setFlashField(null), 500);
-  }, [fieldAccepted]);
+  }, []);
 
   const focusNextField = useCallback((fi: number) => {
     const next = activeFields[fi + 1];

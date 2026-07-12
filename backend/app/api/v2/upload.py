@@ -12,8 +12,9 @@ import fitz
 from app.auth import require_auth, get_current_user_id
 from app.config import MAX_UPLOAD_SIZE
 from app.database import insert_document, store_pdf
-from app.sse import notify as SSE
+from app.core.events import notify as SSE
 from app.processing.jobs.document_jobs import get_job_queue, process_document_background
+from app.models import BatchFolderRequest
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -85,13 +86,21 @@ async def upload_files(
 
 
 @router.post("/api/batch/process-folder")
-async def batch_process_folder(payload: dict):
+async def batch_process_folder(payload: BatchFolderRequest):
     uid = get_current_user_id()
-    folder = payload.get("folder_path", "")
-    auto_verify = payload.get("auto_verify", False)
-    if not folder or not os.path.isdir(folder):
+    folder = payload.folder_path
+    auto_verify = payload.auto_verify
+    if not folder:
         raise HTTPException(status_code=400, detail="Invalid folder path")
-    pdfs = sorted(f for f in os.listdir(folder) if f.lower().endswith(".pdf"))
+    real_path = os.path.realpath(folder)
+    allowed_base = os.environ.get("ALLOWED_BATCH_DIR", "")
+    if allowed_base:
+        allowed_base = os.path.realpath(allowed_base)
+        if not real_path.startswith(allowed_base + os.sep) and real_path != allowed_base:
+            raise HTTPException(status_code=403, detail="Access to this directory is not allowed")
+    if not os.path.isdir(real_path):
+        raise HTTPException(status_code=400, detail="Invalid folder path")
+    pdfs = sorted(f for f in os.listdir(real_path) if f.lower().endswith(".pdf"))
     if not pdfs:
         raise HTTPException(status_code=400, detail="No PDFs found")
         
@@ -99,7 +108,7 @@ async def batch_process_folder(payload: dict):
     def _read_and_queue_all():
         queued = []
         for fn in pdfs:
-            with open(os.path.join(folder, fn), "rb") as f:
+            with open(os.path.join(real_path, fn), "rb") as f:
                 data = f.read()
             doc_id = str(uuid.uuid4())
             insert_document(doc_id, fn, "processing", classification=DEFAULT_CLASSIFICATION, user_id=uid)

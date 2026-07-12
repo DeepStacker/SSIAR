@@ -7,10 +7,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.processing.azure_processor import normalize_azure_response
 from app.processing.field_resolver import resolve_field
-from app.processing.types import FieldDefinition, ReviewPriority
+from app.core.types import FieldDefinition, ReviewPriority
 from app.processing.jobs.document_jobs import resolve_page_selection_marks
 from app.processing.trust_confidence import calculate_trust
-from app.processing.review import create_review_task, submit_review
+from app.services.review_tasks import create_review_task, submit_review
 from app.database import init_db, insert_document, get_document, get_db_connection, put_conn
 
 class TestV2Pipeline(unittest.TestCase):

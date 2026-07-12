@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
-import { Document } from '../api';
-import { DocHeader } from './DocHeader';
+import type { Document } from '@/api';
+import { DocumentHeader } from '@/features/layout/DocumentHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -27,7 +27,7 @@ export const FailedView: React.FC<Props> = ({ doc, onClose, onReprocess }) => {
 
   return (
     <div className="app-container">
-      <DocHeader title="SSIAR" onClose={onClose} />
+      <DocumentHeader title="SSIAR" onClose={onClose} />
       <div className="flex items-center justify-center h-[60vh] px-4">
         <Card className="w-full max-w-lg">
           <CardContent className="p-6 flex flex-col items-center gap-4 text-center">
