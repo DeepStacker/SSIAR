@@ -42,7 +42,7 @@ interface UIState {
 const UIContext = createContext<UIState | null>(null);
 
 export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   

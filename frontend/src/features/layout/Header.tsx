@@ -7,6 +7,7 @@ import type { ViewMode } from '@/api';
 import { Button } from '@/components/ui/button';
 import { API_BASE, extractErrorMessage } from '@/api';
 import { useToast } from '@/context/ToastContext';
+import { AppLogo } from '@/components/app/AppLogo';
 
 interface Props {
   view: ViewMode;
@@ -74,6 +75,7 @@ export const Header: React.FC<Props> = ({ view, onViewChange }) => {
           >
             <Menu size={18} />
           </Button>
+          <AppLogo className="shrink-0" />
           <div className="hidden xl:flex items-center gap-2 text-xs">
             <button
               onClick={() => onViewChange('dashboard')}
