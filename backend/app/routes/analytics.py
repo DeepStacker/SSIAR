@@ -471,10 +471,83 @@ def get_questionnaire_analytics(
                     "consistency": "Good" if alpha >= 0.7 else ("Acceptable" if alpha >= 0.6 else "Poor")
                 })
 
+        # 3. Research-focused Clinical Classification Distribution
+        clinical_distribution = []
+        if "score_total_difficulties" in df.columns:
+            tot_diffs = df["score_total_difficulties"].dropna()
+            total_scored = len(tot_diffs)
+            if total_scored > 0:
+                normal_cnt = int((tot_diffs <= 15).sum())
+                borderline_cnt = int(((tot_diffs >= 16) & (tot_diffs <= 19)).sum())
+                abnormal_cnt = int((tot_diffs >= 20).sum())
+                
+                clinical_distribution = [
+                    {"category": "Normal (0-15)", "count": normal_cnt, "percentage": round((normal_cnt / total_scored) * 100, 1)},
+                    {"category": "Borderline (16-19)", "count": borderline_cnt, "percentage": round((borderline_cnt / total_scored) * 100, 1)},
+                    {"category": "Abnormal (20-40)", "count": abnormal_cnt, "percentage": round((abnormal_cnt / total_scored) * 100, 1)}
+                ]
+                
+        # 4. Academic Performance by Clinical Category (Academic Impact)
+        academic_impact = {}
+        if "score_total_difficulties" in df.columns:
+            def get_cat(val):
+                if pd.isna(val):
+                    return None
+                if val <= 15:
+                    return "Normal"
+                if val <= 19:
+                    return "Borderline"
+                return "Abnormal"
+                
+            df["clinical_category"] = df["score_total_difficulties"].apply(get_cat)
+            for cat in ["Normal", "Borderline", "Abnormal"]:
+                cat_df = df[df["clinical_category"] == cat]
+                academic_impact[cat] = {
+                    "math": round(float(cat_df["math_pct"].mean()), 1) if not cat_df["math_pct"].dropna().empty else 0.0,
+                    "science": round(float(cat_df["science_pct"].mean()), 1) if not cat_df["science_pct"].dropna().empty else 0.0,
+                    "language": round(float(cat_df["language_pct"].mean()), 1) if not cat_df["language_pct"].dropna().empty else 0.0,
+                    "student_count": len(cat_df)
+                }
+
+        # 5. Cohort Summary Matrix by Class
+        cohort_summary = []
+        if "class_clean" in df.columns:
+            classes = df["class_clean"].unique()
+            for c in classes:
+                c_df = df[df["class_clean"] == c]
+                total_c = len(c_df)
+                
+                # Consent Rate
+                consent_yes = c_df["consent"].astype(str).str.lower().str.contains("yes|agree|हां|है").sum()
+                consent_rate = round((consent_yes / total_c) * 100, 1) if total_c > 0 else 0.0
+                
+                # SDQ Averages
+                mean_sdq = round(float(c_df["score_total_difficulties"].mean()), 1) if "score_total_difficulties" in c_df.columns and not c_df["score_total_difficulties"].dropna().empty else 0.0
+                mean_prosocial = round(float(c_df["score_prosocial"].mean()), 1) if "score_prosocial" in c_df.columns and not c_df["score_prosocial"].dropna().empty else 0.0
+                
+                # Academic Averages
+                mean_math = round(float(c_df["math_pct"].mean()), 1) if not c_df["math_pct"].dropna().empty else 0.0
+                mean_science = round(float(c_df["science_pct"].mean()), 1) if not c_df["science_pct"].dropna().empty else 0.0
+                mean_lang = round(float(c_df["language_pct"].mean()), 1) if not c_df["language_pct"].dropna().empty else 0.0
+                
+                cohort_summary.append({
+                    "class": c,
+                    "cohort_size": total_c,
+                    "consent_rate": consent_rate,
+                    "mean_sdq_difficulties": mean_sdq,
+                    "mean_prosocial": mean_prosocial,
+                    "mean_math": mean_math,
+                    "mean_science": mean_science,
+                    "mean_language": mean_lang
+                })
+
         return {
             "questions": questions_dist,
             "domain_scores": domain_stats,
-            "reliability": reliability
+            "reliability": reliability,
+            "clinical_distribution": clinical_distribution,
+            "academic_impact": academic_impact,
+            "cohort_summary": cohort_summary
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Questionnaire analytics failed: {str(e)}")

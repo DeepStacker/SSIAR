@@ -9,8 +9,40 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.middleware import MaxBodySizeMiddleware
 from app.database import init_db, get_db_connection, put_conn, USE_POSTGRES
 
+import time
+from collections import defaultdict
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import JSONResponse
+from fastapi import Request
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, requests_per_minute: int = 200):
+        super().__init__(app)
+        self.requests_per_minute = requests_per_minute
+        self.client_records = defaultdict(list)
+
+    async def dispatch(self, request: Request, call_next):
+        if not request.url.path.startswith("/api"):
+            return await call_next(request)
+            
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        
+        # Keep only timestamps from the last 60 seconds
+        self.client_records[client_ip] = [t for t in self.client_records[client_ip] if now - t < 60]
+        
+        if len(self.client_records[client_ip]) >= self.requests_per_minute:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please try again later."}
+            )
+            
+        self.client_records[client_ip].append(now)
+        return await call_next(request)
+
 app = FastAPI(title="SSIAR Document Intelligence Platform V2")
 
+app.add_middleware(RateLimitMiddleware, requests_per_minute=250)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

@@ -30,6 +30,7 @@ class TestV2Pipeline(unittest.TestCase):
                     "angle": 0.0,
                     "width": 1000.0,
                     "height": 1000.0,
+                    "unit": "pixel",
                     "words": [
                         {"content": "अनुक्रमांक", "polygon": [100, 100, 200, 100, 200, 120, 100, 120], "confidence": 0.99},
                         {"content": "123456", "polygon": [100, 130, 200, 130, 200, 150, 100, 150], "confidence": 0.95},
@@ -59,13 +60,13 @@ class TestV2Pipeline(unittest.TestCase):
             validation_rules=["roll_number"]
         )
         
-        text, conf, found, bbox, page_num = resolve_field(fd, normalized)
+        text, conf, found, bbox, poly, page_num = resolve_field(fd, normalized)
         self.assertTrue(found)
         self.assertEqual(text, "123456")
         self.assertAlmostEqual(conf, 0.95)
         self.assertEqual(page_num, 1)
         self.assertEqual(bbox, [100.0, 130.0, 200.0, 150.0])
-
+ 
     def test_resolve_selection_marks(self):
         raw = {
             "model_id": "prebuilt-read",
@@ -75,13 +76,30 @@ class TestV2Pipeline(unittest.TestCase):
                     "angle": 0.0,
                     "width": 2500.0,
                     "height": 3500.0,
+                    "unit": "pixel",
                     "selection_marks": [
                         {"state": "selected", "polygon": [1600, 2000, 1620, 2000, 1620, 2020, 1600, 2020], "confidence": 0.9}, # Yes for Q1 (Y >= 1200)
                         {"state": "unselected", "polygon": [1860, 2000, 1880, 2000, 1880, 2020, 1860, 2020], "confidence": 0.9},
                         {"state": "unselected", "polygon": [2140, 2000, 2160, 2000, 2160, 2020, 2140, 2020], "confidence": 0.9},
                         
-                        {"state": "unselected", "polygon": [470, 800, 490, 800, 490, 820, 470, 820], "confidence": 0.9}, # No for consent (Y < 1200)
-                        {"state": "selected", "polygon": [540, 800, 560, 800, 560, 820, 540, 820], "confidence": 0.9},
+                        {"state": "unselected", "polygon": [1800, 800, 1820, 800, 1820, 820, 1800, 820], "confidence": 0.9}, # Yes (unselected)
+                        {"state": "selected", "polygon": [2100, 800, 2120, 800, 2120, 820, 2100, 820], "confidence": 0.9}, # No (selected, relative x >= 0.83)
+                    ],
+                    "tables": [
+                        {
+                            "cells": [
+                                {
+                                    "rowIndex": 1,
+                                    "columnIndex": 1,
+                                    "content": ":selected:",
+                                    "boundingRegions": [
+                                        {
+                                            "polygon": [1600, 2000, 1620, 2000, 1620, 2020, 1600, 2020]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
                     ]
                 }
             ]
@@ -89,7 +107,10 @@ class TestV2Pipeline(unittest.TestCase):
         
         normalized = normalize_azure_response("doc_test2", raw)
         responses, consent, conf, bboxes, polys = resolve_page_selection_marks(
-            normalized.pages[0].elements, is_page_2=False, raw_response=raw
+            normalized.pages[0].elements, is_page_2=False,
+            page_width=normalized.pages[0].width,
+            page_height=normalized.pages[0].height,
+            raw_response=raw
         )
         
         self.assertEqual(consent, "No") # Consent Yes is index 0, No is index 1. Index 1 selected -> "No"

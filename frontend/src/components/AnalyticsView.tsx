@@ -47,6 +47,9 @@ interface QuestionnaireData {
   reliability: Array<{ domain: string; cronbach_alpha: number; consistency: string }>;
   questions: Array<{ question_id: string; domain: string; text: string; text_hi: string; not_true: number; somewhat_true: number; certainly_true: number; total: number }>;
   domain_scores: Record<string, { mean: number; sd: number; min: number; max: number; gender_split?: Record<string, number> }>;
+  clinical_distribution?: Array<{ category: string; count: number; percentage: number }>;
+  academic_impact?: Record<string, { math: number; science: number; language: number; student_count: number }>;
+  cohort_summary?: Array<{ class: string; cohort_size: number; consent_rate: number; mean_sdq_difficulties: number; mean_prosocial: number; mean_math: number; mean_science: number; mean_language: number }>;
 }
 
 interface AcademicData {
@@ -294,7 +297,12 @@ export function AnalyticsView({ onBack, classFilter, genderFilter, ...rest }: An
           }
           case 'demographics': {
             const filters = { class: classFilter, gender: genderFilter };
-            setDemographics(await api.getAnalyticsDemographics(filters).catch(() => null) as DemographicsData);
+            const [demoRes, questRes] = await Promise.all([
+              api.getAnalyticsDemographics(filters).catch(() => null),
+              api.getAnalyticsQuestionnaire(filters).catch(() => null)
+            ]);
+            setDemographics(demoRes as DemographicsData);
+            setQuestionnaire(questRes as any);
             break;
           }
           case 'sdq':
@@ -403,10 +411,7 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
             { id: 'executive', label: 'Executive Stats', icon: TrendingUp },
             { id: 'demographics', label: 'Demographics', icon: Users },
             { id: 'sdq', label: 'Questionnaire (SDQ)', icon: HelpCircle },
-            { id: 'domains', label: 'Behavioral Domains', icon: Brain },
             { id: 'academic', label: 'Academic Performance', icon: GraduationCap },
-            { id: 'correlations', label: 'Cross-Correlations', icon: TrendingUp },
-            { id: 'outliers', label: 'Outliers & anomalies', icon: AlertOctagon },
             { id: 'data-quality', label: 'Data Quality', icon: AlertOctagon },
             { id: 'export', label: 'SPSS / R Export', icon: Download }
           ].map(t => {
@@ -728,55 +733,53 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
                       </CardContent>
                     </Card>
 
-                    <Card size="sm">
+                    <Card size="sm" className="lg:col-span-2">
                       <CardContent>
-                        <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">Age × Gender Heatmap</h3>
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-                            <span>Low</span>
-                            <div className="flex-1 h-2 rounded-full" style={{ background: 'linear-gradient(to right, transparent, var(--accent-violet))' }} />
-                            <span>High</span>
-                          </div>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-xs font-bold text-[var(--text-secondary)]">Cohort Research Summary Matrix</h3>
+                          <button onClick={() => {
+                            if (!questionnaire || !questionnaire.cohort_summary) return;
+                            const headers = ['Class', 'Cohort Size', 'Consent Rate (%)', 'Mean SDQ Total Difficulties', 'Mean Prosocial', 'Mean Math', 'Mean Science', 'Mean Language'];
+                            const rows = questionnaire.cohort_summary.map((r: any) => [
+                              r.class, String(r.cohort_size), `${r.consent_rate}%`, String(r.mean_sdq_difficulties),
+                              String(r.mean_prosocial), `${r.mean_math}%`, `${r.mean_science}%`, `${r.mean_language}%`
+                            ]);
+                            exportToCsv(headers, rows, 'cohort_research_summary.csv');
+                          }} className="text-[10px] font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
+                            Export Matrix CSV
+                          </button>
+                        </div>
+                        <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="text-xs">Age</TableHead>
-                                <TableHead className="text-center text-xs">Male</TableHead>
-                                <TableHead className="text-center text-xs">Female</TableHead>
-                                <TableHead className="text-center text-xs">Other</TableHead>
+                                <TableHead className="text-xs">Class</TableHead>
+                                <TableHead className="text-xs text-center">Cohort Size</TableHead>
+                                <TableHead className="text-xs text-center">Consent Rate</TableHead>
+                                <TableHead className="text-xs text-center">Mean SDQ Score</TableHead>
+                                <TableHead className="text-xs text-center">Mean Prosocial</TableHead>
+                                <TableHead className="text-xs text-center">Mean Math</TableHead>
+                                <TableHead className="text-xs text-center">Mean Science</TableHead>
+                                <TableHead className="text-xs text-center">Mean Language</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {demographics.age_gender_heatmap && demographics.age_gender_heatmap.length > 0 ? (
-                                demographics.age_gender_heatmap.map((row: any, i: number) => {
-                                  const vals = [row.Male || 0, row.Female || 0, row.Other || 0];
-                                  const maxVal = Math.max(...vals, 1);
-                                  return (
-                                    <TableRow key={i}>
-                                      <TableCell className="font-semibold text-xs">{row.age}</TableCell>
-                                      {['Male', 'Female', 'Other'].map((gender, gi) => {
-                                        const val = row[gender] || 0;
-                                        const intensity = val / maxVal;
-                                        return (
-                                          <TableCell key={gi} className="text-center p-1.5">
-                                            <div
-                                              className="rounded-md py-1.5 font-bold text-xs transition-all"
-                                              style={{
-                                                background: `color-mix(in srgb, var(--accent-violet) ${intensity * 80}%, var(--bg-secondary))`,
-                                                color: intensity > 0.4 ? '#fff' : 'var(--text-secondary)'
-                                              }}
-                                            >
-                                              {val}
-                                            </div>
-                                          </TableCell>
-                                        );
-                                      })}
-                                    </TableRow>
-                                  );
-                                })
+                              {questionnaire && questionnaire.cohort_summary && questionnaire.cohort_summary.length > 0 ? (
+                                questionnaire.cohort_summary.map((row: any, i: number) => (
+                                  <TableRow key={i}>
+                                    <TableCell className="font-bold text-xs">Class {row.class}</TableCell>
+                                    <TableCell className="text-center text-xs">{row.cohort_size}</TableCell>
+                                    <TableCell className="text-center text-xs">{row.consent_rate}%</TableCell>
+                                    <TableCell className="text-center text-xs font-semibold text-[var(--accent-violet)]">{row.mean_sdq_difficulties}</TableCell>
+                                    <TableCell className="text-center text-xs font-semibold text-[var(--accent-emerald)]">{row.mean_prosocial}</TableCell>
+                                    <TableCell className="text-center text-xs">{row.mean_math}%</TableCell>
+                                    <TableCell className="text-center text-xs">{row.mean_science}%</TableCell>
+                                    <TableCell className="text-center text-xs">{row.mean_language}%</TableCell>
+                                  </TableRow>
+                                ))
                               ) : (
                                 <TableRow>
-                                  <TableCell colSpan={4} className="text-center text-[var(--text-muted)] text-xs">No cohort age data available.</TableCell>
+                                  <TableCell colSpan={8} className="text-center text-xs text-[var(--text-muted)] py-4">No cohort summary data available.</TableCell>
                                 </TableRow>
                               )}
                             </TableBody>
@@ -813,22 +816,78 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
   </button>
 </div>
                   
-                  <Card size="sm">
-                    <CardContent>
-                      <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">Cronbach's Alpha Internal Consistency Reliability</h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                        {questionnaire.reliability && questionnaire.reliability.map((rel: any, i: number) => (
-                          <Card key={i} size="sm">
-                            <CardContent>
-                              <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">{rel.domain} Scale</span>
-                              <h4 className="text-3xl font-extrabold text-[var(--text-primary)] my-2 mb-1">{rel.cronbach_alpha}</h4>
-                              <Badge variant="secondary">{rel.consistency} Consistency</Badge>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                    <Card size="sm" className="lg:col-span-1">
+                      <CardContent>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-xs font-bold text-[var(--text-secondary)]">Clinical SDQ Categories</h3>
+                          <button onClick={() => {
+                            if (!questionnaire || !questionnaire.clinical_distribution) return;
+                            const headers = ['Category', 'Student Count', 'Percentage (%)'];
+                            const rows = questionnaire.clinical_distribution.map((c: any) => [c.category, String(c.count), `${c.percentage}%`]);
+                            exportToCsv(headers, rows, 'clinical_sdq_distribution.csv');
+                          }} className="text-[10px] font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
+                            Export CSV
+                          </button>
+                        </div>
+                        <div className="h-[200px] w-full">
+                          {questionnaire.clinical_distribution && questionnaire.clinical_distribution.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={questionnaire.clinical_distribution}
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={50}
+                                  outerRadius={70}
+                                  paddingAngle={3}
+                                  dataKey="count"
+                                  nameKey="category"
+                                  label={({ name, percent }) => `${name.split(' ')[0]}: ${(percent * 100).toFixed(0)}%`}
+                                >
+                                  {questionnaire.clinical_distribution.map((_, index) => (
+                                    <Cell key={`cell-${index}`} fill={index === 0 ? 'var(--accent-emerald)' : index === 1 ? 'var(--accent-amber)' : 'var(--accent-rose)'} />
+                                  ))}
+                                </Pie>
+                                <Tooltip contentStyle={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--color-border)', color: '#fff' }} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">No clinical data.</div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card size="sm" className="lg:col-span-2">
+                      <CardContent>
+                        <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">SDQ Clinical Reference Table</h3>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Category</TableHead>
+                              <TableHead className="text-xs text-center">Score Range</TableHead>
+                              <TableHead className="text-xs text-center">Student Count</TableHead>
+                              <TableHead className="text-xs text-center">Cohort Percentage</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {questionnaire.clinical_distribution && questionnaire.clinical_distribution.map((row: any, idx: number) => (
+                              <TableRow key={idx}>
+                                <TableCell className="font-semibold text-xs flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: idx === 0 ? 'var(--accent-emerald)' : idx === 1 ? 'var(--accent-amber)' : 'var(--accent-rose)' }} />
+                                  {row.category.split(' ')[0]}
+                                </TableCell>
+                                <TableCell className="text-center text-xs font-mono">{row.category.split(' ').pop()}</TableCell>
+                                <TableCell className="text-center text-xs font-bold">{row.count}</TableCell>
+                                <TableCell className="text-center text-xs font-bold text-[var(--accent-violet)]">{row.percentage}%</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    </Card>
+                  </div>
 
                   {questionnaire.domain_scores && Object.keys(questionnaire.domain_scores).length > 0 && (
                     <Card size="sm">
@@ -906,102 +965,6 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
             </TabsContent>
             )}
 
-            {subTab === 'domains' && (
-            <TabsContent value="domains" className="animate-in fade-in duration-300 mt-0">
-              {tabLoading ? <SdgSkeleton /> : !questionnaire ? (
-                <div className="flex items-center justify-center min-h-[400px] text-[var(--text-muted)] text-sm">
-                  No data available for this section.
-                </div>
-              ) : (
-                <div className="flex flex-col gap-6 w-full">
-<div className="flex items-center justify-between mb-2">
-  <h2 className="text-lg font-bold text-[var(--text-primary)]">Behavioral Domain Summaries</h2>
-  <button onClick={() => {
-    if (!questionnaire) return;
-    const headers = ['Domain', 'Mean', 'SD', 'Min', 'Max'];
-    const rows = Object.keys(questionnaire.domain_scores || {}).map(k => {
-      const s = questionnaire.domain_scores[k];
-      return [k, String(s.mean), String(s.sd), String(s.min), String(s.max)];
-    });
-    exportToCsv(headers, rows, 'domain_summaries.csv');
-  }} className="text-xs font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
-    Export CSV
-  </button>
-</div>
-                  
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                    <Card size="sm" className="h-[350px]">
-                      <CardContent className="h-full flex items-center justify-center">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <RadarChart cx="50%" cy="50%" outerRadius="75%" data={
-                            Object.keys(questionnaire.domain_scores || {}).map(k => ({
-                              domain: k,
-                              score: questionnaire.domain_scores[k].mean
-                            }))
-                          }>
-                            <PolarGrid stroke="var(--color-border)" />
-                            <PolarAngleAxis dataKey="domain" stroke="var(--text-muted)" fontSize={11} />
-                            <PolarRadiusAxis angle={30} domain={[0, 10]} stroke="var(--text-secondary)" fontSize={10} />
-                            <Radar name="Mean Score" dataKey="score" stroke="var(--accent-violet)" fill="var(--accent-violet)" fillOpacity={0.3} />
-                            <Tooltip contentStyle={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--color-border)', color: '#fff' }} />
-                          </RadarChart>
-                        </ResponsiveContainer>
-                      </CardContent>
-                    </Card>
-
-                    <div className="flex flex-col gap-3 max-h-[500px] overflow-y-auto pr-1">
-                      {Object.keys(questionnaire.domain_scores || {}).map((dom, idx) => {
-                        const stat = questionnaire.domain_scores[dom];
-                        const gs = stat.gender_split;
-                        return (
-                          <div key={idx} className="rounded-xl border bg-card p-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <div>
-                                <h4 className="text-sm font-semibold text-[var(--text-primary)]">{dom} Scale</h4>
-                                <span className="text-xs text-[var(--text-muted)]">SD: {stat.sd} | Range: {stat.min} - {stat.max}</span>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-[10px] text-[var(--text-muted)] block uppercase">Mean Score</span>
-                                <span className="text-xl font-extrabold text-[var(--accent-violet)]">{stat.mean} <span className="text-xs text-[var(--text-muted)] font-normal">/10</span></span>
-                              </div>
-                            </div>
-                            {(() => {
-                              const genderItems = Array.isArray(gs) ? gs : Object.entries(gs || {}).map(([k, s]) => ({ gender: k, score: s as number }));
-                              if (!genderItems.length) return null;
-                              return (
-                                <div className="mt-2 pt-2 border-t border-[var(--color-border)]">
-                                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Gender Split</span>
-                                  <div className="flex gap-3 mt-1">
-                                    {genderItems.map((item: { gender: string; score: number }) => (
-                                      <div key={item.gender} className="flex-1">
-                                        <div className="flex justify-between text-xs mb-0.5">
-                                          <span className="text-[var(--text-secondary)]">{item.gender}</span>
-                                          <span className="font-semibold text-[var(--text-primary)]">{item.score}</span>
-                                        </div>
-                                        <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
-                                          <div
-                                            className="h-full rounded-full transition-all"
-                                            style={{
-                                              width: `${(item.score / 10) * 100}%`,
-                                              background: item.gender === 'M' ? 'var(--accent-cyan)' : item.gender === 'F' ? 'var(--accent-rose)' : 'var(--accent-amber)'
-                                            }}
-                                          />
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-            )}
 
             {subTab === 'academic' && (
             <TabsContent value="academic" className="animate-in fade-in duration-300 mt-0">
@@ -1086,25 +1049,50 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
 
                       <Card size="sm">
                         <CardContent>
-                          <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">Academic Score vs. Behavioral Difficulties</h3>
-                          <p className="text-xs text-[var(--text-secondary)] mb-5 leading-relaxed">
-                            By sorting students into quantiles based on their SDQ Total Difficulties score, we can observe the aggregate academic performance offset between low-difficulty and high-difficulty groups.
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-xs font-bold text-[var(--text-secondary)]">Academic Performance by SDQ Category</h3>
+                            <button onClick={() => {
+                              if (!questionnaire || !questionnaire.academic_impact) return;
+                              const headers = ['Category', 'Math Avg', 'Science Avg', 'Language Avg', 'Student Count'];
+                              const rows = Object.entries(questionnaire.academic_impact).map(([cat, d]: [string, any]) => [
+                                cat, `${d.math}%`, `${d.science}%`, `${d.language}%`, String(d.student_count)
+                              ]);
+                              exportToCsv(headers, rows, 'academic_performance_by_sdq.csv');
+                            }} className="text-[10px] font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
+                              Export CSV
+                            </button>
+                          </div>
+                          <p className="text-xs text-[var(--text-secondary)] mb-4 leading-relaxed">
+                            Observing student academic averages grouped by SDQ clinical bands helps trace the impact of behavioral difficulties on educational outcomes.
                           </p>
-                          
-                          {academic.top_vs_bottom_difficulties && academic.top_vs_bottom_difficulties.low_difficulty_group_academic ? (
-                            <div className="flex flex-col gap-3">
-                              <div className="rounded-xl border bg-card p-4 flex items-center justify-between">
-                                <span className="text-xs font-medium">Low Behavioral Difficulties (Bottom 10% SDQ)</span>
-                                <span className="text-lg font-extrabold text-[var(--accent-emerald)]">{academic.top_vs_bottom_difficulties.low_difficulty_group_academic}%</span>
-                              </div>
-                              <div className="rounded-xl border bg-card p-4 flex items-center justify-between">
-                                <span className="text-xs font-medium">High Behavioral Difficulties (Top 10% SDQ)</span>
-                                <span className="text-lg font-extrabold text-[var(--accent-rose)]">{academic.top_vs_bottom_difficulties.high_difficulty_group_academic}%</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="text-center p-6 text-[var(--text-muted)] text-xs italic">Insufficient data points to calculate quantile offset.</div>
-                          )}
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs">Category</TableHead>
+                                <TableHead className="text-center text-xs">Math</TableHead>
+                                <TableHead className="text-center text-xs">Science</TableHead>
+                                <TableHead className="text-center text-xs">Language</TableHead>
+                                <TableHead className="text-center text-xs">Students</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {questionnaire && questionnaire.academic_impact && Object.keys(questionnaire.academic_impact).length > 0 ? (
+                                Object.entries(questionnaire.academic_impact).map(([cat, d]: [string, any]) => (
+                                  <TableRow key={cat}>
+                                    <TableCell className="font-semibold text-xs">{cat}</TableCell>
+                                    <TableCell className="text-center text-xs"><ScoreBand value={d.math} /></TableCell>
+                                    <TableCell className="text-center text-xs"><ScoreBand value={d.science} /></TableCell>
+                                    <TableCell className="text-center text-xs"><ScoreBand value={d.language} /></TableCell>
+                                    <TableCell className="text-center text-xs font-bold">{d.student_count}</TableCell>
+                                  </TableRow>
+                                ))
+                              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={5} className="text-center text-xs text-[var(--text-muted)] py-4">No data available.</TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
                         </CardContent>
                       </Card>
                     </div>
@@ -1140,154 +1128,6 @@ psych::alpha(data[, paste0("q", 1:5)]) # Prosocial
             </TabsContent>
             )}
 
-            {subTab === 'correlations' && (
-            <TabsContent value="correlations" className="animate-in fade-in duration-300 mt-0">
-              {tabLoading ? <CorrelationsSkeleton /> : !correlations ? (
-                <div className="flex items-center justify-center min-h-[400px] text-[var(--text-muted)] text-sm">
-                  No data available for this section.
-                </div>
-              ) : (
-                <div className="flex flex-col gap-6 w-full">
-<div className="flex items-center justify-between mb-2">
-  <h2 className="text-lg font-bold text-[var(--text-primary)]">Behavioral Domains vs. Academic Subject Correlations</h2>
-  <button onClick={() => {
-    if (!correlations || !correlations.correlation_matrix) return;
-    const matrix = correlations.correlation_matrix;
-    const metrics = Object.keys(matrix[0] || {}).filter(k => k !== 'domain');
-    const headers = ['Domain', ...metrics];
-    const rows = matrix.map((row: any) => [row.domain, ...metrics.map(m => String(row[m] || '0'))]);
-    exportToCsv(headers, rows, 'correlation_matrix.csv');
-  }} className="text-xs font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
-    Export CSV
-  </button>
-</div>
-                  <p className="text-xs text-[var(--text-secondary)] mb-5 leading-relaxed">
-                    This matrix displays the Pearson Correlation Coefficients ($r$) between computed behavioral domain scores and academic metrics.
-                    Values range from $-1.0$ (strong negative correlation) to $+1.0$ (strong positive correlation), with cells colored according to correlation direction and strength.
-                  </p>
-
-                  <div className="flex items-center gap-4 text-xs text-[var(--text-secondary)] mb-2">
-                    <span>Strong Negative</span>
-                    <div className="flex-1 h-3 rounded-full" style={{ background: 'linear-gradient(to right, var(--accent-rose), #fff, var(--accent-emerald))' }} />
-                    <span>Strong Positive</span>
-                  </div>
-                  
-                  <Card size="sm">
-                    <CardContent>
-                      {correlations.correlation_matrix && correlations.correlation_matrix.length > 0 ? (
-                        <div className="overflow-x-auto">
-                          <div className="grid gap-2" style={{
-                            gridTemplateColumns: `140px repeat(${Object.keys(correlations.correlation_matrix[0]).filter(k => k !== 'domain').length}, minmax(90px, 1fr))`,
-                            minWidth: '500px'
-                          }}>
-                            {(() => {
-                              const domains = correlations.correlation_matrix;
-                              const metrics = Object.keys(domains[0]).filter(k => k !== 'domain');
-                              const headerLabels = metrics.map(k => k.replace('%', '%').replace(/_/g, ' '));
-                              
-                              const getHeatStyle = (val: number) => {
-                                if (val === 0) return { background: 'var(--bg-primary)', color: 'var(--text-muted)' };
-                                const abs = Math.abs(val);
-                                const intensity = Math.min(abs, 1);
-                                const color = val > 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)';
-                                const bg = `color-mix(in srgb, ${color} ${intensity * 70 + 10}%, var(--bg-secondary))`;
-                                const textColor = intensity > 0.45 ? '#fff' : 'var(--text-primary)';
-                                return { background: bg, color: textColor };
-                              };
-
-                              return (
-                                <>
-                                  <div className="font-bold text-xs text-[var(--text-muted)] uppercase tracking-wider p-2">Domain / Subject</div>
-                                  {headerLabels.map((h, idx) => (
-                                    <div key={idx} className="font-bold text-xs text-[var(--text-muted)] uppercase tracking-wider text-center p-2">
-                                      {h}
-                                    </div>
-                                  ))}
-                                  {domains.map((row: any, i: number) => (
-                                    <div key={i} className="contents">
-                                      <div key={`label-${i}`} className="font-semibold text-xs text-[var(--text-primary)] p-2 flex items-center">
-                                        {row.domain}
-                                      </div>
-                                      {metrics.map((metric, j) => {
-                                        const val = row[metric] || 0;
-                                        const style = getHeatStyle(val);
-                                        return (
-                                          <div
-                                            key={`cell-${i}-${j}`}
-                                            className="rounded-md text-center font-mono text-sm font-bold p-2 transition-all duration-150 cursor-default hover:scale-105 hover:shadow-md"
-                                            style={style}
-                                            title={`${row.domain} vs ${metric}: ${val}`}
-                                          >
-                                            {val}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ))}
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-center p-8 text-[var(--text-muted)] text-sm">No correlation data available.</div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
-            </TabsContent>
-            )}
-
-            {subTab === 'outliers' && (
-            <TabsContent value="outliers" className="animate-in fade-in duration-300 mt-0">
-              {tabLoading ? <OutliersSkeleton /> : !outliers ? (
-                <div className="flex items-center justify-center min-h-[400px] text-[var(--text-muted)] text-sm">
-                  No data available for this section.
-                </div>
-              ) : (
-                <div className="flex flex-col gap-6 w-full">
-<div className="flex items-center justify-between mb-2">
-  <h2 className="text-lg font-bold text-[var(--text-primary)]">Anomalous Profile & Outlier Detection</h2>
-  <button onClick={() => {
-    if (!outliers || !outliers.outliers) return;
-    const headers = ['Class', 'Roll Number', 'Gender', 'Metric Type', 'Value'];
-    const rows = outliers.outliers.map((o: any) => [o.class, o.roll_number, o.gender, o.metric_type, o.value]);
-    exportToCsv(headers, rows, 'outliers.csv');
-  }} className="text-xs font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
-    Export CSV
-  </button>
-</div>
-                  <p className="text-xs text-[var(--text-secondary)] mb-5 leading-relaxed">
-                    Automatic queries look for students showing anomalous patterns, such as highly elevated hyperactivity/distress metrics coupled with top class rankings or marks. These exceptions are critical for targeted child support interventions.
-                  </p>
-                  
-                  <div className="flex flex-col gap-3">
-                    {outliers.outliers && outliers.outliers.length > 0 ? (
-                      outliers.outliers.map((out: any, i: number) => (
-                        <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border bg-[var(--bg-secondary)] border-[var(--color-border)]">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="secondary">Class {out.class}</Badge>
-                              <span className="text-xs text-[var(--text-muted)]">Roll: {out.roll_number} ({out.gender})</span>
-                            </div>
-                            <h4 className="text-sm font-semibold text-[var(--text-primary)] mt-1.5">{out.metric_type}</h4>
-                          </div>
-                          <div className="text-right">
-                            <span className="font-mono text-xs font-bold text-[var(--accent-violet)] bg-[var(--bg-primary)] px-3 py-1.5 rounded border border-[var(--color-border)]">
-                              {out.value}
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-center p-12 text-[var(--text-muted)]">No anomalous student profiles detected in current cohort.</div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-            )}
 
             {subTab === 'data-quality' && (
             <TabsContent value="data-quality" className="animate-in fade-in duration-300 mt-0">

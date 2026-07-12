@@ -329,25 +329,24 @@ def resolve_page_selection_marks(
             if cell and ":selected:" in cell.get("content", ""):
                 selected_cols.append(col)
                 
-        if len(selected_cols) > 1:
-            selected_col = selected_cols
-            conf = 0.95  # Azure DI confidently resolved multiple selection ticks!
-        elif len(selected_cols) == 1:
+        if len(selected_cols) == 1:
             selected_col = selected_cols[0]
             conf = 0.98
-            
-        # 2. Pixel density fallback
-        if not selected_cols and page_img is not None:
+        else:
+            # 2. Pixel density fallback (triggered if Azure found NO selection OR if it found MULTIPLE selections)
+            selected_col = 0
+            conf = 0.0
             ratios = {}
-            for col in (1, 2, 3):
-                cell = cells.get(col)
-                if cell:
-                    regions = cell.get("boundingRegions", [])
-                    if regions:
-                        c_poly = regions[0].get("polygon", [])
-                        if c_poly and len(c_poly) >= 8:
-                            ratio = _check_checkbox_density(page_img, c_poly, page_width, page_height, unit)
-                            ratios[col] = ratio
+            if page_img is not None:
+                for col in (1, 2, 3):
+                    cell = cells.get(col)
+                    if cell:
+                        regions = cell.get("boundingRegions", [])
+                        if regions:
+                            c_poly = regions[0].get("polygon", [])
+                            if c_poly and len(c_poly) >= 8:
+                                ratio = _check_checkbox_density(page_img, c_poly, page_width, page_height, unit)
+                                ratios[col] = ratio
             if len(ratios) == 3:
                 r1, r2, r3 = ratios[1], ratios[2], ratios[3]
                 max_r = max(r1, r2, r3)
@@ -365,6 +364,11 @@ def resolve_page_selection_marks(
                 else:
                     selected_col = 0
                     conf = 0.0
+            else:
+                # If local density calculation is not possible (e.g. missing page_img), preserve Azure's native multi-selection state if any
+                if len(selected_cols) > 1:
+                    selected_col = selected_cols
+                    conf = 0.95
                     
         # 3. Pure local static template fallback (if Azure native and cell density both failed to detect any tick)
         if selected_col == 0 and page_img is not None:
