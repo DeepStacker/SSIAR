@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Query, Request, UploadFile, File, HTTPEx
 from fastapi.responses import Response
 from app.auth import require_auth
 from app.core.response import APIResponse
-from app.models import RegisterRequest, LoginRequest, VerifyDataRequest, BulkRequest, BatchFolderRequest
+from app.models import RegisterRequest, LoginRequest, VerifyDataRequest, BulkRequest, BatchFolderRequest, UpdateRoleRequest, UpdateUserRequest, AdminResetPasswordRequest
 
 logger = logging.getLogger("v3_router")
 
@@ -65,6 +65,12 @@ from app.api.v1.auth import (
     register as _auth_register,
     login as _auth_login,
     refresh_token as _auth_refresh,
+    list_users as _auth_list_users,
+    create_user as _auth_create_user,
+    update_user as _auth_update_user,
+    update_user_role as _auth_update_user_role,
+    admin_reset_password as _auth_admin_reset_password,
+    delete_user as _auth_delete_user,
 )
 
 
@@ -81,6 +87,36 @@ async def v3_auth_login(payload: LoginRequest):
 @v3_router.post("/auth/refresh", dependencies=[_Auth])
 async def v3_auth_refresh(request: Request):
     return await _call_async(_auth_refresh, request)
+
+
+@v3_router.get("/auth/users", dependencies=[_Auth])
+async def v3_auth_list_users(request: Request):
+    return await _call_async(_auth_list_users, request)
+
+
+@v3_router.put("/auth/users/{user_id}/role", dependencies=[_Auth])
+async def v3_auth_update_user_role(user_id: str, payload: UpdateRoleRequest, request: Request):
+    return await _call_async(_auth_update_user_role, user_id, payload, request)
+
+
+@v3_router.delete("/auth/users/{user_id}", dependencies=[_Auth])
+async def v3_auth_delete_user(user_id: str, request: Request):
+    return await _call_async(_auth_delete_user, user_id, request)
+
+
+@v3_router.post("/auth/users", dependencies=[_Auth])
+async def v3_auth_create_user(payload: RegisterRequest, request: Request):
+    return await _call_async(_auth_create_user, payload, request)
+
+
+@v3_router.put("/auth/users/{user_id}", dependencies=[_Auth])
+async def v3_auth_update_user(user_id: str, payload: UpdateUserRequest, request: Request):
+    return await _call_async(_auth_update_user, user_id, payload, request)
+
+
+@v3_router.post("/auth/users/{user_id}/reset-password", dependencies=[_Auth])
+async def v3_auth_reset_password(user_id: str, payload: AdminResetPasswordRequest, request: Request):
+    return await _call_async(_auth_admin_reset_password, user_id, payload, request)
 
 
 # ---------------------------------------------------------------------------

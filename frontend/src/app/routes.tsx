@@ -1,5 +1,5 @@
 import { lazy, Suspense, memo, useRef } from 'react';
-import { Loader2, FileText, Clock, AlertTriangle, Check, X, RefreshCw, Upload, Eye, Activity, Users } from 'lucide-react';
+import { Loader2, FileText, Clock, AlertTriangle, Check, X, RefreshCw, Upload, Eye, Activity, Users, ShieldOff } from 'lucide-react';
 import type { Document } from '@/api';
 import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '@/api';
 import { Card } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import { useDocument } from '@/context/DocumentContext';
 import { useUI } from '@/context/UIContext';
 import { useReview } from '@/context/ReviewContext';
 import { useSelection } from '@/context/SelectionContext';
+import { useAuth } from '@/context/AuthContext';
 import { StatCards } from '@/features/analytics/StatCards';
 import { UploadZone } from '@/features/documents/UploadZone';
 import { DocumentTable } from '@/features/documents/DocumentTable';
@@ -47,10 +48,11 @@ interface Props {
 
 function LoadingFallback() {
   return (
-    <div className="flex items-center justify-center h-full">
-      <Card className="flex flex-col items-center justify-center p-8 min-h-[200px]">
-        <Loader2 size={32} className="animate-spin text-[var(--accent-violet)]" />
-      </Card>
+    <div className="flex items-center justify-center py-16">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 size={24} className="animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
     </div>
   );
 }
@@ -60,6 +62,7 @@ export function AppContent(props: Props) {
   const ui = useUI();
   const review = useReview();
   const sel = useSelection();
+  const { role } = useAuth();
   const quickUploadRef = useRef<HTMLInputElement>(null);
 
   if (doc.selectedDoc) {
@@ -171,6 +174,21 @@ export function AppContent(props: Props) {
   }
 
   if (ui.view === 'users') {
+    if (role !== 'admin') {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <Card className="flex flex-col items-center justify-center p-8 min-h-[200px] max-w-md text-center gap-4">
+            <div className="rounded-full bg-red-50 p-3 dark:bg-red-900/20">
+              <ShieldOff className="h-8 w-8 text-red-500" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">Access Denied</h3>
+              <p className="text-xs text-muted-foreground mt-1">You need admin privileges to manage users.</p>
+            </div>
+          </Card>
+        </div>
+      );
+    }
     return <UsersView />;
   }
 
@@ -193,12 +211,12 @@ export function AppContent(props: Props) {
       />
 
       <div className="flex gap-3 mb-6">
-        <button onClick={() => quickUploadRef.current?.click()} className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent-violet)] text-white rounded-lg shadow-sm hover:shadow-md transition-all text-sm font-semibold">
+        <Button onClick={() => quickUploadRef.current?.click()}>
           <Upload size={16} /> Upload Documents
-        </button>
-        <button onClick={() => ui.setActiveTab('needs_review')} className="flex items-center gap-2 px-4 py-2.5 glass-card rounded-lg hover:shadow-md transition-all text-sm font-medium text-[var(--text-secondary)]">
+        </Button>
+        <Button variant="outline" onClick={() => ui.setActiveTab('needs_review')}>
           <Eye size={16} /> Review Pending ({needsReviewCount})
-        </button>
+        </Button>
         <input ref={quickUploadRef} type="file" multiple accept=".pdf" className="hidden" onChange={e => { if (e.target.files?.length) props.onUpload(Array.from(e.target.files)); e.target.value = ''; }} />
       </div>
 
@@ -240,10 +258,10 @@ export function AppContent(props: Props) {
       />
 
       <div className="sticky bottom-0 left-0 right-0 z-20 mt-4">
-        <div className="glass-card rounded-lg px-5 py-2.5 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-3 text-[var(--text-muted)]">
+        <div className="rounded-lg border border-border bg-card px-5 py-2.5 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-3 text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <Activity size={13} className={processingCount > 0 ? 'text-[var(--accent-amber)] animate-pulse' : 'text-[var(--text-muted)]'} />
+              <Activity size={13} className={processingCount > 0 ? 'text-[var(--accent-amber)] animate-pulse' : 'text-muted-foreground'} />
               {processingCount > 0 ? (
                 <span className="font-medium text-[var(--accent-amber)]">{processingCount} processing</span>
               ) : (
@@ -256,9 +274,9 @@ export function AppContent(props: Props) {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[var(--text-muted)]">{doc.documents.length} total docs</span>
+            <span className="text-muted-foreground">{doc.documents.length} total docs</span>
             {doc.loading && (
-              <span className="flex items-center gap-1 text-[var(--accent-violet)] font-medium">
+              <span className="flex items-center gap-1 text-primary font-medium">
                 <Loader2 size={12} className="animate-spin" />Syncing...
               </span>
             )}

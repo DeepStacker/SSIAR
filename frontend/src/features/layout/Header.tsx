@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Moon, Sun, LogOut, Printer, Settings, Key, ChevronRight, Home } from 'lucide-react';
+import { Moon, Sun, LogOut, Settings, Key, ChevronRight, Home, Menu } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import { useUI } from '@/context/UIContext';
 import type { ViewMode } from '@/api';
 import { Button } from '@/components/ui/button';
 import { API_BASE, extractErrorMessage } from '@/api';
@@ -24,6 +25,7 @@ export const Header: React.FC<Props> = ({ view }) => {
   const { dark, toggle } = useTheme();
   const { email, token, logout } = useAuth();
   const { show: showToast } = useToast();
+  const ui = useUI();
 
   const [showSettings, setShowSettings] = useState(false);
   const [oldPassword, setOldPassword] = useState('');
@@ -61,76 +63,82 @@ export const Header: React.FC<Props> = ({ view }) => {
 
   return (
     <>
-      <header className="h-14 glass-card border-b border-[var(--color-border)] flex items-center justify-between px-6 shrink-0">
-        <div className="flex items-center gap-2 text-xs">
-          <button
-            onClick={() => view !== 'dashboard' && (window.location.hash = '')}
-            className="flex items-center gap-1 text-[var(--text-muted)] hover:text-[var(--accent-violet)] transition-colors"
+      <header className="h-14 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="xl:hidden"
+            onClick={() => ui.setSidebarMobileOpen(true)}
+            aria-label="Open menu"
           >
-            <Home size={12} />
-          </button>
-          <ChevronRight size={10} className="text-[var(--text-muted)]" />
-          <span className="font-semibold text-[var(--text-secondary)] tracking-wide">
-            {BREADCRUMB_LABELS[view] || view}
-          </span>
+            <Menu size={18} />
+          </Button>
+          <div className="hidden xl:flex items-center gap-2 text-xs">
+            <button
+              onClick={() => view !== 'dashboard' && (window.location.hash = '')}
+              className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors"
+            >
+              <Home size={12} />
+            </button>
+            <ChevronRight size={10} className="text-muted-foreground" />
+            <span className="font-semibold text-foreground tracking-wide">
+              {BREADCRUMB_LABELS[view] || view}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {view === 'analytics' && (
-            <Button variant="outline" size="sm" onClick={() => window.print()} aria-label="Print analytics report" className="no-print gap-1.5">
-              <Printer size={14} /> Print
-            </Button>
-          )}
-          <div className="flex items-center gap-2 ml-1 pl-2 border-l border-[var(--color-border)]">
+          <div className="flex items-center gap-2 ml-1 pl-2 border-l border-border">
             <div
-              className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--accent-violet)] to-[var(--accent-cyan)] flex items-center justify-center text-[10px] font-extrabold text-white shadow-sm"
+              className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-[10px] font-semibold text-primary-foreground"
               title={email || 'User'}
               aria-label={`Signed in as ${email}`}
             >
               {initials}
             </div>
-            <span className="hidden sm:inline text-[11px] text-[var(--text-muted)] max-w-[120px] truncate">
+            <span className="hidden sm:inline text-[11px] text-muted-foreground max-w-[120px] truncate">
               {email}
             </span>
           </div>
-          <div className="w-px h-5 bg-[var(--color-border)]" />
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowSettings(!showSettings)} aria-label="Account Settings" title="Change Password">
-            <Settings size={14} className="text-[var(--text-muted)]" />
+          <div className="w-px h-5 bg-border" />
+          <Button variant="ghost" size="icon-sm" onClick={() => setShowSettings(!showSettings)} aria-label="Account Settings" title="Change Password">
+            <Settings size={14} />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggle} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
-            {dark ? <Sun size={14} className="text-[var(--text-muted)]" /> : <Moon size={14} className="text-[var(--text-muted)]" />}
+          <Button variant="ghost" size="icon-sm" onClick={toggle} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+            {dark ? <Sun size={14} /> : <Moon size={14} />}
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={logout} aria-label="Sign out" title="Sign out">
-            <LogOut size={14} className="text-[var(--text-muted)]" />
+          <Button variant="ghost" size="icon-sm" onClick={logout} aria-label="Sign out" title="Sign out">
+            <LogOut size={14} />
           </Button>
         </div>
       </header>
 
       {showSettings && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card border rounded-xl shadow-lg w-full max-w-sm p-6 relative glass-card">
-            <h3 className="text-sm font-bold text-foreground mb-4 flex items-center gap-2">
-              <Key size={16} className="text-[var(--accent-violet)]" />
+        <div className="fixed inset-0 bg-background/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-lg w-full max-w-sm p-6">
+            <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+              <Key size={16} />
               Change Password
             </h3>
             <form onSubmit={handleChangePassword} className="space-y-4 text-xs">
               <div className="space-y-1.5">
-                <label className="text-[var(--text-muted)] font-semibold">Current Password</label>
+                <label className="text-muted-foreground font-medium">Current Password</label>
                 <input
                   type="password"
                   value={oldPassword}
                   onChange={e => setOldPassword(e.target.value)}
-                  className="w-full bg-[var(--bg-highlight)]/30 border border-[var(--color-border)] rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-[var(--accent-violet)] focus:ring-1 focus:ring-[var(--accent-violet)]/30 transition-all"
+                  className="w-full border border-border rounded-lg px-3 py-2 text-foreground bg-background focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
                   required
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[var(--text-muted)] font-semibold">New Password</label>
+                <label className="text-muted-foreground font-medium">New Password</label>
                 <input
                   type="password"
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
-                  className="w-full bg-[var(--bg-highlight)]/30 border border-[var(--color-border)] rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-[var(--accent-violet)] focus:ring-1 focus:ring-[var(--accent-violet)]/30 transition-all"
+                  className="w-full border border-border rounded-lg px-3 py-2 text-foreground bg-background focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
                   required
                   minLength={8}
                 />
@@ -139,7 +147,7 @@ export const Header: React.FC<Props> = ({ view }) => {
                 <Button variant="outline" type="button" onClick={() => setShowSettings(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={loading} className="bg-[var(--accent-violet)] hover:bg-[var(--accent-violet)]/90">
+                <Button type="submit" disabled={loading}>
                   {loading ? 'Updating...' : 'Update Password'}
                 </Button>
               </div>

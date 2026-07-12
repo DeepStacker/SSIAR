@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { exportToCsv } from '@/lib/utils';
 import { AcademicSkeleton, ScoreBand, formatNumber } from './components';
@@ -33,7 +34,7 @@ export function AcademicSection({ academic, questionnaire, tabLoading }: Props) 
     <div className="flex flex-col gap-6 w-full">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-lg font-bold text-[var(--text-primary)]">Academic Subject Averages</h2>
-        <button onClick={() => {
+        <Button variant="outline" size="xs" onClick={() => {
           if (!academic) return;
           const headers = ['Subject', 'Average'];
           const rows = Object.entries(academic.averages || {}).map(([k, v]) => [k, String(v ?? '')]);
@@ -43,9 +44,9 @@ export function AcademicSection({ academic, questionnaire, tabLoading }: Props) 
             rows.push([r.class, String(r.Mathematics ?? ''), String(r.Science ?? ''), String(r.Language ?? '')])
           );
           exportToCsv(headers, rows, 'academic_averages.csv');
-        }} className="text-xs font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
+        }}>
           Export CSV
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -102,16 +103,16 @@ export function AcademicSection({ academic, questionnaire, tabLoading }: Props) 
             <CardContent>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xs font-bold text-[var(--text-secondary)]">Academic Performance by SDQ Category</h3>
-                <button onClick={() => {
+                <Button variant="outline" size="xs" onClick={() => {
                   if (!questionnaire || !questionnaire.academic_impact) return;
                   const headers = ['Category', 'Math Avg', 'Science Avg', 'Language Avg', 'Student Count'];
                   const rows = Object.entries(questionnaire.academic_impact).map(([cat, d]: [string, any]) => [
                     cat, `${d.math}%`, `${d.science}%`, `${d.language}%`, formatNumber(d.student_count)
                   ]);
                   exportToCsv(headers, rows, 'academic_performance_by_sdq.csv');
-                }} className="text-[10px] font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
+                }}>
                   Export CSV
-                </button>
+                </Button>
               </div>
               <p className="text-xs text-[var(--text-secondary)] mb-4 leading-relaxed">
                 Observing student academic averages grouped by SDQ clinical bands helps trace the impact of behavioral difficulties on educational outcomes.

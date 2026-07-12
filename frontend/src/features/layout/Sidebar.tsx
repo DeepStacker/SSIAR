@@ -1,9 +1,19 @@
 import React from 'react';
-import { LayoutDashboard, FileText, BarChart3, AlertOctagon, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import {
+  AlertOctagon,
+  BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  LayoutDashboard,
+  Users,
+  X,
+} from 'lucide-react';
 import type { ViewMode } from '@/api';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { useDocument } from '@/context/DocumentContext';
+import { AppLogo } from '@/components/app/AppLogo';
 
 const navItems: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
@@ -17,9 +27,14 @@ interface Props {
   onViewChange: (v: ViewMode) => void;
   collapsed: boolean;
   onToggle: () => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-export const Sidebar: React.FC<Props> = ({ view, onViewChange, collapsed, onToggle }) => {
+export const Sidebar: React.FC<Props> = ({
+  view, onViewChange, collapsed, onToggle,
+  mobileOpen = false, onMobileClose,
+}) => {
   const { role } = useAuth();
   const { needsReview, queueStatus, documents } = useDocument();
 
@@ -57,26 +72,30 @@ export const Sidebar: React.FC<Props> = ({ view, onViewChange, collapsed, onTogg
     return null;
   };
 
-  return (
-    <aside className={cn(
-      "border-r border-[var(--color-border)] bg-[var(--bg-card)] flex flex-col py-0 shrink-0 min-h-0 transition-all duration-300",
-      "backdrop-blur-xl",
-      collapsed ? "w-16" : "w-44"
-    )}>
+  const handleViewChange = (v: ViewMode) => {
+    onViewChange(v);
+    onMobileClose?.();
+  };
+
+  const renderContent = () => (
+    <>
       <div className={cn(
-        "flex items-center shrink-0 border-b border-[var(--color-border)]",
+        "flex items-center shrink-0 border-b border-border",
         collapsed ? "justify-center h-14 px-2" : "px-5 h-14 gap-2.5"
       )}>
-        <div className="relative shrink-0">
-          <img src="/logo.png" alt="SSIAR" className="h-7 w-auto relative z-10" />
-          {!collapsed && (
-            <div className="absolute -inset-1 bg-gradient-to-r from-[var(--accent-violet)]/20 to-transparent rounded-full blur-sm" />
-          )}
-        </div>
-        {!collapsed && (
-          <span className="font-extrabold text-sm tracking-tight bg-gradient-to-r from-[var(--accent-violet)] to-[var(--accent-cyan)] bg-clip-text text-transparent">
-            SSIAR
-          </span>
+        {onMobileClose && (
+          <button
+            onClick={onMobileClose}
+            className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground xl:hidden"
+            aria-label="Close sidebar"
+          >
+            <X size={16} />
+          </button>
+        )}
+        {collapsed ? (
+          <AppLogo compact />
+        ) : (
+          <AppLogo subtitle="Operations workspace" />
         )}
       </div>
 
@@ -87,22 +106,18 @@ export const Sidebar: React.FC<Props> = ({ view, onViewChange, collapsed, onTogg
           return (
             <div key={item.id} className="relative">
               <button
-                onClick={() => onViewChange(item.id)}
+                onClick={() => handleViewChange(item.id)}
                 className={cn(
-                  "flex items-center rounded-lg text-xs font-medium transition-all duration-200 w-full group relative",
+                  "flex items-center rounded-lg text-xs font-medium transition-colors w-full group relative",
                   collapsed ? "justify-center px-0 py-2.5" : "gap-2.5 px-3 py-2 text-left",
                   isActive
-                    ? "bg-[var(--bg-highlight)] text-[var(--accent-violet)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-highlight)]/50"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                 )}
                 aria-current={isActive ? 'page' : undefined}
               >
-                {isActive && (
-                  <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-[var(--accent-violet)]" />
-                )}
                 <span className={cn(
-                  "transition-colors",
-                  isActive ? "text-[var(--accent-violet)]" : "text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]"
+                  isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
                 )}>
                   {item.icon}
                 </span>
@@ -120,13 +135,13 @@ export const Sidebar: React.FC<Props> = ({ view, onViewChange, collapsed, onTogg
       </nav>
 
       <div className={cn(
-        "border-t border-[var(--color-border)]",
+        "border-t border-border",
         collapsed ? "p-2 flex justify-center" : "p-2"
       )}>
         <button
           onClick={onToggle}
           className={cn(
-            "flex items-center justify-center rounded-lg py-2 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-highlight)]/50 transition-all duration-200",
+            "flex items-center justify-center rounded-lg py-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors",
             collapsed ? "w-full" : "w-full gap-1.5 text-[10px]"
           )}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -134,6 +149,29 @@ export const Sidebar: React.FC<Props> = ({ view, onViewChange, collapsed, onTogg
           {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={14} /> Collapse</>}
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      <aside className={cn(
+        "no-print border-r border-border bg-card flex flex-col py-0 shrink-0 min-h-0 transition-all duration-300",
+        "hidden xl:flex",
+        collapsed ? "w-16" : "w-44"
+      )}>
+        {renderContent()}
+      </aside>
+
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 xl:hidden">
+          <div className="absolute inset-0 bg-black/50" onClick={onMobileClose} />
+          <aside className={cn(
+            "relative h-full w-56 flex flex-col py-0 shrink-0 min-h-0 border-r border-border bg-card"
+          )}>
+            {renderContent()}
+          </aside>
+        </div>
+      )}
+    </>
   );
 };

@@ -1,12 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from app.database import get_db_connection, put_conn, USE_POSTGRES
 from app.auth import hash_password, verify_password, create_jwt, require_auth, get_current_user_id, get_current_email, get_current_role
-from app.models import RegisterRequest, LoginRequest, ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest, UpdateRoleRequest
+from app.models import RegisterRequest, LoginRequest, ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest, UpdateRoleRequest, UpdateUserRequest, AdminResetPasswordRequest
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 import asyncio
 import secrets
+import uuid
 from datetime import datetime, timedelta
 
 @router.post("/register")
@@ -274,5 +275,81 @@ async def delete_user(user_id: str, request: Request):
         )
         conn.commit()
         return {"message": "User deleted successfully"}
+    finally:
+        put_conn(conn)
+
+
+@router.post("/users")
+async def create_user(payload: RegisterRequest, request: Request):
+    require_auth(request)
+    if get_current_role() != "admin":
+        raise HTTPException(status_code=403, detail="Admin permissions required")
+
+    email = (payload.email or "").strip().lower()
+    password = payload.password or ""
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Valid email required")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE email = %s" if USE_POSTGRES else "SELECT id FROM users WHERE email = ?", (email,))
+        if cur.fetchone():
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        user_id = uuid.uuid4().hex
+        pw_hash = hash_password(password)
+        cur.execute(
+            "INSERT INTO users (id, email, password_hash, role, created_at) VALUES (%s, %s, %s, %s, %s)" if USE_POSTGRES else
+            "INSERT INTO users (id, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, email, pw_hash, "user", datetime.now().isoformat())
+        )
+        conn.commit()
+        return {"user_id": user_id, "email": email, "role": "user", "message": "User created"}
+    finally:
+        put_conn(conn)
+
+
+@router.put("/users/{user_id}")
+async def update_user(user_id: str, payload: UpdateUserRequest, request: Request):
+    require_auth(request)
+    if get_current_role() != "admin":
+        raise HTTPException(status_code=403, detail="Admin permissions required")
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        if payload.email:
+            email = payload.email.strip().lower()
+            cur.execute("SELECT id FROM users WHERE email = %s AND id != %s" if USE_POSTGRES else "SELECT id FROM users WHERE email = ? AND id != ?", (email, user_id))
+            if cur.fetchone():
+                raise HTTPException(status_code=400, detail="Email already in use")
+            cur.execute("UPDATE users SET email = %s WHERE id = %s" if USE_POSTGRES else "UPDATE users SET email = ? WHERE id = ?", (email, user_id))
+        conn.commit()
+        return {"message": "User updated"}
+    finally:
+        put_conn(conn)
+
+
+@router.post("/users/{user_id}/reset-password")
+async def admin_reset_password(user_id: str, payload: AdminResetPasswordRequest, request: Request):
+    require_auth(request)
+    if get_current_role() != "admin":
+        raise HTTPException(status_code=403, detail="Admin permissions required")
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE id = %s" if USE_POSTGRES else "SELECT id FROM users WHERE id = ?", (user_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="User not found")
+        pw_hash = hash_password(payload.new_password)
+        cur.execute("UPDATE users SET password_hash = %s WHERE id = %s" if USE_POSTGRES else "UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, user_id))
+        conn.commit()
+        return {"message": "Password reset successfully"}
     finally:
         put_conn(conn)

@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { exportToCsv } from '@/lib/utils';
 import { DemographicsSkeleton, formatNumber } from './components';
@@ -31,7 +32,7 @@ export function DemographicsSection({ demographics, questionnaire, tabLoading }:
     <div className="flex flex-col gap-6 w-full">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-lg font-bold text-[var(--text-primary)]">Student Cohort Demographics</h2>
-        <button onClick={() => {
+        <Button variant="outline" size="xs" onClick={() => {
           if (!demographics) return;
           const headers = ['Class', 'Count'];
           const rows = (demographics.class_distribution || []).map((d: any) => [d.class, String(d.count)]);
@@ -42,9 +43,9 @@ export function DemographicsSection({ demographics, questionnaire, tabLoading }:
           rows.push(['Age', 'Count']);
           (demographics.age_distribution || []).forEach((d: any) => rows.push([d.age.replace(' Years',''), String(d.count)]));
           exportToCsv(headers, rows, 'demographics.csv');
-        }} className="text-xs font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
+        }}>
           Export CSV
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -113,7 +114,7 @@ export function DemographicsSection({ demographics, questionnaire, tabLoading }:
           <CardContent>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xs font-bold text-[var(--text-secondary)]">Cohort Research Summary Matrix</h3>
-              <button onClick={() => {
+              <Button variant="outline" size="xs" onClick={() => {
                 if (!questionnaire || !questionnaire.cohort_summary) return;
                 const headers = ['Class', 'Cohort Size', 'Consent Rate (%)', 'Mean SDQ Total Difficulties', 'Mean Prosocial', 'Mean Math', 'Mean Science', 'Mean Language'];
                 const rows = questionnaire.cohort_summary.map((r: any) => [
@@ -121,9 +122,9 @@ export function DemographicsSection({ demographics, questionnaire, tabLoading }:
                   String(r.mean_prosocial), `${r.mean_math}%`, `${r.mean_science}%`, `${r.mean_language}%`
                 ]);
                 exportToCsv(headers, rows, 'cohort_research_summary.csv');
-              }} className="text-[10px] font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
+              }}>
                 Export Matrix CSV
-              </button>
+              </Button>
             </div>
             <div className="overflow-x-auto">
               <Table>

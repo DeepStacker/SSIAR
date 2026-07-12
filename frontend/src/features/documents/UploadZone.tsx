@@ -89,7 +89,7 @@ export const UploadZone: React.FC<Props> = ({
     <Card
       className={`mb-6 border-2 border-dashed rounded-2xl p-6 transition-all duration-300 cursor-pointer ${
         uploadSuccess
-          ? 'border-emerald-500/60 bg-emerald-500/[0.04] shadow-[0_0_25px_rgba(16,185,129,0.08)] accept-flash'
+          ? 'border-emerald-500/60 bg-emerald-500/[0.04] shadow-[0_0_25px_rgba(16,185,129,0.08)]'
           : isDragOver
           ? 'border-indigo-500 bg-indigo-500/5 shadow-[0_0_20px_rgba(99,102,241,0.08)] scale-[1.02]'
           : 'border-border/60 bg-[var(--bg-secondary)]/40 hover:border-indigo-500/30 hover:bg-[var(--bg-secondary)]/60'

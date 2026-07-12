@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { exportToCsv } from '@/lib/utils';
 import { DonutChart, Sparkline, TrendBadge, ExecutiveSkeleton, formatNumber } from './components';
 import { VerticalBarChart, HorizontalBarChart, LineChartComponent, DonutPieChart } from './charts';
@@ -14,16 +15,15 @@ interface Props {
   genderFilter: string;
 }
 
-function StatCard({ label, value, trend, accent, delay = 0 }: { label: string; value: string; trend?: number; accent: string; delay?: number }) {
+function StatCard({ label, value, trend }: { label: string; value: string; trend?: number }) {
   return (
-    <div className="glass-card rounded-xl p-5 relative overflow-hidden animate-chart-enter" style={{ animationDelay: `${delay}ms` }}>
-      <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full" style={{ background: accent }} />
+    <Card className="p-5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
+        <span className="text-sm text-muted-foreground">{label}</span>
         {trend !== undefined && trend !== 0 && <TrendBadge value={trend} />}
       </div>
-      <h3 className="text-2xl font-extrabold text-[var(--text-primary)] mt-2">{value}</h3>
-    </div>
+      <h3 className="text-3xl font-semibold tracking-tight mt-2">{value}</h3>
+    </Card>
   );
 }
 
@@ -31,7 +31,7 @@ export function SummarySection({ summary, processing, fieldConf, queueStatus, ta
   if (tabLoading) return <ExecutiveSkeleton />;
   if (!summary) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 text-[var(--text-muted)]">
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 text-muted-foreground">
         <span className="text-4xl opacity-30">📊</span>
         <p className="text-sm font-medium">No executive summary data available</p>
         <p className="text-xs">Processed data will appear here once forms are submitted and OCR extraction completes.</p>
@@ -46,17 +46,17 @@ export function SummarySection({ summary, processing, fieldConf, queueStatus, ta
 
   return (
     <div className="flex flex-col gap-6 w-full">
-      <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
         <span>{formatNumber(summary.total_forms)} total forms processed</span>
-        <span className="w-1 h-1 rounded-full bg-[var(--text-muted)]" />
+        <span className="w-1 h-1 rounded-full bg-muted-foreground" />
         <span>{summary.average_confidence != null ? Number(summary.average_confidence).toFixed(1) : '—'}% avg confidence</span>
-        <span className="w-1 h-1 rounded-full bg-[var(--text-muted)]" />
+        <span className="w-1 h-1 rounded-full bg-muted-foreground" />
         <span>{summary.data_completeness}% complete</span>
       </div>
 
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-bold text-[var(--text-primary)]">Platform Summary Metrics</h2>
-        <button onClick={() => {
+        <h2 className="text-lg font-bold">Platform Summary Metrics</h2>
+        <Button variant="outline" size="xs" onClick={() => {
           if (!summary) return;
           const headers = ['Metric', 'Value'];
           const rows = [
@@ -68,9 +68,9 @@ export function SummarySection({ summary, processing, fieldConf, queueStatus, ta
             ...(summary.pending_review != null ? [['Pending Review', String(summary.pending_review)]] : []),
           ];
           exportToCsv(headers, rows, 'executive_summary.csv');
-        }} className="text-xs font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
+        }}>
           Export CSV
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -78,41 +78,33 @@ export function SummarySection({ summary, processing, fieldConf, queueStatus, ta
           label="Total Digits Ingested"
           value={formatNumber(summary.total_forms)}
           trend={vsYesterday}
-          accent="var(--accent-violet)"
-          delay={0}
+          
         />
         <StatCard
           label="Verified Submissions"
           value={formatNumber(summary.verified_forms)}
-          accent="var(--accent-emerald)"
-          delay={60}
         />
         <StatCard
           label="OCR Average Confidence"
           value={`${summary.average_confidence != null ? Number(summary.average_confidence).toFixed(1) : '—'}%`}
-          accent="var(--accent-cyan)"
-          delay={120}
         />
         <StatCard
           label="Data Completeness Rate"
           value={`${summary.data_completeness}%`}
-          accent="var(--accent-amber)"
-          delay={180}
         />
       </div>
 
       {summary.pending_review != null && (
-        <div className="glass-card rounded-xl p-5 relative overflow-hidden animate-chart-enter">
-          <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[var(--accent-rose)]" />
-          <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Pending Review</span>
-          <h3 className="text-2xl font-extrabold text-[var(--text-primary)] mt-2">{formatNumber(summary.pending_review)}</h3>
-        </div>
+        <Card className="p-5">
+          <span className="text-sm text-muted-foreground">Pending Review</span>
+          <h3 className="text-3xl font-semibold tracking-tight mt-2">{formatNumber(summary.pending_review)}</h3>
+        </Card>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card size="sm" className="lg:col-span-2">
+        <Card className="lg:col-span-2">
           <CardContent>
-            <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">Ingestion & Processing Trend (Last 14 Days)</h3>
+            <h3 className="text-xs font-bold text-muted-foreground mb-4">Ingestion & Processing Trend (Last 14 Days)</h3>
             <div className="h-[250px] w-full">
               <LineChartComponent
                 data={summary.processing_trend}
@@ -125,21 +117,21 @@ export function SummarySection({ summary, processing, fieldConf, queueStatus, ta
         </Card>
 
         <div className="flex flex-col gap-4">
-          <Card size="sm">
+          <Card>
             <CardContent>
-              <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Data Completeness</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Data Completeness</span>
               <div className="flex items-center justify-center mt-2">
                 <DonutChart percentage={summary.data_completeness} size={110} strokeWidth={10} color="var(--accent-violet)" />
               </div>
             </CardContent>
           </Card>
-          <Card size="sm">
+          <Card>
             <CardContent>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Processed Today</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Processed Today</span>
                 <Sparkline data={summary.processing_trend} width={80} height={24} />
               </div>
-              <h3 className="text-3xl font-extrabold text-[var(--text-primary)] mt-1">{formatNumber(summary.processed_today)}</h3>
+              <h3 className="text-3xl font-semibold tracking-tight mt-1">{formatNumber(summary.processed_today)}</h3>
             </CardContent>
           </Card>
         </div>
@@ -147,33 +139,30 @@ export function SummarySection({ summary, processing, fieldConf, queueStatus, ta
 
       {queueStatus && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-          <div className="glass-card rounded-xl p-5 relative overflow-hidden animate-chart-enter" style={{ animationDelay: '0ms' }}>
-            <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[var(--accent-violet)]" />
-            <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Active Workers</span>
-            <h3 className="text-2xl font-extrabold text-[var(--text-primary)] mt-2">{formatNumber(queueStatus.workers)}</h3>
-          </div>
-          <div className="glass-card rounded-xl p-5 relative overflow-hidden animate-chart-enter" style={{ animationDelay: '80ms' }}>
-            <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[var(--accent-cyan)]" />
-            <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Throughput (forms/min, {summary.throughput_window_days ?? 14}d)</span>
-            <h3 className="text-2xl font-extrabold text-[var(--text-primary)] mt-2">
+          <Card className="p-5">
+            <span className="text-sm text-muted-foreground">Active Workers</span>
+            <h3 className="text-3xl font-semibold tracking-tight mt-2">{formatNumber(queueStatus.workers)}</h3>
+          </Card>
+          <Card className="p-5">
+            <span className="text-sm text-muted-foreground">Throughput (forms/min, {summary.throughput_window_days ?? 14}d)</span>
+            <h3 className="text-3xl font-semibold tracking-tight mt-2">
               {summary.throughput_forms_per_min != null
                 ? summary.throughput_forms_per_min.toFixed(4)
                 : '—'}
             </h3>
-          </div>
-          <div className="glass-card rounded-xl p-5 relative overflow-hidden animate-chart-enter" style={{ animationDelay: '160ms' }}>
-            <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[var(--accent-emerald)]" />
-            <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Processing Today</span>
-            <h3 className="text-2xl font-extrabold text-[var(--text-primary)] mt-2">{formatNumber(summary.processed_today)}</h3>
-          </div>
+          </Card>
+          <Card className="p-5">
+            <span className="text-sm text-muted-foreground">Processing Today</span>
+            <h3 className="text-3xl font-semibold tracking-tight mt-2">{formatNumber(summary.processed_today)}</h3>
+          </Card>
         </div>
       )}
 
       {processing && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-4">
-          <Card size="sm">
+          <Card>
             <CardContent>
-              <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">Hourly Processing (Today)</h3>
+              <h3 className="text-xs font-bold text-muted-foreground mb-4">Hourly Processing (Today)</h3>
               <div className="h-[200px] w-full">
                 <VerticalBarChart
                   data={processing.hourly_breakdown}
@@ -185,9 +174,9 @@ export function SummarySection({ summary, processing, fieldConf, queueStatus, ta
               </div>
             </CardContent>
           </Card>
-          <Card size="sm">
+          <Card>
             <CardContent>
-              <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">Escalation Level Distribution</h3>
+              <h3 className="text-xs font-bold text-muted-foreground mb-4">Escalation Level Distribution</h3>
               <div className="h-[200px] w-full flex items-center justify-center">
                 {processing.escalation_distribution && processing.escalation_distribution.length > 0 ? (
                   <DonutPieChart
@@ -196,7 +185,7 @@ export function SummarySection({ summary, processing, fieldConf, queueStatus, ta
                     innerRadius={50} outerRadius={70}
                   />
                 ) : (
-                  <span className="text-xs text-[var(--text-muted)]">No escalation data</span>
+                  <span className="text-xs text-muted-foreground">No escalation data</span>
                 )}
               </div>
             </CardContent>
@@ -205,9 +194,9 @@ export function SummarySection({ summary, processing, fieldConf, queueStatus, ta
       )}
 
       {fieldConf && fieldConf.field_confidence && fieldConf.field_confidence.length > 0 && (
-        <Card size="sm" className="mt-4">
+        <Card className="mt-4">
           <CardContent>
-            <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">OCR Confidence by Field</h3>
+            <h3 className="text-xs font-bold text-muted-foreground mb-4">OCR Confidence by Field</h3>
             <div className="h-[300px] w-full">
               <HorizontalBarChart
                 data={fieldConf.field_confidence}

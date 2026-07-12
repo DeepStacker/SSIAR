@@ -110,7 +110,7 @@ export function VerticalBarChart({
         const y = chartH - pad.bottom - barH;
         const fill = colorMap ? colorMap(d, i) : barColor;
         return (
-          <g key={i} className="animate-chart-enter" style={{ animationDelay: `${i * 50}ms` }}>
+          <g key={i}>
             <rect x={x} y={y} width={barW} height={Math.max(1, barH)} fill={fill} rx={barRadius}
               onMouseEnter={e => show(e.clientX, e.clientY - 20, <span>{String(d[nameKey])}: <b>{tooltipFormatter ? tooltipFormatter(val) : formatNumber(val)}</b></span>)}
               onMouseMove={e => show(e.clientX, e.clientY - 20, <span>{String(d[nameKey])}: <b>{tooltipFormatter ? tooltipFormatter(val) : formatNumber(val)}</b></span>)}
@@ -199,7 +199,7 @@ export function HorizontalBarChart({
         const barW = (val / maxVal) * (chartW - pad.left - pad.right);
         const y = pad.top + i * gap + (gap - barH) / 2;
         return (
-          <g key={i} className="animate-chart-enter" style={{ animationDelay: `${i * 60}ms` }}>
+          <g key={i}>
             <rect x={pad.left} y={y} width={Math.max(1, barW)} height={barH} fill={barColor} rx={1}
               onMouseEnter={e => show(e.clientX, e.clientY - 20, <span>{String(d[nameKey])}: <b>{tooltipFormatter ? tooltipFormatter(val) : `${val}%`}</b></span>)}
               onMouseMove={e => show(e.clientX, e.clientY - 20, <span>{String(d[nameKey])}: <b>{tooltipFormatter ? tooltipFormatter(val) : `${val}%`}</b></span>)}
@@ -291,7 +291,7 @@ export function DonutPieChart({
         const labelPos = getLabelPos(d.startAngle, d.endAngle);
         const showPctLabel = Number(pct) >= 5;
         return (
-          <g key={i} className="animate-chart-enter" style={{ animationDelay: `${i * 80}ms` }}>
+          <g key={i}>
             <path d={donutPath(d.startAngle, d.endAngle)} fill={colors[i % colors.length]}
               onMouseEnter={e => show(e.clientX, e.clientY - 20, <span><b>{String(d[nameKey])}</b>: {formatNumber(Number(d[dataKey]))} ({pct}%)</span>)}
               onMouseMove={e => show(e.clientX, e.clientY - 20, <span><b>{String(d[nameKey])}</b>: {formatNumber(Number(d[dataKey]))} ({pct}%)</span>)}
@@ -389,7 +389,7 @@ export function LineChartComponent({
       <path d={lineD} fill="none" stroke={lineColor} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       {/* Dots */}
       {points.map((p, i) => (
-        <g key={i} className="animate-chart-enter" style={{ animationDelay: `${i * 40}ms` }}>
+        <g key={i}>
           <circle cx={p.x} cy={p.y} r={dotRadius} fill={lineColor}
             onMouseEnter={() => show(p.x + 10, p.y - 20, <span>{p.label}: <b>{tooltipFormatter ? tooltipFormatter(p.value) : formatNumber(p.value)}</b></span>)}
             onMouseLeave={hide}
@@ -476,7 +476,7 @@ export function RadarChartComponent({
       {(() => {
         const pts = data.map((d, i) => getPoint(i, maxR * ((Number(d[dataKey]) - minVal) / range)));
         return (
-          <g className="animate-chart-enter">
+          <g>
             <polygon points={pts.map(p => `${p.x},${p.y}`).join(' ')}
               fill={fillColor} fillOpacity={fillOpacity} stroke={strokeColor} strokeWidth={2} />
             {pts.map((p, i) => (

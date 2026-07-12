@@ -93,7 +93,7 @@ export function DonutChart({ percentage, size = 100, strokeWidth = 8, color = 'v
       <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke={color} strokeWidth={strokeWidth}
         strokeDasharray={circumference} strokeDashoffset={offset}
         transform={`rotate(-90 ${size/2} ${size/2})`} strokeLinecap="round"
-        style={{ transition: 'stroke-dashoffset 0.6s ease', filter: 'drop-shadow(0 0 4px rgba(0,0,0,0.15))' }}
+        style={{ transition: 'stroke-dashoffset 0.6s ease' }}
       />
       <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central"
         fill="var(--text-primary)" fontSize={size * 0.16} fontWeight="bold">

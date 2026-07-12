@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { exportToCsv } from '@/lib/utils';
 import { SdgSkeleton, formatNumber } from './components';
@@ -26,7 +27,7 @@ export function QuestionnaireSection({ questionnaire, tabLoading }: Props) {
     <div className="flex flex-col gap-6 w-full">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-lg font-bold text-[var(--text-primary)]">SDQ Response Item Analysis</h2>
-        <button onClick={() => {
+        <Button variant="outline" size="xs" onClick={() => {
           if (!questionnaire) return;
           const headers = ['Question', 'Domain', 'Not True', 'Somewhat True', 'Certainly True', 'Total'];
           const rows = (questionnaire.questions || []).map((q: any) => [
@@ -34,9 +35,9 @@ export function QuestionnaireSection({ questionnaire, tabLoading }: Props) {
             String(q.not_true), String(q.somewhat_true), String(q.certainly_true), String(q.total)
           ]);
           exportToCsv(headers, rows, 'sdq_questionnaire.csv');
-        }} className="text-xs font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
+        }}>
           Export CSV
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -44,14 +45,14 @@ export function QuestionnaireSection({ questionnaire, tabLoading }: Props) {
           <CardContent>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xs font-bold text-[var(--text-secondary)]">Clinical SDQ Categories</h3>
-              <button onClick={() => {
+              <Button variant="outline" size="xs" onClick={() => {
                 if (!questionnaire || !questionnaire.clinical_distribution) return;
                 const headers = ['Category', 'Student Count', 'Percentage (%)'];
                 const rows = questionnaire.clinical_distribution.map((c: any) => [c.category, formatNumber(c.count), `${c.percentage}%`]);
                 exportToCsv(headers, rows, 'clinical_sdq_distribution.csv');
-              }} className="text-[10px] font-semibold text-[var(--accent-violet)] hover:underline no-print flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--color-border)] hover:bg-[var(--bg-highlight)]">
+              }}>
                 Export CSV
-              </button>
+              </Button>
             </div>
             <div className="h-[200px] w-full">
               {questionnaire.clinical_distribution && questionnaire.clinical_distribution.length > 0 ? (

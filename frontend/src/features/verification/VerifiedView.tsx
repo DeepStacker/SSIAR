@@ -1,6 +1,6 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Check, Download, Loader2, Save } from 'lucide-react';
-import type { Document, DocumentDetails, ZoomImage } from '@/api';
+import type { Document, DocumentDetails } from '@/api';
 import { api } from '@/api';
 import { exportToCsv } from '@/lib/utils';
 import { DocumentHeader } from '@/features/layout/DocumentHeader';
@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { CanvasCrop } from '@/features/review/CanvasCrop';
 import { SdqGrid } from '@/features/review/SdqGrid';
+import { useCropZoom } from '@/features/review/useCropZoom';
 
 interface Props {
   doc: Document;
@@ -21,65 +22,14 @@ interface Props {
 }
 
 export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetailsChange }) => {
-  const [zoomImg, setZoomImg] = useState<ZoomImage | null>(null);
   const [reprocessingField, setReprocessingField] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pageViewer, setPageViewer] = useState<1 | 2 | null>(null);
-  const cropRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const focusedFieldRef = useRef<string | null>(null);
-  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { show } = useToast();
   const v2Trust = details.confidence_scores?.v2_trust || {};
-  const cropDataUrls = useRef<Record<string, string>>({});
 
-  const showZoomForCrop = useCallback((key: string) => {
-    const el = cropRefs.current[key];
-    const src = cropDataUrls.current[key] || '';
-    if (el && src) {
-      const rect = el.getBoundingClientRect();
-      setZoomImg({ src, x: rect.right + 20, y: rect.top + rect.height / 2 });
-    }
-  }, []);
+  const { zoomImg, setZoomImg, cropRefs, cropDataUrls, handleCropEnter, handleCropMove, handleCropLeave, handleInputFocus, handleInputBlur } = useCropZoom(0);
 
-  const handleCropEnter = useCallback((e: React.MouseEvent, key: string) => {
-    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
-    const src = cropDataUrls.current[key] || '';
-    if (src) {
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setZoomImg({ src, x: rect.left + rect.width / 2, y: rect.top });
-    }
-  }, []);
-
-  const handleCropMove = useCallback((e: React.MouseEvent, key: string) => {
-    const src = cropDataUrls.current[key] || '';
-    if (src) setZoomImg({ src, x: e.clientX, y: e.clientY });
-  }, []);
-
-  const handleCropLeave = useCallback(() => {
-    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
-    leaveTimerRef.current = setTimeout(() => {
-      if (!focusedFieldRef.current) {
-        setZoomImg(null);
-      }
-    }, 80);
-  }, []);
-
-  const handleInputFocus = useCallback((e: React.FocusEvent<HTMLInputElement>, key: string) => {
-    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
-    focusedFieldRef.current = key;
-    showZoomForCrop(key);
-    e.target.select();
-  }, [showZoomForCrop]);
-
-  const handleInputBlur = useCallback(() => {
-    focusedFieldRef.current = null;
-    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
-    leaveTimerRef.current = setTimeout(() => {
-      if (!focusedFieldRef.current) {
-        setZoomImg(null);
-      }
-    }, 80);
-  }, []);
   const fields = [
     { key: 'roll_number', label: 'Roll Number' },
     { key: 'class', label: 'Class' },
@@ -212,13 +162,13 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
       <div className="px-5 pb-5">
         <Card>
           <CardContent className="p-5">
-            <h3 className="text-sm mb-4 flex items-center gap-1 text-emerald-500">
+            <h3 className="text-sm mb-4 flex items-center gap-1 text-success">
               <Check size={14} /> Verified — {doc.filename}
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {fields.map(f => (
                 <div key={f.key}>
-                  <label className="text-xs block text-[var(--text-muted)]">{f.label}</label>
+                  <label className="text-xs block text-muted-foreground">{f.label}</label>
                   <div className="flex items-center gap-2 py-1">
                     <Input
                       className="w-[100px] text-sm font-medium"
@@ -233,35 +183,35 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
                         <CanvasCrop
                           pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
                           polygon={v2Trust[f.key]?.polygon as number[] | undefined}
-                          className="w-[120px] h-[30px] object-contain border border-[var(--color-border)] bg-black/15 rounded cursor-zoom-in"
+                          className="w-[120px] h-[30px] object-contain border border-border bg-black/15 rounded cursor-zoom-in"
                           onDataUrl={url => { cropDataUrls.current[f.key] = url; }}
                         />
                       ) : (
-                        <div className="w-[120px] h-[30px] bg-black/15 rounded border border-[var(--color-border)]" />
+                        <div className="w-[120px] h-[30px] bg-black/15 rounded border border-border" />
                       )}
                     </div>
                     {reprocessingField === f.key ? (
-                      <Loader2 size={14} className="animate-spin shrink-0 text-[var(--accent-cyan)]" />
+                      <Loader2 size={14} className="animate-spin shrink-0 text-primary" />
                     ) : (
-                      <button onClick={() => handleReprocessField(f.key)}
+                      <Button variant="ghost" size="xs" onClick={() => handleReprocessField(f.key)}
                         title="Re-run OCR on this field"
-                        className="bg-none border-none cursor-pointer p-0.5 opacity-50 text-sm">⟳</button>
+                        className="h-6 w-6 p-0 opacity-50">⟳</Button>
                     )}
                   </div>
                 </div>
               ))}
               <div>
-                <label className="text-xs block text-[var(--text-muted)]">Consent</label>
+                <label className="text-xs block text-muted-foreground">Consent</label>
                 <div className="flex items-center gap-2 py-1">
                   {['Yes', 'No', 'Unanswered'].map(c => {
                     const isConsentActive = (details.consent || 'Unanswered') === c;
                     return (
                       <button key={c} onClick={() => onDetailsChange?.({ ...details, consent: c })}
                         className={`
-                          px-3 py-[4px] rounded text-xs font-semibold cursor-pointer border text-center
+                          px-3 h-9 rounded-md text-xs font-semibold border transition-colors
                           ${isConsentActive
-                            ? 'bg-emerald-500/15 border-[var(--accent-emerald)] text-[var(--accent-emerald)]'
-                            : 'bg-[var(--bg-highlight)] border-[var(--color-border)] text-[var(--text-secondary)]'
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'border-border hover:bg-secondary'
                           }
                         `}
                       >{c}</button>
@@ -270,10 +220,10 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
                 </div>
               </div>
               <div>
-                <label className="text-xs block text-[var(--text-muted)]">Remarks</label>
+                <label className="text-xs block text-muted-foreground">Remarks</label>
                 <div className="flex items-center gap-2 py-1">
                   <textarea
-                    className="w-full text-sm px-2 py-1 resize-y rounded h-[50px] bg-[var(--bg-secondary)] border border-[var(--color-border)] text-[var(--text-primary)]"
+                    className="w-full text-sm px-2 py-1 resize-y rounded h-[50px] bg-secondary border border-border"
                     value={details.remarks || ''} onChange={e => {
                       if (onDetailsChange) onDetailsChange({ ...details, remarks: e.target.value });
                     }} />

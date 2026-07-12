@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import type { ZoomImage } from '@/api';
 import { api } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { CanvasCrop, useCropDataUrls } from '@/features/review/CanvasCrop';
 
@@ -34,7 +35,7 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
   }, [getUrl, onZoom]);
 
   return (
-    <Card className="mb-5 glass-card">
+    <Card className="mb-5">
       <CardContent className="p-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="space-y-2.5">
@@ -46,16 +47,10 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
                 else if (e.key.toLowerCase() === 'u') { onConsentChange('Unanswered'); e.preventDefault(); }
               }}>
               {['Yes', 'No', 'Unanswered'].map(o => (
-                <button key={o} onClick={() => onConsentChange(o)}
-                  aria-pressed={consent === o}
-                  className={`
-                    flex-1 py-2 rounded-lg border-2 text-xs font-bold cursor-pointer transition-all duration-150
-                    ${consent === o
-                      ? 'bg-[var(--accent-violet)]/20 border-[var(--accent-violet)] text-[var(--accent-cyan)]'
-                      : 'bg-transparent border-[var(--color-border)] text-[var(--text-secondary)] hover:border-[var(--accent-violet)]/30 hover:bg-[var(--accent-violet)]/5'}
-                  `}>
-                  {o}
-                </button>
+                <Button key={o} variant={consent === o ? 'default' : 'outline'}
+                  size="sm" onClick={() => onConsentChange(o)}
+                  className="flex-1 h-9 text-xs font-bold"
+                >{o}</Button>
               ))}
             </div>
             {consentPolygon ? (
@@ -78,7 +73,7 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
           <div className="space-y-2.5">
             <label htmlFor="remarks-input" className="text-xs font-bold text-[var(--text-secondary)] block">Remarks</label>
             <Textarea id="remarks-input"
-              className="min-h-[80px] text-sm resize-y font-mono premium-input"
+              className="min-h-[80px] text-sm resize-y font-mono"
               value={remarks} onChange={e => onRemarksChange(e.target.value)}
               placeholder="Enter remarks..." />
             {remarksPolygon ? (

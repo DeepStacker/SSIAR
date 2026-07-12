@@ -29,7 +29,7 @@ export const StatCards: React.FC<Props> = ({ statCards, escBreakdown, onTabClick
           : s.value;
         return (
           <Card key={s.label}
-            className={`cursor-pointer glass-card border border-white/5 relative overflow-hidden animate-chart-enter ${s.pulse ? 'ring-1 ring-indigo-500/50' : ''}`}
+            className={`cursor-pointer border border-border relative overflow-hidden animate-chart-enter ${s.pulse ? 'ring-1 ring-indigo-500/50' : ''}`}
             style={{ animationDelay: `${i * 60}ms` }}
             tabIndex={0}
             role="button"
@@ -54,7 +54,7 @@ export const StatCards: React.FC<Props> = ({ statCards, escBreakdown, onTabClick
     </div>
 
     {escBreakdown && (
-      <Card className="mb-6 glass-card animate-chart-enter">
+      <Card className="mb-6 animate-chart-enter">
         <CardContent className="flex flex-wrap items-center justify-between gap-4 py-3.5 px-6 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <Layers size={14} className="text-indigo-400" />

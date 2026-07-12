@@ -566,7 +566,7 @@ h1, h2, h3, h4 {
     animation: chart-enter 0.4s ease-out both;
   }
 
-  /* ===== Skeleton loading ===== */
+  /* ===== Skeleton loading (legacy - use Skeleton component from @/components/ui/skeleton) ===== */
   .skeleton {
     background: linear-gradient(90deg, var(--bg-highlight) 25%, transparent 50%, var(--bg-highlight) 75%);
     background-size: 200% 100%;
@@ -587,30 +587,6 @@ h1, h2, h3, h4 {
     transform: scale(1.1);
     z-index: 1;
     box-shadow: 0 0 12px rgba(0,0,0,0.3);
-  }
-
-  /* ===== Premium Design System Extensions ===== */
-  .glass-card {
-    background: var(--bg-card) !important;
-    backdrop-filter: blur(12px) !important;
-    border: 1px solid var(--color-border) !important;
-    box-shadow: var(--shadow-sm) !important;
-    transition: all 0.2s ease-in-out !important;
-  }
-  .glass-card:hover {
-    box-shadow: var(--shadow-md) !important;
-    border-color: var(--color-border-focus) !important;
-  }
-  .premium-input {
-    background: rgba(148, 163, 184, 0.05) !important;
-    border: 1px solid var(--color-border) !important;
-    border-radius: var(--radius-md) !important;
-    transition: all 0.15s ease-in-out !important;
-  }
-  .premium-input:focus {
-    background: rgba(148, 163, 184, 0.08) !important;
-    border-color: var(--color-border-focus) !important;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15) !important;
   }
 }
 

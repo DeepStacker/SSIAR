@@ -82,14 +82,14 @@ export const DocumentTable: React.FC<Props> = ({
   };
 
   return (
-    <div className="rounded-2xl border border-white/5 bg-card overflow-hidden shadow-lg backdrop-blur-md">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-4 border-b border-border/40 bg-slate-950/10">
+    <div className="bg-card border border-border rounded-lg shadow-xs overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-4 border-b border-border">
         <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as TabType)}>
           <TabsList variant="line" className="bg-transparent border-none p-0 flex gap-1">
             {tabConfig.map(tab => (
-              <TabsTrigger key={tab.key} value={tab.key} className="text-xs px-3 py-1.5 rounded-lg data-[state=active]:bg-indigo-600/10 data-[state=active]:text-indigo-400 font-semibold gap-1.5 transition-all">
+              <TabsTrigger key={tab.key} value={tab.key} className="text-xs px-3 py-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground font-semibold gap-1.5 text-muted-foreground rounded-none transition-colors">
                 {tab.icon} {tab.label}
-                <span className="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded-full border border-white/5 opacity-70">
+                <span className="text-[10px] bg-secondary px-1.5 py-0.5 rounded-full opacity-70">
                   {counts[tab.key]}
                 </span>
               </TabsTrigger>
@@ -103,7 +103,7 @@ export const DocumentTable: React.FC<Props> = ({
             <Input
               type="text"
               placeholder="Search by filename or roll number..."
-              className="w-full pl-9 text-xs h-9 premium-input border"
+              className="w-full pl-9 text-xs h-9"
               value={searchQuery}
               onChange={e => onSearchChange(e.target.value)}
             />
@@ -130,26 +130,26 @@ export const DocumentTable: React.FC<Props> = ({
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center gap-4 bg-[var(--bg-secondary)]/30">
-            <div className="w-16 h-16 rounded-2xl bg-slate-900/50 border border-white/5 flex items-center justify-center shadow-inner">
+          <div className="flex flex-col items-center justify-center py-20 text-center gap-4">
+            <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center">
               {searchQuery ? (
-                <Search size={26} className="text-[var(--text-muted)]" />
+                <Search size={26} className="text-muted-foreground" />
               ) : activeTab === 'all' && documents.length === 0 ? (
-                <Inbox size={26} className="text-indigo-400/70" />
+                <Inbox size={26} className="text-primary" />
               ) : activeTab === 'processing' ? (
-                <Clock size={26} className="text-violet-400/70" />
+                <Clock size={26} className="text-muted-foreground" />
               ) : activeTab === 'needs_review' ? (
-                <Check size={26} className="text-emerald-400/70" />
+                <Check size={26} className="text-emerald-500" />
               ) : activeTab === 'verified' ? (
-                <Check size={26} className="text-emerald-400/70" />
+                <Check size={26} className="text-emerald-500" />
               ) : activeTab === 'failed' ? (
-                <Check size={26} className="text-emerald-400/70" />
+                <Check size={26} className="text-emerald-500" />
               ) : (
-                <FileWarning size={26} className="text-indigo-400/70" />
+                <FileWarning size={26} className="text-muted-foreground" />
               )}
             </div>
             <div>
-              <span className="font-semibold text-sm text-[var(--text-primary)] block">
+              <span className="font-semibold text-sm block">
                 {searchQuery ? 'No matching documents' :
                  documents.length === 0 ? 'No documents yet' :
                  activeTab === 'processing' ? 'No active background tasks' :
@@ -158,7 +158,7 @@ export const DocumentTable: React.FC<Props> = ({
                  activeTab === 'failed' ? 'No failed processes' :
                  'No documents found'}
               </span>
-              <span className="text-xs text-[var(--text-muted)] mt-1 block">
+              <span className="text-xs text-muted-foreground mt-1 block">
                 {searchQuery ? 'Try a different search term' :
                  documents.length === 0 ? 'Upload your first research PDF to get started' :
                  activeTab === 'all' ? 'Adjust your search or filters' :
@@ -173,23 +173,23 @@ export const DocumentTable: React.FC<Props> = ({
           </div>
         ) : (
           <Table>
-            <TableHeader className="bg-slate-950/15">
-              <TableRow className="border-b border-border/40 hover:bg-transparent">
+            <TableHeader>
+              <TableRow className="border-b border-border hover:bg-transparent">
                 <TableHead className="w-10 px-6">
                   <input
                     type="checkbox"
                     checked={filtered.length > 0 && selectedIds.size === filtered.length}
                     onChange={onToggleSelectAll}
-                    className="rounded border-border text-indigo-600 focus:ring-indigo-500 h-4 w-4 bg-slate-900"
+                    className="rounded border-border h-4 w-4"
                     aria-label={selectedIds.size === filtered.length ? "Deselect all documents" : "Select all documents"}
                   />
                 </TableHead>
                 <SortTh label="Document Filename" sortKey="filename" current={sortKey} dir={sortDir} onSort={onSortChange} />
                 <SortTh label="Class Roll Number" sortKey="roll_number" current={sortKey} dir={sortDir} onSort={onSortChange} />
-                <TableHead className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider py-3 w-20">Class</TableHead>
+                <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 w-20">Class</TableHead>
                 <SortTh label="Pipeline Status" sortKey="status" current={sortKey} dir={sortDir} onSort={onSortChange} />
                 <SortTh label="Processed Date" sortKey="created_at" current={sortKey} dir={sortDir} onSort={onSortChange} right />
-                <TableHead className="text-right text-[10px] text-muted-foreground font-semibold uppercase tracking-wider py-3 w-32 px-6">Actions</TableHead>
+                <TableHead className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 w-32 px-6">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -198,29 +198,29 @@ export const DocumentTable: React.FC<Props> = ({
                 return (
                   <TableRow key={doc.id} onClick={() => onOpenDoc(doc)}
                     tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpenDoc(doc); }}
-                    className={`border-b border-border/20 cursor-pointer group transition-all duration-150 ${
+                    className={`border-b border-border cursor-pointer group transition-colors ${
                       isProc(doc.status) ? 'opacity-65' : ''
                     } ${
-                      isSelected ? 'bg-indigo-600/5 hover:bg-indigo-600/10' : 'hover:bg-[var(--bg-highlight)]'
+                      isSelected ? 'bg-accent/5 hover:bg-accent/10' : 'hover:bg-muted'
                     }`}>
                     <TableCell onClick={e => e.stopPropagation()} className="px-6 py-3">
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => onToggleSelect(doc.id)}
-                        className="rounded border-border text-indigo-600 focus:ring-indigo-500 h-4 w-4 bg-slate-900"
+                        className="rounded border-border h-4 w-4"
                         aria-label={`Select ${doc.filename || doc.id}`}
                       />
                     </TableCell>
-                    <TableCell className="font-semibold text-[var(--text-primary)] py-3 max-w-[280px]">
+                    <TableCell className="font-semibold py-3 max-w-[280px]">
                       <span className="truncate block" title={doc.filename}>{doc.filename}</span>
                     </TableCell>
-                    <TableCell className="text-xs font-mono text-[var(--text-muted)] py-3">{doc.roll_number || '—'}</TableCell>
-                    <TableCell className="text-xs font-mono text-[var(--text-muted)] py-3">{doc.class || '—'}</TableCell>
+                    <TableCell className="text-xs font-mono text-muted-foreground py-3">{doc.roll_number || '—'}</TableCell>
+                    <TableCell className="text-xs font-mono text-muted-foreground py-3">{doc.class || '—'}</TableCell>
                     <TableCell className="py-3">
                       <StatusBadge status={doc.status} />
                     </TableCell>
-                    <TableCell className="text-right text-xs font-mono text-[var(--text-muted)] py-3 whitespace-nowrap">
+                    <TableCell className="text-right text-xs font-mono text-muted-foreground py-3 whitespace-nowrap">
                       {doc.created_at?.slice(0, 10)}
                     </TableCell>
                     <TableCell className="text-right whitespace-nowrap py-3 px-6" onClick={e => e.stopPropagation()}>
@@ -233,9 +233,9 @@ export const DocumentTable: React.FC<Props> = ({
               })}
             </TableBody>
             {filtered.length > 0 && (
-              <TableFooter className="bg-transparent border-t border-border/20">
+              <TableFooter className="bg-transparent border-t border-border">
                 <TableRow>
-                  <TableCell colSpan={7} className="text-[10px] text-muted-foreground font-semibold px-6 py-3 text-right uppercase tracking-wider">
+                  <TableCell colSpan={7} className="text-xs font-medium text-muted-foreground px-6 py-3 text-right uppercase tracking-wider">
                     Total: {filtered.length} {filtered.length === 1 ? 'document' : 'documents'}
                   </TableCell>
                 </TableRow>
@@ -253,12 +253,12 @@ const SortTh: React.FC<{ label: string; sortKey: SortKey; current: SortKey; dir:
   return (
     <TableHead onClick={() => onSort(sortKey)} role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter') onSort(sortKey); }}
-      className={`cursor-pointer select-none text-[10px] text-[var(--text-muted)] font-semibold uppercase tracking-wider py-3 group/sort${right ? ' text-right' : ''}`}>
+      className={`cursor-pointer select-none text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 group/sort${right ? ' text-right' : ''}`}>
       <span className={`inline-flex items-center gap-1.5 ${right ? 'justify-end w-full' : ''}`}>
         {label}
-        <span className={`inline-flex flex-col leading-none ${isActive ? 'text-[var(--text-primary)]' : 'opacity-0 group-hover/sort:opacity-50 transition-opacity'}`}>
-          <ChevronUp size={9} className={isActive && dir === 'asc' ? 'text-indigo-400 font-bold' : 'text-muted-foreground/40'} />
-          <ChevronDown size={9} className={isActive && dir === 'desc' ? 'text-indigo-400 font-bold' : 'text-muted-foreground/40'} />
+        <span className={`inline-flex flex-col leading-none ${isActive ? 'text-foreground' : 'opacity-0 group-hover/sort:opacity-50 transition-opacity'}`}>
+          <ChevronUp size={9} className={isActive && dir === 'asc' ? 'text-primary font-bold' : 'text-muted-foreground/40'} />
+          <ChevronDown size={9} className={isActive && dir === 'desc' ? 'text-primary font-bold' : 'text-muted-foreground/40'} />
         </span>
       </span>
     </TableHead>
@@ -273,9 +273,9 @@ const isFailed = (s: string) => STATUS_FAILED.has(s);
 const ActionBtn: React.FC<{ doc: Document; onOpen: (d: Document) => void; onDownload: (d: Document) => void; onReprocess: (d: Document) => void; onDelete: (d: Document) => void }> = ({ doc, onOpen, onDownload, onReprocess, onDelete }) => (
   <>
     <Button variant="outline" size="xs" onClick={e => { e.stopPropagation(); onOpen(doc); }}
-      disabled={isProc(doc.status)} className="h-7 text-[10px] px-2.5 font-bold border-white/5 bg-slate-900/50 hover:bg-slate-900">
+      disabled={isProc(doc.status)} className="h-7 text-[10px] px-2.5 font-bold">
       {isProc(doc.status) ? <><Clock size={10} className="animate-spin mr-1" />Proc.</> :
-       isVerified(doc.status) ? <><Eye size={10} className="mr-1 text-indigo-400" />View</> :
+       isVerified(doc.status) ? <><Eye size={10} className="mr-1" />View</> :
        isFailed(doc.status) ? 'Details' : 'Review'}
     </Button>
     {(isReview(doc.status) || isVerified(doc.status) || isFailed(doc.status)) && (
@@ -291,7 +291,7 @@ const ActionBtn: React.FC<{ doc: Document; onOpen: (d: Document) => void; onDown
       </Button>
     )}
     <Button variant="ghost" size="icon-xs" onClick={e => { e.stopPropagation(); onDelete(doc); }}
-      className="h-7 w-7 text-muted-foreground hover:text-rose-500 hover:bg-rose-950/20" title="Delete">
+      className="h-7 w-7 text-muted-foreground hover:text-destructive" title="Delete">
       <Trash2 size={11} />
     </Button>
   </>

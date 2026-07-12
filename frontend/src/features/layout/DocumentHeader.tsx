@@ -26,7 +26,7 @@ export const DocumentHeader: React.FC<Props> = ({ title, onClose, center, filena
   }) : null;
 
   return (
-    <header className="flex items-center justify-between mb-6 p-4 rounded-xl glass-card">
+    <header className="flex items-center justify-between mb-6 p-4 rounded-lg border border-border bg-card shadow-xs">
       <div className="flex items-center gap-3 min-w-0">
         <h1 className="text-lg font-extrabold tracking-tight truncate">{title}</h1>
         {(filename || formattedDate || statusStyle) && (

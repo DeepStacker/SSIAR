@@ -1,9 +1,28 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { ViewMode, TabType, SortKey } from '@/api';
+
+export const VIEW_PATHS: Record<ViewMode, string> = {
+  dashboard: '/app/dashboard',
+  reporting: '/app/reporting',
+  analytics: '/app/analytics',
+  dlq: '/app/dlq',
+  users: '/app/users',
+};
+
+export function getViewFromPath(pathname: string): ViewMode {
+  if (pathname.startsWith('/app/reporting')) return 'reporting';
+  if (pathname.startsWith('/app/analytics')) return 'analytics';
+  if (pathname.startsWith('/app/dlq')) return 'dlq';
+  if (pathname.startsWith('/app/users')) return 'users';
+  return 'dashboard';
+}
 
 interface UIState {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  sidebarMobileOpen: boolean;
+  setSidebarMobileOpen: React.Dispatch<React.SetStateAction<boolean>>;
   uploading: boolean;
   setUploading: React.Dispatch<React.SetStateAction<boolean>>;
   view: ViewMode;
@@ -24,11 +43,19 @@ const UIContext = createContext<UIState | null>(null);
 
 export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [view, setView] = useState<ViewMode>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return (params.get('view') as ViewMode) || 'dashboard';
-  });
+  
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  const view = getViewFromPath(location.pathname);
+  
+  const setView = useCallback((newView: React.SetStateAction<ViewMode>) => {
+    const nextView = typeof newView === 'function' ? newView(view) : newView;
+    navigate(VIEW_PATHS[nextView]);
+  }, [view, navigate]);
+
   const [confirmState, setConfirmState] = useState<{ title: string; description: string; confirmLabel?: string; confirmVariant?: 'default' | 'destructive'; onConfirm: () => void } | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -38,8 +65,9 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   return (
     <UIContext.Provider value={{
       sidebarCollapsed, setSidebarCollapsed,
+      sidebarMobileOpen, setSidebarMobileOpen,
       uploading, setUploading,
-      view, setView,
+      view, setView: setView as any,
       confirmState, setConfirmState,
       sortKey, setSortKey,
       sortDir, setSortDir,

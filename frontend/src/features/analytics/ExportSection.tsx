@@ -56,8 +56,8 @@ export function ExportSection({ classFilter, genderFilter }: Props) {
   return (
     <div className="flex flex-col gap-6 w-full">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-bold text-[var(--text-primary)]">Research Data Export Hub</h2>
-        <span className="text-xs text-[var(--text-muted)] no-print">
+        <h2 className="text-lg font-bold">Research Data Export Hub</h2>
+        <span className="text-xs text-muted-foreground no-print">
           {classFilter !== 'all' && `Class: ${classFilter}`}
           {classFilter !== 'all' && genderFilter !== 'all' ? ' | ' : ''}
           {genderFilter !== 'all' && `Gender: ${genderFilter}`}
@@ -68,50 +68,47 @@ export function ExportSection({ classFilter, genderFilter }: Props) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 no-print">
         <a
           href={api.getResearchExportUrl("csv", { class: classFilter, gender: genderFilter })}
-          className="glass-card rounded-xl flex flex-col items-center gap-3 p-6 text-center no-underline transition-all hover:-translate-y-0.5 hover:shadow-md animate-chart-enter"
-          style={{ animationDelay: '0ms' }}
+          className="bg-card border border-border rounded-lg flex flex-col items-center gap-3 p-6 text-center no-underline transition-all hover:-translate-y-0.5 hover:shadow-md"
         >
-          <div className="w-12 h-12 rounded-xl bg-[var(--accent-violet)]/10 flex items-center justify-center">
-            <Download className="w-6 h-6" style={{ color: 'var(--accent-violet)' }} />
+          <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Download className="w-6 h-6 text-primary" />
           </div>
-          <span className="text-sm font-bold text-[var(--text-primary)]">Standard CSV Format</span>
-          <span className="text-xs text-[var(--text-secondary)] leading-relaxed">Flat variable list suitable for generic spreadsheets.</span>
+          <span className="text-sm font-bold">Standard CSV Format</span>
+          <span className="text-xs text-muted-foreground leading-relaxed">Flat variable list suitable for generic spreadsheets.</span>
         </a>
 
         <a
           href={api.getResearchExportUrl("excel", { class: classFilter, gender: genderFilter })}
-          className="glass-card rounded-xl flex flex-col items-center gap-3 p-6 text-center no-underline transition-all hover:-translate-y-0.5 hover:shadow-md animate-chart-enter"
-          style={{ animationDelay: '80ms' }}
+          className="bg-card border border-border rounded-lg flex flex-col items-center gap-3 p-6 text-center no-underline transition-all hover:-translate-y-0.5 hover:shadow-md"
         >
-          <div className="w-12 h-12 rounded-xl bg-[var(--accent-emerald)]/10 flex items-center justify-center">
-            <Download className="w-6 h-6" style={{ color: 'var(--accent-emerald)' }} />
+          <div className="w-12 h-12 rounded-lg bg-success/10 flex items-center justify-center">
+            <Download className="w-6 h-6 text-success" />
           </div>
-          <span className="text-sm font-bold text-[var(--text-primary)]">Excel Spreadsheet</span>
-          <span className="text-xs text-[var(--text-secondary)] leading-relaxed">Formatted workbook with domain averages.</span>
+          <span className="text-sm font-bold">Excel Spreadsheet</span>
+          <span className="text-xs text-muted-foreground leading-relaxed">Formatted workbook with domain averages.</span>
         </a>
 
         <a
           href={api.getResearchExportUrl("spss", { class: classFilter, gender: genderFilter })}
-          className="glass-card rounded-xl flex flex-col items-center gap-3 p-6 text-center no-underline transition-all hover:-translate-y-0.5 hover:shadow-md animate-chart-enter"
-          style={{ animationDelay: '160ms' }}
+          className="bg-card border border-border rounded-lg flex flex-col items-center gap-3 p-6 text-center no-underline transition-all hover:-translate-y-0.5 hover:shadow-md"
         >
-          <div className="w-12 h-12 rounded-xl bg-[var(--accent-violet)]/10 flex items-center justify-center">
-            <Download className="w-6 h-6" style={{ color: 'var(--accent-violet)' }} />
+          <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Download className="w-6 h-6 text-primary" />
           </div>
-          <span className="text-sm font-bold text-[var(--text-primary)]">SPSS Import CSV</span>
-          <span className="text-xs text-[var(--text-secondary)] leading-relaxed">SPSS-compliant column headers and numeric tags.</span>
+          <span className="text-sm font-bold">SPSS Import CSV</span>
+          <span className="text-xs text-muted-foreground leading-relaxed">SPSS-compliant column headers and numeric tags.</span>
         </a>
       </div>
 
-      <p className="text-xs text-[var(--text-secondary)] leading-relaxed no-print">
+      <p className="text-xs text-muted-foreground leading-relaxed no-print">
         Download the full research dataset in your preferred format. Current filters are applied automatically.
       </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-4">
-        <Card size="sm">
+        <Card>
           <CardContent>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">R Import Script</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">R Import Script</h3>
               <Button
                 variant="secondary"
                 size="xs"
@@ -121,20 +118,20 @@ export function ExportSection({ classFilter, genderFilter }: Props) {
                   setTimeout(() => setRCopied(false), 2000);
                 }}
               >
-                {rCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Clipboard className="w-3 h-3" />}
+                {rCopied ? <Check className="w-3 h-3 text-success" /> : <Clipboard className="w-3 h-3" />}
                 {rCopied ? "Copied" : "Copy"}
               </Button>
             </div>
-            <pre className="font-mono text-xs text-[var(--text-secondary)] bg-[var(--bg-primary)] border border-[var(--color-border)] rounded p-4 overflow-x-auto h-[150px] leading-relaxed">
+            <pre className="font-mono text-xs text-muted-foreground bg-secondary border border-border rounded p-4 overflow-x-auto h-[150px] leading-relaxed">
               {rScript}
             </pre>
           </CardContent>
         </Card>
 
-        <Card size="sm">
+        <Card>
           <CardContent>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">SPSS Variable Labels Syntax</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">SPSS Variable Labels Syntax</h3>
               <Button
                 variant="secondary"
                 size="xs"
@@ -144,11 +141,11 @@ export function ExportSection({ classFilter, genderFilter }: Props) {
                   setTimeout(() => setSpssCopied(false), 2000);
                 }}
               >
-                {spssCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Clipboard className="w-3 h-3" />}
+                {spssCopied ? <Check className="w-3 h-3 text-success" /> : <Clipboard className="w-3 h-3" />}
                 {spssCopied ? "Copied" : "Copy"}
               </Button>
             </div>
-            <pre className="font-mono text-xs text-[var(--text-secondary)] bg-[var(--bg-primary)] border border-[var(--color-border)] rounded p-4 overflow-x-auto h-[150px] leading-relaxed">
+            <pre className="font-mono text-xs text-muted-foreground bg-secondary border border-border rounded p-4 overflow-x-auto h-[150px] leading-relaxed">
               {spssSyntax}
             </pre>
           </CardContent>

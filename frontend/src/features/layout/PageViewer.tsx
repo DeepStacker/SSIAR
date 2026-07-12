@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { api } from '@/api';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   docId: string;
@@ -81,8 +82,7 @@ export const PageViewer: React.FC<Props> = ({ docId, pageNum, onClose, onChangeP
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm"
       role="dialog" aria-modal="true" aria-label="Page viewer"
       onClick={onClose}
     >
@@ -92,30 +92,30 @@ export const PageViewer: React.FC<Props> = ({ docId, pageNum, onClose, onChangeP
       >
         <div className="flex justify-between items-center py-2 shrink-0">
           <div className="flex items-center gap-3">
-            <span style={{ color: '#94a3b8', fontSize: '13px' }}>
-              Page {pageNum} <span style={{ color: '#64748b', fontSize: '11px', marginLeft: '8px' }}>(Press 1 or 2, Tab, or Arrow keys to switch)</span>
+            <span className="text-slate-400 text-[13px]">
+              Page {pageNum} <span className="text-slate-500 text-[11px] ml-2">(Press 1 or 2, Tab, or Arrow keys to switch)</span>
             </span>
-            <span style={{ color: '#64748b', fontSize: '12px' }} className="font-mono">
+            <span className="text-slate-500 text-xs font-mono">
               {Math.round(scale * 100)}%
             </span>
           </div>
           <div className="flex gap-1.5">
-            <button onClick={zoomOut} title="Zoom Out"
-              className="bg-white/10 hover:bg-white/20 text-white rounded-md p-1.5">
+            <Button variant="ghost" size="icon-sm" onClick={zoomOut} title="Zoom Out"
+              className="bg-white/10 hover:bg-white/20 text-white">
               <ZoomOut size={16} />
-            </button>
-            <button onClick={reset} title="Reset Zoom (R)"
-              className="bg-white/10 hover:bg-white/20 text-white rounded-md p-1.5">
+            </Button>
+            <Button variant="ghost" size="icon-sm" onClick={reset} title="Reset Zoom (R)"
+              className="bg-white/10 hover:bg-white/20 text-white">
               <RotateCcw size={16} />
-            </button>
-            <button onClick={zoomIn} title="Zoom In"
-              className="bg-white/10 hover:bg-white/20 text-white rounded-md p-1.5">
+            </Button>
+            <Button variant="ghost" size="icon-sm" onClick={zoomIn} title="Zoom In"
+              className="bg-white/10 hover:bg-white/20 text-white">
               <ZoomIn size={16} />
-            </button>
-            <button onClick={onClose}
-              className="bg-white/10 hover:bg-white/20 text-white rounded-md p-1.5 flex items-center gap-1 text-sm">
-              <X size={16} /> Close
-            </button>
+            </Button>
+            <Button variant="ghost" size="icon-sm" onClick={onClose}
+              className="bg-white/10 hover:bg-white/20 text-white">
+              <X size={16} />
+            </Button>
           </div>
         </div>
 
@@ -129,7 +129,7 @@ export const PageViewer: React.FC<Props> = ({ docId, pageNum, onClose, onChangeP
           style={{ cursor: dragging ? 'grabbing' : 'grab' }}
         >
           {!loaded && (
-            <div className="flex items-center justify-center absolute inset-0" style={{ color: '#64748b' }}>
+              <div className="flex items-center justify-center absolute inset-0 text-slate-500">
               Loading...
             </div>
           )}
@@ -142,7 +142,7 @@ export const PageViewer: React.FC<Props> = ({ docId, pageNum, onClose, onChangeP
             style={{
               transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
               transformOrigin: '0 0',
-              borderRadius: '8px', boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+              borderRadius: '8px', boxShadow: '0 8px 40px var(--shadow-base)',
               display: loaded ? 'block' : 'none',
               maxWidth: '100%', maxHeight: '100%',
               userSelect: 'none', pointerEvents: 'none',

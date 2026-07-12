@@ -19,6 +19,10 @@ export function useSSE(
   loadAll: () => Promise<void>,
 ) {
   const doc = useDocument();
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  const loadRef = useRef(loadAll);
+  loadRef.current = loadAll;
 
   useEffect(() => {
     loadAll();
@@ -38,13 +42,13 @@ export function useSSE(
               invalidateCache(`/documents/${data.doc_id}`);
               invalidateCache('/documents');
               api.getDocumentDetails(data.doc_id).then(detail => {
-                doc.updateDocument(data.doc_id, () => ({...detail} as any));
+                docRef.current.updateDocument(data.doc_id, () => ({...detail} as any));
               }).catch(() => {});
             } else if (eventType === 'document_deleted' && data?.doc_id) {
-              doc.removeDocument(data.doc_id);
+              docRef.current.removeDocument(data.doc_id);
             } else if (eventType === 'document_upload' && data?.doc_id) {
               invalidateCache('/documents');
-              doc.setDocuments(prev => {
+              docRef.current.setDocuments(prev => {
                 const exists = prev.some(item => item.id === data.doc_id);
                 if (exists) {
                   return prev.map(item => item.id === data.doc_id ? { ...item, ...data } : item);
@@ -61,11 +65,11 @@ export function useSSE(
               });
             } else if (eventType !== 'connected') {
               invalidateCache('/documents');
-              loadAll();
+              loadRef.current();
             }
           } catch (err) {
             console.error("SSE targeted update error:", err);
-            loadAll();
+            loadRef.current();
           }
         };
         es.onerror = () => {
@@ -78,10 +82,10 @@ export function useSSE(
     connect();
     const fallback = setInterval(() => {
       if (isTokenExpired()) { redirectToLogin(); return; }
-      if (!es || es.readyState !== EventSource.OPEN) { invalidateCache('/documents'); loadAll(); }
+      if (!es || es.readyState !== EventSource.OPEN) { invalidateCache('/documents'); loadRef.current(); }
     }, 15000);
     return () => { es?.close(); if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(fallback); };
-  }, [loadAll, doc]);
+  }, [loadAll]);
 }
 
 export function useKeyboardShortcuts(

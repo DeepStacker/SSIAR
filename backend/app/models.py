@@ -55,3 +55,11 @@ class ChangePasswordRequest(BaseModel):
 
 class UpdateRoleRequest(BaseModel):
     role: str
+
+
+class UpdateUserRequest(BaseModel):
+    email: Optional[str] = None
+
+
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str

@@ -8,6 +8,8 @@ import { UIProvider, useUI } from '@/context/UIContext';
 import { ReviewProvider, useReview } from '@/context/ReviewContext';
 import { SelectionProvider, useSelection } from '@/context/SelectionContext';
 import { LoginPage } from '@/features/auth/LoginPage';
+import { LandingPage } from '@/features/marketing/LandingPage';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { Header } from '@/features/layout/Header';
 import { Sidebar } from '@/features/layout/Sidebar';
 import { Toast } from '@/components/Toast';
@@ -27,6 +29,8 @@ function AppInnerContents() {
   useInitAuth();
 
   const loadingRef = useRef(false);
+  const lastLoadRef = useRef(0);
+  const pendingRef = useRef(false);
 
   const showRef = useRef(show);
   showRef.current = show;
@@ -38,7 +42,10 @@ function AppInnerContents() {
   setQueueStatusRef.current = doc.setQueueStatus;
 
   const loadAll = useCallback(async () => {
-    if (loadingRef.current) return;
+    if (loadingRef.current) { pendingRef.current = true; return; }
+    if (Date.now() - lastLoadRef.current < 5000) { pendingRef.current = true; return; }
+    pendingRef.current = false;
+    lastLoadRef.current = Date.now();
     invalidateCache('/documents');
     invalidateCache('/queue-status');
     loadingRef.current = true;
@@ -52,10 +59,14 @@ function AppInnerContents() {
       if (qs) setQueueStatusRef.current(qs);
     } catch (err) {
       console.error(err);
-      showRef.current("Failed to load documents from backend", 'error');
     } finally {
       setLoadingRef.current(false);
       loadingRef.current = false;
+      if (pendingRef.current) {
+        pendingRef.current = false;
+    lastLoadRef.current = Date.now();
+        loadAll();
+      }
     }
   }, []);
 
@@ -139,7 +150,14 @@ function AppInnerContents() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar view={ui.view} onViewChange={(v) => { closeDocForce(); ui.setView(v); }} collapsed={ui.sidebarCollapsed} onToggle={() => ui.setSidebarCollapsed(c => !c)} />
+      <Sidebar
+        view={ui.view}
+        onViewChange={(v) => { closeDocForce(); ui.setView(v); }}
+        collapsed={ui.sidebarCollapsed}
+        onToggle={() => ui.setSidebarCollapsed(c => !c)}
+        mobileOpen={ui.sidebarMobileOpen}
+        onMobileClose={() => ui.setSidebarMobileOpen(false)}
+      />
       <div className="flex-1 flex flex-col min-w-0">
         <Header view={ui.view} onViewChange={ui.setView} />
         <main className="flex-1 overflow-y-auto p-6">
@@ -213,11 +231,27 @@ function AppInner() {
 }
 
 function AppAuthGate() {
-  const { token } = useAuth();
-  if (!token) {
-    return <LoginPage />;
+  const { token, loading: authLoading } = useAuth();
+
+  if (authLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Authenticating...</p>
+        </div>
+      </div>
+    );
   }
-  return <AppInner />;
+
+  return (
+    <Routes>
+      <Route path="/login" element={token ? <Navigate to="/app" replace /> : <LoginPage />} />
+      <Route path="/app/*" element={token ? <AppInner /> : <Navigate to="/login" replace />} />
+      <Route path="/" element={token ? <Navigate to="/app" replace /> : <LandingPage />} />
+      <Route path="*" element={<Navigate to={token ? "/app" : "/"} replace />} />
+    </Routes>
+  );
 }
 
 export default function App() {
