@@ -7,7 +7,7 @@ Stores all corrections for future learning.
 """
 from datetime import datetime
 from typing import Optional
-from app.database import get_db_connection, put_conn
+from app.database import get_db_connection, put_conn, USE_POSTGRES
 
 
 # ── Review Task Management ───────────────────────────────────────────────────
@@ -28,6 +28,9 @@ def create_review_task(
         cur = conn.cursor()
         now_str = datetime.now().isoformat()
         cur.execute(
+            """INSERT INTO review_tasks 
+               (document_id, field_name, original_value, priority, status, created_at, page_number, confidence_score, error_details)
+               VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s)""" if USE_POSTGRES else
             """INSERT INTO review_tasks 
                (document_id, field_name, original_value, priority, status, created_at, page_number, confidence_score, error_details)
                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
@@ -60,23 +63,23 @@ def get_pending_review_tasks(
         params = []
         
         if user_id:
-            conditions.append("d.user_id = ?")
+            conditions.append("d.user_id = %s" if USE_POSTGRES else "d.user_id = ?")
             params.append(user_id)
         if reviewer_id:
-            conditions.append("r.reviewer_id = ?")
+            conditions.append("r.reviewer_id = %s" if USE_POSTGRES else "r.reviewer_id = ?")
             params.append(reviewer_id)
         if priority:
-            conditions.append("r.priority = ?")
+            conditions.append("r.priority = %s" if USE_POSTGRES else "r.priority = ?")
             params.append(priority)
         if document_id:
-            conditions.append("r.document_id = ?")
+            conditions.append("r.document_id = %s" if USE_POSTGRES else "r.document_id = ?")
             params.append(document_id)
         if field_type == "sdq":
             conditions.append("r.field_name LIKE 'q%'")
         elif field_type == "demographic":
             conditions.append("r.field_name NOT LIKE 'q%'")
         if error_type:
-            conditions.append("r.error_details = ?")
+            conditions.append("r.error_details = %s" if USE_POSTGRES else "r.error_details = ?")
             params.append(error_type)
             
         where = " AND ".join(conditions)
@@ -107,7 +110,7 @@ def get_pending_review_tasks(
         cur.execute(
             f"SELECT r.*, d.filename FROM review_tasks r "
             f"LEFT JOIN documents d ON r.document_id = d.id "
-            f"WHERE {where} ORDER BY {order_by} LIMIT ?",
+            f"WHERE {where} ORDER BY {order_by} LIMIT {'%s' if USE_POSTGRES else '?'}",
             params + [limit]
         )
         
@@ -118,7 +121,6 @@ def get_pending_review_tasks(
             doc_id = row["document_id"]
             field_name = row["field_name"]
             
-            from app.database import USE_POSTGRES
             cur.execute("SELECT confidence_scores FROM form_data WHERE document_id = %s" if USE_POSTGRES else "SELECT confidence_scores FROM form_data WHERE document_id = ?", (doc_id,))
             fd_row = cur.fetchone()
             if fd_row and fd_row[0]:
@@ -202,6 +204,7 @@ def submit_review(
         
         # Get original task
         cur.execute(
+            "SELECT document_id, field_name, original_value FROM review_tasks WHERE id = %s" if USE_POSTGRES else
             "SELECT document_id, field_name, original_value FROM review_tasks WHERE id = ?",
             (task_id,)
         )
@@ -216,6 +219,9 @@ def submit_review(
         # Update this task and any duplicate pending tasks for the same field in this document
         cur.execute(
             """UPDATE review_tasks 
+               SET corrected_value = %s, status = 'completed', reviewer_id = %s, reviewed_at = %s
+               WHERE document_id = %s AND field_name = %s AND status = 'pending'""" if USE_POSTGRES else
+            """UPDATE review_tasks 
                SET corrected_value = ?, status = 'completed', reviewer_id = ?, reviewed_at = ?
                WHERE document_id = ? AND field_name = ? AND status = 'pending'""",
             (corrected_value, reviewer_id, now_str, doc_id, field_name)
@@ -223,6 +229,9 @@ def submit_review(
         
         # Ensure the specific task_id is marked completed (in case it wasn't pending, though it should be)
         cur.execute(
+            """UPDATE review_tasks 
+               SET corrected_value = %s, status = 'completed', reviewer_id = %s, reviewed_at = %s
+               WHERE id = %s""" if USE_POSTGRES else
             """UPDATE review_tasks 
                SET corrected_value = ?, status = 'completed', reviewer_id = ?, reviewed_at = ?
                WHERE id = ?""",
@@ -327,6 +336,7 @@ def submit_review(
     try:
         cur = conn.cursor()
         cur.execute(
+            "SELECT COUNT(*) FROM review_tasks WHERE document_id = %s AND status = 'pending'" if USE_POSTGRES else
             "SELECT COUNT(*) FROM review_tasks WHERE document_id = ? AND status = 'pending'",
             (doc_id,)
         )

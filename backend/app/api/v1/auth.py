@@ -138,10 +138,16 @@ async def forgot_password(payload: ForgotPasswordRequest):
         
         token = secrets.token_urlsafe(32)
         expiry = (datetime.now() + timedelta(hours=1)).isoformat()
-        cur.execute(
-            "INSERT OR REPLACE INTO password_reset_tokens (email, token, expires_at) VALUES (?, ?, ?)",
-            (email, token, expiry)
-        )
+        if USE_POSTGRES:
+            cur.execute(
+                "INSERT INTO password_reset_tokens (email, token, expires_at) VALUES (%s, %s, %s) ON CONFLICT (email) DO UPDATE SET token = EXCLUDED.token, expires_at = EXCLUDED.expires_at",
+                (email, token, expiry)
+            )
+        else:
+            cur.execute(
+                "INSERT OR REPLACE INTO password_reset_tokens (email, token, expires_at) VALUES (?, ?, ?)",
+                (email, token, expiry)
+            )
         conn.commit()
         print(f"[Password Reset] Token for {email}: {token}")
         return {
@@ -158,6 +164,7 @@ async def reset_password(payload: ResetPasswordRequest):
     try:
         cur = conn.cursor()
         cur.execute(
+            "SELECT email, expires_at FROM password_reset_tokens WHERE token = %s" if USE_POSTGRES else
             "SELECT email, expires_at FROM password_reset_tokens WHERE token = ?", (payload.token,)
         )
         row = cur.fetchone()
@@ -166,7 +173,7 @@ async def reset_password(payload: ResetPasswordRequest):
         
         email, expires_at = row[0], row[1]
         if datetime.fromisoformat(expires_at) < datetime.now():
-            cur.execute("DELETE FROM password_reset_tokens WHERE token = ?", (payload.token,))
+            cur.execute("DELETE FROM password_reset_tokens WHERE token = %s" if USE_POSTGRES else "DELETE FROM password_reset_tokens WHERE token = ?", (payload.token,))
             conn.commit()
             raise HTTPException(status_code=400, detail="Reset token has expired")
             
@@ -175,7 +182,7 @@ async def reset_password(payload: ResetPasswordRequest):
             "UPDATE users SET password_hash = %s WHERE email = %s" if USE_POSTGRES else
             "UPDATE users SET password_hash = ? WHERE email = ?", (new_pw_hash, email)
         )
-        cur.execute("DELETE FROM password_reset_tokens WHERE email = ?", (email,))
+        cur.execute("DELETE FROM password_reset_tokens WHERE email = %s" if USE_POSTGRES else "DELETE FROM password_reset_tokens WHERE email = ?", (email,))
         conn.commit()
         return {"message": "Password successfully updated."}
     finally:

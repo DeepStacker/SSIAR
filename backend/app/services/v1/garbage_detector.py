@@ -1,4 +1,4 @@
-from app.database import get_db_connection, put_conn
+from app.database import get_db_connection, put_conn, USE_POSTGRES
 from app.auth import get_current_user_id
 
 
@@ -41,6 +41,13 @@ def collect_garbage_docs() -> list:
         cursor = conn.cursor()
         if uid:
             cursor.execute("""
+                SELECT d.id, d.filename, d.status, d.escalation_level,
+                       f.roll_number, f.class, f.dob, f.gender
+                FROM documents d
+                LEFT JOIN form_data f ON d.id = f.document_id
+                WHERE d.status IN ('needs_review', 'verified') AND d.user_id = %s
+                ORDER BY d.created_at DESC
+            """ if USE_POSTGRES else """
                 SELECT d.id, d.filename, d.status, d.escalation_level,
                        f.roll_number, f.class, f.dob, f.gender
                 FROM documents d

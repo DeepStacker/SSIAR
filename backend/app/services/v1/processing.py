@@ -27,16 +27,16 @@ def compute_processing_analytics(
         if class_filter or gender or date_from or date_to:
             extra_joins = " LEFT JOIN form_data fd ON d.id = fd.document_id"
         if class_filter:
-            extra_wheres.append("fd.class = ?")
+            extra_wheres.append("fd.class = %s" if USE_POSTGRES else "fd.class = ?")
             extra_params.append(class_filter)
         if gender:
-            extra_wheres.append("fd.gender = ?")
+            extra_wheres.append("fd.gender = %s" if USE_POSTGRES else "fd.gender = ?")
             extra_params.append(gender)
         if date_from:
-            extra_wheres.append("d.created_at >= ?")
+            extra_wheres.append("d.created_at >= %s" if USE_POSTGRES else "d.created_at >= ?")
             extra_params.append(date_from + "T00:00:00")
         if date_to:
-            extra_wheres.append("d.created_at <= ?")
+            extra_wheres.append("d.created_at <= %s" if USE_POSTGRES else "d.created_at <= ?")
             extra_params.append(date_to + "T23:59:59")
         extra_where_sql = " AND " + " AND ".join(extra_wheres) if extra_wheres else ""
 
@@ -45,11 +45,12 @@ def compute_processing_analytics(
         if uid:
             base_today_params.append(uid)
 
+        ph = "%s" if USE_POSTGRES else "?"
         if uid:
             cursor.execute(f"""
                 SELECT substr(d.created_at, 12, 2) as hour, COUNT(*) as count
                 FROM documents d{extra_joins}
-                WHERE d.created_at LIKE ? AND d.user_id = ?{extra_where_sql}
+                WHERE d.created_at LIKE {ph} AND d.user_id = {ph}{extra_where_sql}
                 GROUP BY hour
                 ORDER BY hour
             """, base_today_params + extra_params)
@@ -57,7 +58,7 @@ def compute_processing_analytics(
             cursor.execute(f"""
                 SELECT substr(d.created_at, 12, 2) as hour, COUNT(*) as count
                 FROM documents d{extra_joins}
-                WHERE d.created_at LIKE ?{extra_where_sql}
+                WHERE d.created_at LIKE {ph}{extra_where_sql}
                 GROUP BY hour
                 ORDER BY hour
             """, [f"{today_str}%"] + extra_params)
@@ -69,7 +70,7 @@ def compute_processing_analytics(
             cursor.execute(f"""
                 SELECT d.escalation_level, COUNT(*) as count
                 FROM documents d{extra_joins}
-                WHERE d.user_id = ?{extra_where_sql}
+                WHERE d.user_id = {ph}{extra_where_sql}
                 GROUP BY d.escalation_level
             """, [uid] + extra_params)
         else:
@@ -91,7 +92,7 @@ def compute_processing_analytics(
             cursor.execute(f"""
                 SELECT d.status, COUNT(*) as count
                 FROM documents d{extra_joins}
-                WHERE d.user_id = ?{extra_where_sql}
+                WHERE d.user_id = {ph}{extra_where_sql}
                 GROUP BY d.status
             """, [uid] + extra_params)
         else:
@@ -191,19 +192,19 @@ def compute_per_field_confidence(
         extra_wheres = ["d.status IN ('verified', 'needs_review')"]
         extra_params = []
         if uid:
-            extra_wheres.append("d.user_id = ?")
+            extra_wheres.append("d.user_id = %s" if USE_POSTGRES else "d.user_id = ?")
             extra_params.append(uid)
         if class_filter:
-            extra_wheres.append("fd.class = ?")
+            extra_wheres.append("fd.class = %s" if USE_POSTGRES else "fd.class = ?")
             extra_params.append(class_filter)
         if gender:
-            extra_wheres.append("fd.gender = ?")
+            extra_wheres.append("fd.gender = %s" if USE_POSTGRES else "fd.gender = ?")
             extra_params.append(gender)
         if date_from:
-            extra_wheres.append("d.created_at >= ?")
+            extra_wheres.append("d.created_at >= %s" if USE_POSTGRES else "d.created_at >= ?")
             extra_params.append(date_from + "T00:00:00")
         if date_to:
-            extra_wheres.append("d.created_at <= ?")
+            extra_wheres.append("d.created_at <= %s" if USE_POSTGRES else "d.created_at <= ?")
             extra_params.append(date_to + "T23:59:59")
 
         cursor.execute(f"""

@@ -140,11 +140,12 @@ def process_document_background(
                     pass
 
         # Update document classification in DB
-        from app.database import get_db_connection, put_conn
+        from app.database import get_db_connection, put_conn, USE_POSTGRES
         conn = get_db_connection()
         try:
             cur = conn.cursor()
             cur.execute(
+                "UPDATE documents SET classification = %s WHERE id = %s" if USE_POSTGRES else
                 "UPDATE documents SET classification = ? WHERE id = ?",
                 (json.dumps(classification), doc_id)
             )
@@ -469,15 +470,22 @@ def _update_doc_status(
 
 def _store_azure_response(doc_id: str, raw_responses: dict):
     """Store the complete Azure response in the database."""
+    from app.database import USE_POSTGRES
     conn = get_db_connection()
     try:
         cur = conn.cursor()
         now_str = datetime.now().isoformat()
         data = json.dumps(raw_responses)
-        cur.execute(
-            "INSERT OR REPLACE INTO azure_responses (document_id, raw_response, saved_at) VALUES (?, ?, ?)",
-            (doc_id, data, now_str)
-        )
+        if USE_POSTGRES:
+            cur.execute(
+                "INSERT INTO azure_responses (document_id, raw_response, saved_at) VALUES (%s, %s, %s) ON CONFLICT (document_id) DO UPDATE SET raw_response = EXCLUDED.raw_response, saved_at = EXCLUDED.saved_at",
+                (doc_id, data, now_str)
+            )
+        else:
+            cur.execute(
+                "INSERT OR REPLACE INTO azure_responses (document_id, raw_response, saved_at) VALUES (?, ?, ?)",
+                (doc_id, data, now_str)
+            )
         conn.commit()
     finally:
         put_conn(conn)

@@ -5,7 +5,7 @@ import pandas as pd
 from typing import Dict, List, Any
 from datetime import date
 
-from app.database import get_db_connection, put_conn
+from app.database import get_db_connection, put_conn, USE_POSTGRES
 from app.auth import get_current_user_id
 from app.services.v1.questionnaire import load_metadata
 
@@ -14,7 +14,8 @@ def get_processed_data(class_filter=None, gender_filter=None, date_from=None, da
     uid = get_current_user_id()
     conn = get_db_connection()
     try:
-        placeholders = ",".join("?" for _ in statuses)
+        ph = "%s" if USE_POSTGRES else "?"
+        placeholders = ",".join(ph for _ in statuses)
         query = f"""
             SELECT fd.document_id, fd.roll_number, fd.class, fd.dob, fd.gender, fd.consent, 
                    fd.responses, fd.academic_scores, fd.remarks, fd.quality_report, fd.confidence_scores, d.status
@@ -25,19 +26,19 @@ def get_processed_data(class_filter=None, gender_filter=None, date_from=None, da
         params = list(statuses)
 
         if uid:
-            query += " AND d.user_id = ?"
+            query += " AND d.user_id = " + ph
             params.append(uid)
         if class_filter:
-            query += " AND fd.class = ?"
+            query += " AND fd.class = " + ph
             params.append(class_filter)
         if gender_filter:
-            query += " AND fd.gender = ?"
+            query += " AND fd.gender = " + ph
             params.append(gender_filter)
         if date_from:
-            query += " AND d.created_at >= ?"
+            query += " AND d.created_at >= " + ph
             params.append(date_from + "T00:00:00")
         if date_to:
-            query += " AND d.created_at <= ?"
+            query += " AND d.created_at <= " + ph
             params.append(date_to + "T23:59:59")
 
         df = pd.read_sql_query(query, conn, params=params)
@@ -166,25 +167,26 @@ def compute_summary_stats(
         doc_filters = []
         doc_params = []
         fd_join = ""
+        ph = "%s" if USE_POSTGRES else "?"
 
         if uid:
-            doc_filters.append("d.user_id = ?")
+            doc_filters.append("d.user_id = " + ph)
             doc_params.append(uid)
 
         if class_filter or gender:
             fd_join = " LEFT JOIN form_data fd ON d.id = fd.document_id"
 
         if class_filter:
-            doc_filters.append("fd.class = ?")
+            doc_filters.append("fd.class = " + ph)
             doc_params.append(class_filter)
         if gender:
-            doc_filters.append("fd.gender = ?")
+            doc_filters.append("fd.gender = " + ph)
             doc_params.append(gender)
         if date_from:
-            doc_filters.append("d.created_at >= ?")
+            doc_filters.append("d.created_at >= " + ph)
             doc_params.append(date_from + "T00:00:00")
         if date_to:
-            doc_filters.append("d.created_at <= ?")
+            doc_filters.append("d.created_at <= " + ph)
             doc_params.append(date_to + "T23:59:59")
 
         where_extra = " AND " + " AND ".join(doc_filters) if doc_filters else ""
@@ -199,7 +201,7 @@ def compute_summary_stats(
         pending_count = cursor.fetchone()[0]
 
         today_str = date.today().isoformat()
-        today_filters = [f"d.created_at LIKE ?"] + doc_filters
+        today_filters = [f"d.created_at LIKE {ph}"] + doc_filters
         today_params = [f"{today_str}%"] + doc_params
         cursor.execute(f"SELECT COUNT(*) FROM documents d{fd_join} WHERE 1=1 AND " + " AND ".join(today_filters), today_params)
         processed_today = cursor.fetchone()[0]
@@ -207,19 +209,19 @@ def compute_summary_stats(
         quality_filters = ["d.status IN ('verified', 'needs_review')"]
         quality_params = []
         if uid:
-            quality_filters.append("d.user_id = ?")
+            quality_filters.append("d.user_id = " + ph)
             quality_params.append(uid)
         if class_filter:
-            quality_filters.append("fd.class = ?")
+            quality_filters.append("fd.class = " + ph)
             quality_params.append(class_filter)
         if gender:
-            quality_filters.append("fd.gender = ?")
+            quality_filters.append("fd.gender = " + ph)
             quality_params.append(gender)
         if date_from:
-            quality_filters.append("d.created_at >= ?")
+            quality_filters.append("d.created_at >= " + ph)
             quality_params.append(date_from + "T00:00:00")
         if date_to:
-            quality_filters.append("d.created_at <= ?")
+            quality_filters.append("d.created_at <= " + ph)
             quality_params.append(date_to + "T23:59:59")
 
         cursor.execute(f"""

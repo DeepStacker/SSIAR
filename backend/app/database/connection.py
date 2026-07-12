@@ -626,6 +626,11 @@ def get_all_documents() -> list:
                 """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at, d.error_message,
                    f.roll_number, f.class, f.dob, f.gender, f.consent, f.verified_by_human
                    FROM documents d LEFT JOIN form_data f ON d.id = f.document_id
+                   WHERE d.user_id = %s
+                   ORDER BY d.created_at DESC""" if USE_POSTGRES else
+                """SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at, d.error_message,
+                   f.roll_number, f.class, f.dob, f.gender, f.consent, f.verified_by_human
+                   FROM documents d LEFT JOIN form_data f ON d.id = f.document_id
                    WHERE d.user_id = ?
                    ORDER BY d.created_at DESC""",
                 (uid,)
@@ -701,6 +706,8 @@ def delete_document(doc_id: str, user_id: str | None = None):
 
 
 def bulk_delete_documents(doc_ids: list) -> int:
+    if not doc_ids:
+        return 0
     from app.auth import get_current_user_id, get_current_role
     from app.image.storage import delete_document_files
     uid = get_current_user_id()

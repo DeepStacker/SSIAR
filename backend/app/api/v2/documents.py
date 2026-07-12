@@ -380,6 +380,7 @@ def recover_stuck_documents():
     try:
         cur = conn.cursor()
         cur.execute(
+            "SELECT id, filename FROM documents WHERE status = 'processing' AND created_at < %s" if USE_POSTGRES else
             "SELECT id, filename FROM documents WHERE status = 'processing' AND created_at < ?",
             (cutoff,)
         )
@@ -387,6 +388,7 @@ def recover_stuck_documents():
         if not stuck:
             return {"recovered": 0, "message": "No stuck documents found"}
         cur.execute(
+            "UPDATE documents SET status = 'failed', escalation_level = 'level_4' WHERE status = 'processing' AND created_at < %s" if USE_POSTGRES else
             "UPDATE documents SET status = 'failed', escalation_level = 'level_4' WHERE status = 'processing' AND created_at < ?",
             (cutoff,)
         )
