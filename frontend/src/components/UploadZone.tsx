@@ -61,18 +61,18 @@ export const UploadZone: React.FC<Props> = ({
 
   return (
     <Card
-      className={`relative mb-6 border-2 border-dashed rounded-xl p-5 transition-all ${
+      className={`mb-6 border-2 border-dashed rounded-xl p-5 transition-all cursor-pointer ${
         isDragOver
           ? 'border-violet-500 bg-violet-500/5'
           : 'border-border hover:border-violet-300 hover:bg-violet-500/[0.02]'
-      }`}
+      } ${isUploading ? 'pointer-events-none opacity-70' : ''}`}
+      onClick={() => !isUploading && fileInputRef.current?.click()}
       onDragOver={e => { e.preventDefault(); onDragOver(true); }}
       onDragLeave={() => onDragOver(false)}
       onDrop={handleDrop}
     >
-      <div className="absolute inset-0 cursor-pointer z-0" onClick={() => !isUploading && fileInputRef.current?.click()} />
       <input ref={fileInputRef} type="file" multiple accept=".pdf" onChange={handleFileInput} className="hidden" aria-describedby={descriptionId} />
-      <div className="flex items-center justify-center gap-4 relative z-10">
+      <div className="flex items-center justify-center gap-4 pointer-events-none">
         <div className={`p-3 rounded-xl ${isUploading ? 'bg-violet-500/10' : 'bg-muted'}`}>
           {isUploading ? <Loader2 size={24} className="animate-spin text-violet-500" /> : <Upload size={24} className="text-muted-foreground" />}
         </div>
@@ -81,7 +81,7 @@ export const UploadZone: React.FC<Props> = ({
           <div id={descriptionId} className="text-xs text-muted-foreground mt-0.5">{isUploading ? 'Processing...' : 'Select multiple files for bulk processing'}</div>
         </div>
       </div>
-      <div className="flex items-center justify-center gap-4 mt-4 relative z-10">
+      <div className="flex items-center justify-center gap-4 mt-4">
         <label className="flex items-center gap-1.5 cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}>
           <input type="checkbox" checked={autoVerify} onChange={e => onAutoVerifyChange(e.target.checked)} className="accent-violet-500" />
           Auto-verify
@@ -96,7 +96,7 @@ export const UploadZone: React.FC<Props> = ({
           </Button>
         )}
       </div>
-      <div className="text-center text-[10px] text-muted-foreground mt-2 relative z-10">{isUploading ? 'Processing...' : `Max ${MAX_FILE_SIZE_MB}MB per file`}</div>
+      <div className="text-center text-[10px] text-muted-foreground mt-2 pointer-events-none">{isUploading ? 'Processing...' : `Max ${MAX_FILE_SIZE_MB}MB per file`}</div>
     </Card>
   );
 };

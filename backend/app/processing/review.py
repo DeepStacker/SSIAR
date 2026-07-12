@@ -132,34 +132,55 @@ def get_pending_review_tasks(
                     polygon = field_data.get("polygon")
                     page_num = field_data.get("page", 1)
                     
-                    if (bbox or polygon):
+                    if not polygon and bbox and len(bbox) >= 4:
+                        polygon = [
+                            bbox[0], bbox[1],
+                            bbox[2], bbox[1],
+                            bbox[2], bbox[3],
+                            bbox[0], bbox[3]
+                        ]
+                        
+                    is_fallback = False
+                    if not polygon or len(polygon) < 8:
+                        from app.routes.v2.documents import _get_page
+                        img = _get_page(doc_id, page_num)
+                        if img is not None:
+                            h, w = img.shape[:2]
+                            from app.image.crops import get_field_coordinates
+                            polygon, page_num = get_field_coordinates(field_name, w, h)
+                            is_fallback = True
+                            
+                    if polygon and not is_fallback:
                         from app.routes.v2.documents import _get_page, _get_azure_scale
                         img = _get_page(doc_id, page_num)
                         if img is not None:
                             h, w = img.shape[:2]
                             scale_x, scale_y = _get_azure_scale(doc_id, page_num, w, h)
-                            if bbox and len(bbox) >= 4:
-                                bbox = [
-                                    bbox[0] * scale_x,
-                                    bbox[1] * scale_y,
-                                    bbox[2] * scale_x,
-                                    bbox[3] * scale_y
-                                ]
                             if polygon and len(polygon) >= 8:
                                 polygon = [
                                     pt * scale_x if idx % 2 == 0 else pt * scale_y
                                     for idx, pt in enumerate(polygon)
                                 ]
                                 
-                    row["bbox"] = bbox
                     row["polygon"] = polygon
                 except Exception:
-                    row["bbox"] = None
                     row["polygon"] = None
             else:
-                row["bbox"] = None
-                row["polygon"] = None
-                
+                # Direct fallback to static template coordinates if form_data is missing/incomplete
+                try:
+                    from app.routes.v2.documents import _get_page
+                    page_num = row.get("page_number") or (2 if field_name in ("math_pct", "science_pct", "language_pct", "rank", "remarks") or (field_name.startswith("q") and int(field_name[1:]) >= 13) else 1)
+                    img = _get_page(doc_id, page_num)
+                    if img is not None:
+                        h, w = img.shape[:2]
+                        from app.image.crops import get_field_coordinates
+                        polygon, page_num = get_field_coordinates(field_name, w, h)
+                        row["polygon"] = polygon
+                    else:
+                        row["polygon"] = None
+                except Exception:
+                    row["polygon"] = None
+            
             # Default fallback for page number if still missing
             if not row.get("page_number"):
                 if field_name.startswith("q") and field_name[1:].isdigit():

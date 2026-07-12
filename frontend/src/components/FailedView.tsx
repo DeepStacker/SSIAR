@@ -31,23 +31,16 @@ export const FailedView: React.FC<Props> = ({ doc, onClose, onReprocess }) => {
       <div className="flex items-center justify-center h-[60vh] px-4">
         <Card className="w-full max-w-lg">
           <CardContent className="p-6 flex flex-col items-center gap-4 text-center">
-            <AlertTriangle size={40} style={{ color: '#f43f5e' }} />
-            <h3 className="text-lg font-semibold" style={{ color: '#f43f5e' }}>Failed — {doc.filename}</h3>
+            <AlertTriangle size={40} className="text-rose-500" />
+            <h3 className="text-lg font-semibold text-rose-500">Failed — {doc.filename}</h3>
 
             {errorMsg && (
-              <div
-                className="w-full rounded-lg p-4 text-sm text-left"
-                style={{
-                  background: 'rgba(244, 63, 94, 0.1)',
-                  border: '1px solid rgba(244, 63, 94, 0.25)',
-                  color: '#f43f5e',
-                }}
-              >
+              <div className="w-full rounded-lg p-4 text-sm text-left text-rose-500 bg-rose-500/10 border border-rose-500/25">
                 <strong>Error:</strong> {errorMsg}
               </div>
             )}
 
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-sm text-[var(--text-muted)]">
               {errorMsg
                 ? 'The document could not be processed. You can retry or go back.'
                 : 'Processing encountered an error. Try re-uploading or check the backend logs.'}

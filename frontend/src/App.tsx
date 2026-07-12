@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Loader2, FileText, Clock, AlertTriangle, Check, X } from 'lucide-react';
 import type { Document, DocumentDetails, QueueStatus, TabType, SortKey, ReportFormat, ViewMode } from './api';
+import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from './api';
 import { api, clearApiCache, isTokenExpired, clearAuth, scheduleTokenRefresh } from './api';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
@@ -106,10 +107,10 @@ function AppInner() {
   const initialLoadDone = useRef(false);
   const loadingRef = useRef(false);
 
-  const needsReview = documents.filter(d => d.status === 'needs_review');
-  const verified = documents.filter(d => d.status === 'verified');
-  const processing = documents.filter(d => d.status === 'processing');
-  const failed = documents.filter(d => d.status === 'failed');
+  const needsReview = documents.filter(d => STATUS_REVIEW.has(d.status));
+  const verified = documents.filter(d => STATUS_VERIFIED.has(d.status));
+  const processing = documents.filter(d => STATUS_PROCESSING.has(d.status));
+  const failed = documents.filter(d => STATUS_FAILED.has(d.status));
   const escBreakdown = queueStatus?.by_escalation || null;
 
   // ---- Data loading ----
@@ -229,7 +230,7 @@ function AppInner() {
   }, [show]);
 
   const handleOpenDoc = useCallback((doc: Document) => {
-    if (doc.status === 'processing') {
+    if (STATUS_PROCESSING.has(doc.status)) {
       setDirty(false);
       setSelectedDoc(doc);
       setDocDetails(null);
@@ -420,7 +421,7 @@ function AppInner() {
   };
 
   const handleReprocessAllFailed = async () => {
-    const failedDocs = documents.filter(d => d.status === 'failed');
+    const failedDocs = documents.filter(d => STATUS_FAILED.has(d.status));
     if (!failedDocs.length) return;
     setConfirmState({
       title: 'Reprocess all failed?',
@@ -522,7 +523,7 @@ function AppInner() {
   // Keyboard
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (selectedDoc && selectedDoc.status === 'needs_review' && docDetails) {
+      if (selectedDoc && STATUS_REVIEW.has(selectedDoc.status) && docDetails) {
         if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); prevDoc(); return; }
         if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); nextDoc(); return; }
         if (e.key === 's' && !e.ctrlKey && !e.metaKey && !(e.target as HTMLElement)?.closest('input,textarea,select')) {
@@ -552,15 +553,14 @@ function AppInner() {
   };
 
   // Filtered list
-  const deferredQuery = useDeferredValue(searchQuery);
-  const filtered = useMemo(() => {
+  const filtered = (() => {
     const list = activeTab === 'all' ? documents :
       activeTab === 'needs_review' ? needsReview :
       activeTab === 'verified' ? verified :
       activeTab === 'processing' ? processing : failed;
     let result = list;
-    if (deferredQuery.trim()) {
-      const q = deferredQuery.toLowerCase();
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
       result = list.filter(d =>
         d.filename.toLowerCase().includes(q) ||
         (d.roll_number && d.roll_number.includes(q))
@@ -571,7 +571,7 @@ function AppInner() {
       const bv = (b[sortKey] || '').toLowerCase();
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
-  }, [documents, activeTab, searchQuery, sortKey, sortDir]);
+  })();
 
   const reportResults = useMemo(() => documents.filter(d => {
     if (reportStatus && d.status !== reportStatus) return false;
@@ -584,19 +584,19 @@ function AppInner() {
   // ---- Render ----
   const renderContent = () => {
     if (selectedDoc) {
-      if (selectedDoc.status === 'processing' || detailsLoading) {
+      if (STATUS_PROCESSING.has(selectedDoc.status) || detailsLoading) {
         return <ProcessingView doc={selectedDoc} />;
       }
 
-      if (selectedDoc.status === 'verified' && docDetails) {
+      if (STATUS_VERIFIED.has(selectedDoc.status) && docDetails) {
         return <VerifiedView doc={selectedDoc} details={docDetails} onClose={closeDoc} onDetailsChange={setDocDetails} />;
       }
 
-      if (selectedDoc.status === 'failed') {
+      if (STATUS_FAILED.has(selectedDoc.status)) {
         return <FailedView doc={selectedDoc} onClose={closeDoc} />;
       }
 
-      if (docDetails && selectedDoc.status === 'needs_review') {
+      if (docDetails && STATUS_REVIEW.has(selectedDoc.status)) {
         return (
           <ReviewView
             doc={selectedDoc} details={docDetails}

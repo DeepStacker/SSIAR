@@ -1,8 +1,8 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 interface CanvasCropProps {
   pageUrl: string;
-  bbox: number[]; // [x0, y0, x1, y1] in Azure coordinate space
+  bbox?: number[]; // [x0, y0, x1, y1] in Azure coordinate space
   polygon?: number[]; // [x0, y0, x1, y1, x2, y2, x3, y3, ...]
   className?: string;
   style?: React.CSSProperties;
@@ -47,20 +47,41 @@ function getOrLoadImage(url: string, onReady: (img: HTMLImageElement) => void, o
 
 export const CanvasCrop: React.FC<CanvasCropProps> = ({
   pageUrl,
-  bbox,
   polygon,
   className,
   style,
   paddingPercent = 0.05,
   onDataUrl,
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
   const dataUrlRef = useRef<string>('');
 
   useEffect(() => {
-    if ((!bbox || bbox.length < 4) && (!polygon || polygon.length < 8)) {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) return;
+
+    let resolvedPolygon = polygon;
+
+    if (!resolvedPolygon || resolvedPolygon.length < 8) {
       setError(true);
       setLoading(false);
       return;
@@ -80,78 +101,42 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
         return;
       }
 
-      const imgW = img.naturalWidth;
-      const imgH = img.naturalHeight;
+      const x0 = resolvedPolygon![0];
+      const y0 = resolvedPolygon![1];
+      const x1 = resolvedPolygon![2];
+      const y1 = resolvedPolygon![3];
+      const x3 = resolvedPolygon![6];
+      const y3 = resolvedPolygon![7];
 
-      if (polygon && polygon.length >= 8) {
-        const x0 = polygon[0];
-        const y0 = polygon[1];
-        const x1 = polygon[2];
-        const y1 = polygon[3];
-        const x2 = polygon[4];
-        const y2 = polygon[5];
-        const x3 = polygon[6];
-        const y3 = polygon[7];
+      const w = Math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2);
+      const h = Math.sqrt((x3 - x0) ** 2 + (y3 - y0) ** 2);
 
-        const w = Math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2);
-        const h = Math.sqrt((x3 - x0) ** 2 + (y3 - y0) ** 2);
-
-        if (w <= 0 || h <= 0) {
-          setError(true);
-          setLoading(false);
-          return;
-        }
-
-        const theta = Math.atan2(y1 - y0, x1 - x0);
-
-        const padX = w * paddingPercent;
-        const padY = h * paddingPercent;
-
-        const cropW = Math.ceil(w + 2 * padX);
-        const cropH = Math.ceil(h + 2 * padY);
-
-        canvas.width = cropW;
-        canvas.height = cropH;
-
-        ctx.save();
-        ctx.translate(padX, padY);
-        ctx.rotate(-theta);
-        ctx.translate(-x0, -y0);
-        ctx.drawImage(img, 0, 0);
-        ctx.restore();
-      } else {
-        let [x0, y0, x1, y1] = bbox;
-        x0 = Math.max(0, x0);
-        y0 = Math.max(0, y0);
-        x1 = Math.min(imgW, x1);
-        y1 = Math.min(imgH, y1);
-
-        const w = x1 - x0;
-        const h = y1 - y0;
-
-        if (w <= 0 || h <= 0) {
-          setError(true);
-          setLoading(false);
-          return;
-        }
-
-        const padX = w * paddingPercent;
-        const padY = h * paddingPercent;
-
-        const cropX = Math.max(0, Math.floor(x0 - padX));
-        const cropY = Math.max(0, Math.floor(y0 - padY));
-        const cropW = Math.min(imgW - cropX, Math.ceil(w + 2 * padX));
-        const cropH = Math.min(imgH - cropY, Math.ceil(h + 2 * padY));
-
-        canvas.width = cropW;
-        canvas.height = cropH;
-
-        ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      if (w <= 0 || h <= 0) {
+        setError(true);
+        setLoading(false);
+        return;
       }
+
+      const theta = Math.atan2(y1 - y0, x1 - x0);
+
+      const padX = w * paddingPercent;
+      const padY = h * paddingPercent;
+
+      const cropW = Math.ceil(w + 2 * padX);
+      const cropH = Math.ceil(h + 2 * padY);
+
+      canvas.width = cropW;
+      canvas.height = cropH;
+
+      ctx.save();
+      ctx.translate(padX, padY);
+      ctx.rotate(-theta);
+      ctx.translate(-x0, -y0);
+      ctx.drawImage(img, 0, 0);
+      ctx.restore();
 
       setLoading(false);
 
-      // Generate data URL for zoom popup
       try {
         const url = canvas.toDataURL('image/jpeg', 0.85);
         dataUrlRef.current = url;
@@ -168,35 +153,31 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
     );
 
     return () => { isMounted = false; };
-  }, [pageUrl, bbox, polygon, paddingPercent, onDataUrl]);
+  }, [isVisible, pageUrl, polygon, paddingPercent, onDataUrl]);
 
-  // Expose the latest data URL via ref for parent hover handlers
-  const getDataUrl = useCallback(() => dataUrlRef.current, []);
+  if (!isVisible) {
+    return <div ref={containerRef} className={className} style={style} />;
+  }
 
   if (error) {
     return (
-      <div className="text-xs p-2 border border-dashed rounded text-center"
-        style={{ color: 'var(--text-muted)', borderColor: 'var(--color-border)' }}>
+      <div ref={containerRef} className="text-xs p-2 border border-dashed rounded text-center text-[var(--text-muted)] border-[var(--color-border)]">
         No crop
       </div>
     );
   }
 
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
+    <div ref={containerRef} className="relative inline-block">
       {loading && (
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'rgba(0,0,0,0.05)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '11px', color: 'var(--text-secondary)', borderRadius: '4px',
-        }}>…</div>
+        <div className="absolute inset-0 bg-black/5 flex items-center justify-center text-[11px] text-[var(--text-secondary)] rounded">
+          …
+        </div>
       )}
       <canvas
         ref={canvasRef}
-        data-dataurl-getter=""
-        className={className}
-        style={{ display: 'block', borderRadius: '4px', ...style }}
+        className={"block rounded" + (className ? " " + className : "")}
+        style={style}
       />
     </div>
   );
@@ -205,9 +186,9 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
 // Helper hook: manages a map of field key → data URL for zoom
 export function useCropDataUrls() {
   const map = useRef<Record<string, string>>({});
-  const setUrl = useCallback((key: string, url: string) => {
+  const setUrl = (key: string, url: string) => {
     map.current[key] = url;
-  }, []);
-  const getUrl = useCallback((key: string) => map.current[key] || '', []);
+  };
+  const getUrl = (key: string) => map.current[key] || '';
   return { setUrl, getUrl };
 }

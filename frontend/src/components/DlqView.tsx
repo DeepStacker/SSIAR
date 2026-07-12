@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Loader2, Search, ArrowUpDown, Check, AlertTriangle, ArrowRight, Sparkles, Image, Scan, BarChart, FileWarning, Hash } from 'lucide-react';
+import { Loader2, Search, ArrowUpDown, Check, AlertTriangle, ArrowRight, Sparkles, Image, Scan, BarChart, FileWarning, Hash, X, ArrowLeft, ArrowRightCircle } from 'lucide-react';
 import type { DlqTask } from '../api';
 import { api } from '../api';
 import { CanvasCrop } from './CanvasCrop';
@@ -11,11 +11,10 @@ import { useToast } from '../context/ToastContext';
 
 interface FullPagePreviewProps {
   pageUrl: string;
-  bbox?: number[];
   polygon?: number[];
 }
 
-const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, bbox, polygon }) => {
+const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, polygon }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -56,13 +55,6 @@ const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, bbox, polygo
         ctx.stroke();
         ctx.fillStyle = 'rgba(244, 63, 94, 0.18)';
         ctx.fill();
-      } else if (bbox && bbox.length >= 4) {
-        const [x0, y0, x1, y1] = bbox;
-        ctx.strokeStyle = '#f43f5e';
-        ctx.lineWidth = 8;
-        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-        ctx.fillStyle = 'rgba(244, 63, 94, 0.18)';
-        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
       }
 
       setLoading(false);
@@ -76,7 +68,7 @@ const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, bbox, polygo
     img.src = pageUrl;
 
     return () => { isMounted = false; };
-  }, [pageUrl, bbox, polygon]);
+  }, [pageUrl, polygon]);
 
   return (
     <div className="relative w-full flex items-center justify-center bg-black/5 overflow-hidden rounded-xl border min-h-[300px]">
@@ -98,6 +90,88 @@ const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, bbox, polygo
     </div>
   );
 };
+
+const labelMap: Record<string, string> = {
+  roll_number: 'Roll Number',
+  class: 'Class',
+  dob: 'Date of Birth',
+  gender: 'Gender',
+  math_pct: 'Math %',
+  science_pct: 'Science %',
+  language_pct: 'Language %',
+  rank: 'Rank',
+  consent: 'Consent',
+};
+
+const getFieldLabel = (name: string) => {
+  if (name.startsWith('q') && /^\d+$/.test(name.slice(1))) return `SDQ Question ${name.slice(1)}`;
+  return labelMap[name] || name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
+const ErrorDetail: React.FC<{ error_details: string }> = ({ error_details }) => {
+  const info = error_details === 'unanswered'
+    ? { label: 'Blank / Not Detected', desc: 'Field was left blank, crossed out, or could not be read' }
+    : error_details === 'multi_tick'
+    ? { label: 'Multiple Selections', desc: 'More than one checkbox was marked for a single-answer field' }
+    : { label: 'Low Confidence', desc: error_details || 'OCR confidence is below the required threshold' };
+
+  return (
+    <div className="flex items-start gap-2.5 p-3 rounded-lg bg-rose-500/[0.05] border border-rose-500/15">
+      <AlertTriangle size={14} className="text-rose-500 shrink-0 mt-0.5" />
+      <div>
+        <div className="text-[11px] font-semibold text-rose-500">{info.label}</div>
+        <div className="text-[10px] text-muted-foreground/80 mt-0.5">{info.desc}</div>
+      </div>
+    </div>
+  );
+};
+
+const DiffRow: React.FC<{ original: string; corrected: string }> = ({ original, corrected }) => {
+  const hasChanged = original !== corrected;
+
+  if (corrected === '' && !original) {
+    return (
+      <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-muted/40 border border-dashed text-muted-foreground/60 text-xs">
+        <FileWarning size={12} /> No value to compare
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
+      <div className={`p-3 rounded-lg border ${hasChanged ? 'bg-amber-500/[0.04] border-amber-500/20' : 'bg-muted/30 border-border'}`}>
+        <div className="text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1">OCR Extracted</div>
+        <div className={`font-mono text-sm font-bold ${hasChanged ? 'text-amber-600 line-through decoration-2' : 'text-foreground'}`}>
+          {original || <span className="italic font-normal text-muted-foreground/50 text-xs">&mdash;</span>}
+        </div>
+      </div>
+
+      <div className="flex flex-col items-center gap-0.5">
+        {hasChanged ? (
+          <>
+            <ArrowRightCircle size={18} className="text-emerald-500" />
+            <span className="text-[8px] font-semibold text-emerald-500 uppercase tracking-wider">Fixed</span>
+          </>
+        ) : (
+          <>
+            <Check size={16} className="text-muted-foreground/40" />
+            <span className="text-[8px] text-muted-foreground/40 uppercase tracking-wider">Same</span>
+          </>
+        )}
+      </div>
+
+      <div className={`p-3 rounded-lg border ${hasChanged ? 'bg-emerald-500/[0.06] border-emerald-500/25' : 'bg-muted/30 border-border'}`}>
+        <div className="text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1">Corrected</div>
+        <div className="font-mono text-sm font-bold text-emerald-600">
+          {corrected || <span className="italic font-normal text-muted-foreground/50 text-xs">Blank (marked)</span>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const c = (base: string, ...extras: (string | false | undefined | null)[]) =>
+  [base, ...extras.filter(Boolean)].join(' ');
 
 export const DlqView: React.FC = () => {
   const { show } = useToast();
@@ -299,16 +373,12 @@ export const DlqView: React.FC = () => {
       t.original_value.toLowerCase().includes(q);
   });
 
-  const getFormattedFieldName = (name: string) => {
-    if (name.startsWith('q') && name.substring(1).match(/^\d+$/)) return `Question ${name.substring(1)}`;
-    return name.replace('_', ' ').toUpperCase();
-  };
-
   const totalInSession = initialTotalCount || dbTotalCount;
   const progressPercent = totalInSession > 0 ? Math.round((resolvedSessionCount / totalInSession) * 100) : 0;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100vh-9rem)] overflow-hidden">
+      {/* ── Left Sidebar: Filtered Task List ── */}
       <div className="flex flex-col border rounded-xl overflow-hidden bg-card h-full shadow-sm">
         <div className="p-4 border-b space-y-3 shrink-0">
           <div className="bg-gradient-to-r from-violet-500/10 to-cyan-500/5 p-3 rounded-lg border border-violet-500/10">
@@ -435,28 +505,31 @@ export const DlqView: React.FC = () => {
                 <div
                   key={t.id}
                   onClick={() => setSelectedTaskId(t.id)}
-                  className={`group relative pl-3 pr-3 py-2.5 rounded-lg cursor-pointer transition-all ${
+                  className={c(
+                    'group relative pl-3 pr-3 py-2.5 rounded-lg cursor-pointer transition-all',
                     selectedTaskId === t.id
                       ? 'bg-violet-500/10 shadow-sm ring-1 ring-violet-500/25'
                       : 'hover:bg-muted bg-card'
-                  }`}
+                  )}
                 >
-                  <div className={`absolute left-0 top-2.5 bottom-2.5 w-0.5 rounded-full ${
+                  <div className={c(
+                    'absolute left-0 top-2.5 bottom-2.5 w-0.5 rounded-full',
                     t.priority === 'critical' ? 'bg-rose-500' : 'bg-amber-400'
-                  }`} />
+                  )} />
                   <div className="flex items-start justify-between gap-2 mb-1">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                    <span className={c(
+                      'text-[10px] px-1.5 py-0.5 rounded font-bold uppercase',
                       t.priority === 'critical' ? 'bg-rose-500/10 text-rose-500' : 'bg-amber-500/10 text-amber-600'
-                    }`}>
+                    )}>
                       {t.priority}
                     </span>
-                    <span className={`text-[10px] font-medium ${confColor}`}>
+                    <span className={c('text-[10px] font-medium', confColor)}>
                       {Math.round(t.confidence_score * 100)}%
                     </span>
                   </div>
                   <div className="font-semibold text-xs mb-0.5 truncate flex items-center gap-1.5">
                     {isSdq ? <Hash size={10} className="shrink-0 text-muted-foreground" /> : null}
-                    {getFormattedFieldName(t.field_name)}
+                    {getFieldLabel(t.field_name)}
                     {isSdq && <Badge variant="outline" className="text-[8px] px-1 py-0 h-3.5 font-normal ml-auto">SDQ</Badge>}
                   </div>
                   <div className="text-[10px] text-muted-foreground truncate mb-1">{t.filename}</div>
@@ -471,259 +544,297 @@ export const DlqView: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Right Panel: Detail View ── */}
       <div className="md:col-span-2 flex flex-col h-full overflow-hidden">
         {activeTask ? (
           <div className="flex flex-col h-full bg-card border rounded-xl overflow-hidden shadow-sm">
-            <div className="p-4 border-b flex items-center justify-between shrink-0 gap-3">
+            {/* Header */}
+            <div className="px-4 py-3 border-b flex items-center justify-between shrink-0 gap-3">
               <div className="min-w-0 flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full shrink-0 ${
+                <div className={c(
+                  'w-2.5 h-2.5 rounded-full shrink-0',
                   activeTask.priority === 'critical' ? 'bg-rose-500' : 'bg-amber-400'
-                }`} />
+                )} />
                 <div className="min-w-0">
-                  <h2 className="text-sm font-bold truncate">{getFormattedFieldName(activeTask.field_name)}</h2>
+                  <h2 className="text-sm font-bold truncate">{getFieldLabel(activeTask.field_name)}</h2>
                   <p className="text-[10px] text-muted-foreground truncate flex items-center gap-1">
                     <span className="truncate max-w-[200px]">{activeTask.filename}</span>
                     <span className="text-muted-foreground/40">&middot;</span>
                     <span>Page {activeTask.page_number}</span>
                     <span className="text-muted-foreground/40">&middot;</span>
-                    <span className={activeTask.confidence_score >= 0.9 ? 'text-emerald-500' : activeTask.confidence_score >= 0.6 ? 'text-amber-500' : 'text-rose-500'}>
+                    <span className={c(
+                      activeTask.confidence_score >= 0.9 ? 'text-emerald-500' : activeTask.confidence_score >= 0.6 ? 'text-amber-500' : 'text-rose-500'
+                    )}>
                       {Math.round(activeTask.confidence_score * 100)}% conf
                     </span>
                   </p>
                 </div>
               </div>
               <div className="flex items-center bg-muted p-0.5 rounded-lg shrink-0">
-                <Button variant="ghost" size="sm" onClick={() => setPreviewMode('crop')}
-                  className={`h-7 px-3 text-[10px] font-bold ${previewMode === 'crop' ? 'bg-card shadow-sm' : ''}`}>
+                <Button variant="ghost" size="sm" onClick={() => activeTask.bbox && setPreviewMode('crop')}
+                  className={c('h-7 px-3 text-[10px] font-bold', !activeTask.bbox ? 'opacity-40 cursor-not-allowed' : '', previewMode === 'crop' ? 'bg-card shadow-sm' : '')}>
                   <Scan size={12} className="mr-1" /> Field
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setPreviewMode('full')}
-                  className={`h-7 px-3 text-[10px] font-bold ${previewMode === 'full' ? 'bg-card shadow-sm' : ''}`}>
+                  className={c('h-7 px-3 text-[10px] font-bold', previewMode === 'full' ? 'bg-card shadow-sm' : '')}>
                   <Image size={12} className="mr-1" /> Full Page
                 </Button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <div>
-                <div className="text-[10px] text-muted-foreground font-medium mb-1.5 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    {previewMode === 'crop' ? <Scan size={10} /> : <Image size={10} />}
-                    {previewMode === 'crop' ? 'Field Crop' : 'Full Page'}
-                  </span>
-                  <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground/60 font-mono">Alt+V</kbd>
-                </div>
-                {previewMode === 'crop' ? (
-                  activeTask.bbox ? (
-                    <div className="w-full flex items-center justify-center p-3 border rounded-xl bg-black/[0.03] overflow-hidden min-h-[120px] max-h-[200px]">
+            {/* Scrollable content */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-5 space-y-5">
+
+                {/* ── Section 1: Image Preview ── */}
+                <div>
+                  <div className="text-[10px] text-muted-foreground font-medium mb-2 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      {previewMode === 'crop' ? <Scan size={10} /> : <Image size={10} />}
+                      {previewMode === 'crop' ? 'Field Crop' : 'Full Page'}
+                    </span>
+                    <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground/60 font-mono">Alt+V</kbd>
+                  </div>
+                  {previewMode === 'crop' ? (
+                    <div className="w-full flex items-center justify-center p-4 border rounded-xl bg-black/[0.03] overflow-hidden min-h-[120px]">
                       <CanvasCrop
                         pageUrl={api.getPageUrl(activeTask.document_id, activeTask.page_number)}
-                        bbox={activeTask.bbox}
                         polygon={activeTask.polygon}
-                        style={{ maxWidth: '100%', maxHeight: '160px', objectFit: 'contain', borderRadius: '4px' }}
+                        className="max-w-full max-h-[160px] object-contain rounded"
                       />
                     </div>
                   ) : (
-                    <div className="w-full p-8 border rounded-xl bg-muted/50 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
-                      <FileWarning size={16} className="text-muted-foreground/40" />
-                      <span>No coordinates available</span>
-                      <span className="text-[10px] text-muted-foreground/60">Toggle full page view to see context</span>
-                    </div>
-                  )
-                ) : (
-                  <FullPagePreview
-                    pageUrl={api.getPageUrl(activeTask.document_id, activeTask.page_number)}
-                    bbox={activeTask.bbox}
-                    polygon={activeTask.polygon}
-                  />
+                    <FullPagePreview
+                      pageUrl={api.getPageUrl(activeTask.document_id, activeTask.page_number)}
+                      polygon={activeTask.polygon ?? undefined}
+                    />
+                  )}
+                </div>
+
+                {/* ── Section 2: Diff Comparison ── */}
+                <div>
+                  <div className="text-[10px] text-muted-foreground font-medium mb-2 flex items-center gap-1.5">
+                    <ArrowUpDown size={10} /> OCR vs Corrected
+                  </div>
+                  <DiffRow original={activeTask.original_value || ''} corrected={inputValue} />
+                </div>
+
+                {/* ── Section 3: Issue Details ── */}
+                {activeTask.error_details && (
+                  <ErrorDetail error_details={activeTask.error_details} />
                 )}
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 rounded-lg border bg-card">
-                  <div className="text-[10px] text-muted-foreground font-medium mb-1">OCR Extracted Value</div>
-                  <div className="font-bold text-sm font-mono">
-                    {activeTask.original_value || <span className="text-muted-foreground font-normal italic text-xs">&mdash; empty</span>}
-                  </div>
-                </div>
-                <div className="p-3 rounded-lg border bg-rose-500/[0.03] border-rose-500/15">
-                  <div className="text-[10px] text-rose-500 font-medium mb-1 flex items-center gap-1">
-                    <AlertTriangle size={10} /> Issue
-                  </div>
-                  <div className="text-xs font-medium">
-                    {activeTask.error_details === 'unanswered'
-                      ? 'Field was left blank or not detected'
-                      : activeTask.error_details === 'multi_tick'
-                      ? 'Multiple checkboxes were marked'
-                      : activeTask.error_details || 'Low confidence in extracted value'}
-                  </div>
-                </div>
-              </div>
+                {/* ── Section 4: Correction Input ── */}
+                <Card className="border-violet-500/20 bg-violet-500/[0.02]">
+                  <CardContent className="pt-4 space-y-4">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles size={11} className="text-violet-500" /> Correction
+                    </span>
 
-              <Card className="border-violet-500/20 bg-violet-500/[0.02]">
-                <CardContent className="pt-4 space-y-3.5">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <Sparkles size={11} className="text-violet-500" /> Correction
-                  </span>
-
-                  {activeTask.field_name === 'dob' && (
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold">Correct Date (DD/MM/YYYY)</label>
-                      <div className="flex gap-2">
-                        <input
-                          ref={inputRef}
-                          type="text"
-                          value={inputValue}
-                          placeholder="e.g. 24/08/2009"
-                          onChange={e => handleDateChange(e.target.value)}
-                          className={`flex-1 px-3 py-2 border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 ${
-                            inputValue === ''
-                              ? 'focus:ring-ring'
-                              : isValidDate
-                              ? 'border-emerald-500 focus:ring-emerald-500'
-                              : 'border-rose-500 focus:ring-rose-500'
-                          }`}
-                        />
-                        {inputValue && isValidDate && (
-                          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-500/10 text-emerald-500 shrink-0 border border-emerald-500/20">
-                            <Check size={16} />
-                          </div>
-                        )}
-                        <Button variant="outline" onClick={handleMarkBlank} className="shrink-0 h-9 px-3 text-xs">Mark Blank</Button>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground">Separators (-, ., space) normalized to slashes.</p>
-                    </div>
-                  )}
-
-                  {activeTask.field_name === 'consent' && (
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold flex items-center justify-between">
-                        <span>Consent</span>
-                        <span className="text-[10px] text-muted-foreground/60 font-normal"><kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">Y</kbd> <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">N</kbd> <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">U</kbd></span>
-                      </label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {['Yes', 'No', 'Unanswered'].map(opt => (
-                          <Button key={opt} variant={inputValue === opt ? 'default' : 'outline'}
-                            onClick={() => { setInputValue(opt); handleResolve(opt); }} className="h-9 text-xs font-medium">
-                            {opt}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {activeTask.field_name.startsWith('q') && (() => {
-                    let selectedVals: number[] = [];
-                    try {
-                      if (inputValue.startsWith('[') && inputValue.endsWith(']')) selectedVals = JSON.parse(inputValue);
-                      else if (inputValue.includes(',')) selectedVals = inputValue.split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x));
-                      else if (inputValue && !isNaN(parseInt(inputValue))) selectedVals = [parseInt(inputValue)];
-                    } catch { selectedVals = []; }
-
-                    const handleToggle = (valNum: number) => {
-                      if (valNum === 0) { setInputValue('0'); return; }
-                      let next: number[];
-                      if (selectedVals.includes(0)) next = [valNum];
-                      else if (selectedVals.includes(valNum)) next = selectedVals.filter(x => x !== valNum);
-                      else next = [...selectedVals, valNum].sort();
-                      setInputValue(next.length === 0 ? '0' : JSON.stringify(next));
-                    };
-
-                    return (
-                      <div className="space-y-3">
+                    {/* DOB */}
+                    {activeTask.field_name === 'dob' && (
+                      <div className="space-y-2">
                         <label className="text-xs font-semibold flex items-center justify-between">
-                          <span>SDQ Value</span>
-                          <span className="text-[10px] text-muted-foreground/60"><kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">1</kbd> <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">2</kbd> <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">3</kbd> <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">0</kbd></span>
+                          <span>Correct Date</span>
+                          <span className="text-[10px] text-muted-foreground/60">DD/MM/YYYY</span>
                         </label>
-                        <div className="grid grid-cols-4 gap-2">
-                          {[
-                            { val: 1, label: 'Unhappy' }, { val: 2, label: 'Angry' },
-                            { val: 3, label: 'Calm' }, { val: 0, label: 'Unanswered' }
-                          ].map(opt => {
-                            const isSelected = selectedVals.includes(opt.val);
-                            return (
-                              <Button key={opt.val} type="button" variant={isSelected ? 'default' : 'outline'}
-                                onClick={() => handleToggle(opt.val)}
-                                className={`h-16 flex flex-col items-center justify-center gap-1 rounded-lg ${isSelected ? 'ring-2 ring-violet-500' : ''}`}>
-                                <span className="text-lg font-extrabold leading-none">{opt.val}</span>
-                                <span className="text-[9px] text-center leading-tight text-muted-foreground">{opt.label}</span>
-                              </Button>
-                            );
-                          })}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 text-xs text-muted-foreground">
-                            Selected: <span className="font-semibold text-foreground">{inputValue || '0'}</span>
+                        <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <Input
+                              ref={inputRef}
+                              type="text"
+                              value={inputValue}
+                              placeholder="e.g. 24/08/2009"
+                              onChange={e => handleDateChange(e.target.value)}
+                              className={c(
+                                'h-10 text-sm',
+                                inputValue === '' ? '' : isValidDate ? 'border-emerald-500 ring-1 ring-emerald-500/30' : 'border-rose-500 ring-1 ring-rose-500/30'
+                              )}
+                            />
+                            {inputValue && (
+                              <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                                {isValidDate ? (
+                                  <Check size={16} className="text-emerald-500" />
+                                ) : (
+                                  <X size={16} className="text-rose-500" />
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <Button type="button" variant="default" onClick={() => handleResolve(inputValue)} className="h-8 text-xs font-medium">
-                            Save &amp; Next
-                          </Button>
+                          <Button variant="outline" onClick={handleMarkBlank} className="shrink-0 h-10 px-3 text-xs">Blank</Button>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">Separators (-, ., space) normalized to slashes.</p>
+                      </div>
+                    )}
+
+                    {/* Consent */}
+                    {activeTask.field_name === 'consent' && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold flex items-center justify-between">
+                          <span>Consent</span>
+                          <span className="text-[10px] text-muted-foreground/60 font-normal gap-1 flex">
+                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">Y</kbd>
+                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">N</kbd>
+                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">U</kbd>
+                          </span>
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {['Yes', 'No', 'Unanswered'].map(opt => (
+                            <Button key={opt}
+                              variant={inputValue === opt ? 'default' : 'outline'}
+                              onClick={() => { setInputValue(opt); handleResolve(opt); }}
+                              className={c('h-10 text-sm font-medium', inputValue === opt ? '' : '')}>
+                              {opt}
+                            </Button>
+                          ))}
                         </div>
                       </div>
-                    );
-                  })()}
+                    )}
 
-                  {activeTask.field_name === 'gender' && (
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold flex items-center justify-between">
-                        <span>Gender</span>
-                        <span className="text-[10px] text-muted-foreground/60"><kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">M</kbd> <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">F</kbd></span>
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button variant={inputValue === 'M' ? 'default' : 'outline'}
-                          onClick={() => { setInputValue('M'); handleResolve('M'); }} className="h-10 text-sm font-medium">
-                          Male
-                        </Button>
-                        <Button variant={inputValue === 'F' ? 'default' : 'outline'}
-                          onClick={() => { setInputValue('F'); handleResolve('F'); }} className="h-10 text-sm font-medium">
-                          Female
-                        </Button>
+                    {/* Gender */}
+                    {activeTask.field_name === 'gender' && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold flex items-center justify-between">
+                          <span>Gender</span>
+                          <span className="text-[10px] text-muted-foreground/60 gap-1 flex">
+                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">M</kbd>
+                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">F</kbd>
+                          </span>
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            variant={inputValue === 'M' ? 'default' : 'outline'}
+                            onClick={() => { setInputValue('M'); handleResolve('M'); }}
+                            className="h-11 text-sm font-medium"
+                          >Male</Button>
+                          <Button
+                            variant={inputValue === 'F' ? 'default' : 'outline'}
+                            onClick={() => { setInputValue('F'); handleResolve('F'); }}
+                            className="h-11 text-sm font-medium"
+                          >Female</Button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {activeTask.field_name !== 'dob' && activeTask.field_name !== 'consent' && activeTask.field_name !== 'gender' && !activeTask.field_name.startsWith('q') && (
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold">Correct Value</label>
-                      <div className="flex gap-2">
-                        <Input ref={inputRef} type="text" value={inputValue}
-                          onChange={e => setInputValue(e.target.value)}
-                          className="flex-1 h-9 text-sm" />
-                        <Button variant="outline" onClick={handleMarkBlank} className="shrink-0 h-9 px-3 text-xs">Mark Blank</Button>
+                    {/* SDQ */}
+                    {activeTask.field_name.startsWith('q') && (() => {
+                      let selectedVals: number[] = [];
+                      try {
+                        if (inputValue.startsWith('[') && inputValue.endsWith(']')) selectedVals = JSON.parse(inputValue);
+                        else if (inputValue.includes(',')) selectedVals = inputValue.split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x));
+                        else if (inputValue && !isNaN(parseInt(inputValue))) selectedVals = [parseInt(inputValue)];
+                      } catch { selectedVals = []; }
+
+                      const handleToggle = (valNum: number) => {
+                        if (valNum === 0) { setInputValue('0'); return; }
+                        let next: number[];
+                        if (selectedVals.includes(0)) next = [valNum];
+                        else if (selectedVals.includes(valNum)) next = selectedVals.filter(x => x !== valNum);
+                        else next = [...selectedVals, valNum].sort();
+                        setInputValue(next.length === 0 ? '0' : JSON.stringify(next));
+                      };
+
+                      return (
+                        <div className="space-y-3">
+                          <label className="text-xs font-semibold flex items-center justify-between">
+                            <span>SDQ Response</span>
+                            <span className="text-[10px] text-muted-foreground/60 gap-1 flex">
+                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">1</kbd>
+                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">2</kbd>
+                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">3</kbd>
+                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">0</kbd>
+                            </span>
+                          </label>
+                          <div className="grid grid-cols-4 gap-2">
+                            {[
+                              { val: 1, label: 'Unhappy', icon: '😟' },
+                              { val: 2, label: 'Angry', icon: '😠' },
+                              { val: 3, label: 'Calm', icon: '😌' },
+                              { val: 0, label: 'Unanswered', icon: '—' },
+                            ].map(opt => {
+                              const isSelected = selectedVals.includes(opt.val);
+                              return (
+                                <Button key={opt.val} type="button"
+                                  variant={isSelected ? 'default' : 'outline'}
+                                  onClick={() => handleToggle(opt.val)}
+                                  className={c(
+                                    'h-16 flex flex-col items-center justify-center gap-0.5 rounded-lg',
+                                    isSelected ? 'ring-2 ring-violet-500' : ''
+                                  )}>
+                                  <span className="text-lg font-extrabold leading-none">{opt.val}</span>
+                                  <span className="text-[9px] text-center leading-tight text-muted-foreground">{opt.label}</span>
+                                </Button>
+                              );
+                            })}
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">
+                              Selected: <span className="font-semibold text-foreground">{inputValue || '0'}</span>
+                            </span>
+                            <Button type="button" variant="default" onClick={() => handleResolve(inputValue)} className="h-8 text-xs font-medium">
+                              Save &amp; Next
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Generic text input */}
+                    {activeTask.field_name !== 'dob' && activeTask.field_name !== 'consent' && activeTask.field_name !== 'gender' && !activeTask.field_name.startsWith('q') && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold flex items-center justify-between">
+                          <span>Correct Value</span>
+                          <span className="text-[10px] text-muted-foreground/60 font-normal">Enter the correct value from the field image above</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <Input
+                            ref={inputRef}
+                            type="text"
+                            value={inputValue}
+                            onChange={e => setInputValue(e.target.value)}
+                            placeholder="Type corrected value..."
+                            className="flex-1 h-10 text-sm"
+                          />
+                          <Button variant="outline" onClick={handleMarkBlank} className="shrink-0 h-10 px-3 text-xs">Blank</Button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                    )}
+                  </CardContent>
+                </Card>
 
-              <div className="flex items-center justify-between pt-2">
-                <Button variant="ghost" onClick={handleSkip} className="h-8 text-xs gap-1 text-muted-foreground">
-                  <span className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">S</span>
-                  Skip
-                </Button>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={handleMarkBlank} className="h-8 text-xs gap-1.5">
-                    <span className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">E</span>
-                    Mark Blank
+                {/* ── Section 4: Actions ── */}
+                <div className="flex items-center justify-between pt-1">
+                  <Button variant="ghost" onClick={handleSkip} className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground">
+                    <ArrowLeft size={12} />
+                    <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono text-muted-foreground/80">S</kbd>
+                    Skip
                   </Button>
-                  <Button onClick={() => handleResolve()}
-                    disabled={saving || (activeTask.field_name === 'dob' && !isValidDate && inputValue !== '')}
-                    className="bg-violet-500 hover:bg-violet-600 text-white font-bold text-xs h-8 flex items-center gap-1.5 px-4 shadow-sm">
-                    {saving ? <Loader2 className="animate-spin" size={12} /> : <><span>Save &amp; Next</span> <ArrowRight size={12} /></>}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={handleMarkBlank} className="h-8 text-xs gap-1.5">
+                      <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">E</kbd>
+                      Mark Blank
+                    </Button>
+                    <Button onClick={() => handleResolve()}
+                      disabled={saving || (activeTask.field_name === 'dob' && !isValidDate && inputValue !== '')}
+                      className="bg-violet-500 hover:bg-violet-600 text-white font-bold text-xs h-8 flex items-center gap-1.5 px-4 shadow-sm">
+                      {saving ? <Loader2 className="animate-spin" size={12} /> : <><span>Save &amp; Next</span> <ArrowRight size={12} /></>}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
 
+            {/* Keys footer */}
             <div className="px-4 py-2 border-t flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-muted-foreground/60 shrink-0">
               <span className="font-medium text-muted-foreground/40">Keys:</span>
-              {activeTask.field_name.startsWith('q') && <span><kbd className="font-semibold text-muted-foreground/80">1</kbd>/<kbd className="font-semibold text-muted-foreground/80">2</kbd>/<kbd className="font-semibold text-muted-foreground/80">3</kbd>/<kbd className="font-semibold text-muted-foreground/80">0</kbd> auto-save</span>}
-              {activeTask.field_name === 'consent' && <span><kbd className="font-semibold text-muted-foreground/80">Y</kbd>/<kbd className="font-semibold text-muted-foreground/80">N</kbd>/<kbd className="font-semibold text-muted-foreground/80">U</kbd> auto-save</span>}
-              {activeTask.field_name === 'gender' && <span><kbd className="font-semibold text-muted-foreground/80">M</kbd>/<kbd className="font-semibold text-muted-foreground/80">F</kbd> auto-save</span>}
               <span><kbd className="font-semibold text-muted-foreground/80">S</kbd> skip</span>
               <span><kbd className="font-semibold text-muted-foreground/80">E</kbd> blank</span>
               <span><kbd className="font-semibold text-muted-foreground/80">Alt+V</kbd> toggle view</span>
               <span><kbd className="font-semibold text-muted-foreground/80">Enter</kbd> save</span>
+              <span><kbd className="font-semibold text-muted-foreground/80">Alt+↑↓</kbd> navigate</span>
+              {activeTask.field_name.startsWith('q') && <span><kbd className="font-semibold text-muted-foreground/80">1</kbd>/<kbd className="font-semibold text-muted-foreground/80">2</kbd>/<kbd className="font-semibold text-muted-foreground/80">3</kbd>/<kbd className="font-semibold text-muted-foreground/80">0</kbd> auto-save</span>}
+              {activeTask.field_name === 'consent' && <span><kbd className="font-semibold text-muted-foreground/80">Y</kbd>/<kbd className="font-semibold text-muted-foreground/80">N</kbd>/<kbd className="font-semibold text-muted-foreground/80">U</kbd> auto-save</span>}
+              {activeTask.field_name === 'gender' && <span><kbd className="font-semibold text-muted-foreground/80">M</kbd>/<kbd className="font-semibold text-muted-foreground/80">F</kbd> auto-save</span>}
             </div>
           </div>
         ) : (

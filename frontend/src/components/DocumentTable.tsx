@@ -1,6 +1,7 @@
 import React from 'react';
 import { Search, Clock, AlertTriangle, Check, X, Eye, Download, RotateCcw, Trash2, ChevronUp, ChevronDown, FileWarning } from 'lucide-react';
 import type { Document, TabType, SortKey } from '../api';
+import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '../api';
 import { BulkActionBar } from './BulkActionBar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,9 +19,25 @@ const tabConfig: { key: TabType; label: string; icon: React.ReactNode | null }[]
 
 const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; dot: string; icon: React.ReactNode; label: string }> = {
   processing: { variant: 'outline', dot: 'bg-violet-500 animate-pulse', icon: <Clock size={10} />, label: 'Processing' },
+  uploaded: { variant: 'outline', dot: 'bg-violet-500 animate-pulse', icon: <Clock size={10} />, label: 'Processing' },
+  queued: { variant: 'outline', dot: 'bg-violet-500 animate-pulse', icon: <Clock size={10} />, label: 'Processing' },
+  azure_completed: { variant: 'outline', dot: 'bg-violet-500 animate-pulse', icon: <Clock size={10} />, label: 'Processing' },
+  validation_completed: { variant: 'outline', dot: 'bg-violet-500 animate-pulse', icon: <Clock size={10} />, label: 'Processing' },
   needs_review: { variant: 'secondary', dot: 'bg-amber-500', icon: <AlertTriangle size={10} />, label: 'Needs Review' },
+  review_required: { variant: 'secondary', dot: 'bg-amber-500', icon: <AlertTriangle size={10} />, label: 'Needs Review' },
   verified: { variant: 'default', dot: 'bg-emerald-500', icon: <Check size={10} />, label: 'Verified' },
+  approved: { variant: 'default', dot: 'bg-emerald-500', icon: <Check size={10} />, label: 'Verified' },
+  exported: { variant: 'default', dot: 'bg-emerald-500', icon: <Check size={10} />, label: 'Verified' },
   failed: { variant: 'destructive', dot: 'bg-rose-500', icon: <X size={10} />, label: 'Failed' },
+};
+
+const matchStatus = (doc: Document, tab: TabType): boolean => {
+  if (tab === 'all') return true;
+  if (tab === 'needs_review') return STATUS_REVIEW.has(doc.status);
+  if (tab === 'verified') return STATUS_VERIFIED.has(doc.status);
+  if (tab === 'processing') return STATUS_PROCESSING.has(doc.status);
+  if (tab === 'failed') return STATUS_FAILED.has(doc.status);
+  return false;
 };
 
 interface Props {
@@ -51,16 +68,8 @@ export const DocumentTable: React.FC<Props> = ({
   onOpenDoc, onDownloadReport, onReprocess, onDelete, onBulkDone,
   onBulkVerify, onBulkReprocess, onBulkDelete,
 }) => {
-  const needsReview = documents.filter(d => d.status === 'needs_review');
-  const verified = documents.filter(d => d.status === 'verified');
-  const processing = documents.filter(d => d.status === 'processing');
-  const failed = documents.filter(d => d.status === 'failed');
-
   const filtered = (() => {
-    const list = activeTab === 'all' ? documents :
-      activeTab === 'needs_review' ? needsReview :
-      activeTab === 'verified' ? verified :
-      activeTab === 'processing' ? processing : failed;
+    const list = documents.filter(d => matchStatus(d, activeTab));
     let result = list;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -78,10 +87,10 @@ export const DocumentTable: React.FC<Props> = ({
 
   const counts: Record<string, number> = {
     all: documents.length,
-    processing: processing.length,
-    needs_review: needsReview.length,
-    verified: verified.length,
-    failed: failed.length,
+    processing: documents.filter(d => STATUS_PROCESSING.has(d.status)).length,
+    needs_review: documents.filter(d => STATUS_REVIEW.has(d.status)).length,
+    verified: documents.filter(d => STATUS_VERIFIED.has(d.status)).length,
+    failed: documents.filter(d => STATUS_FAILED.has(d.status)).length,
   };
 
   return (
@@ -150,7 +159,7 @@ export const DocumentTable: React.FC<Props> = ({
                   <TableRow key={doc.id} onClick={() => onOpenDoc(doc)}
                     tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpenDoc(doc); }}
                     className={`cursor-pointer group transition-colors ${
-                      doc.status === 'processing' ? 'opacity-70' : ''
+                      isProc(doc.status) ? 'opacity-70' : ''
                     } ${
                       isSelected ? 'bg-violet-500/[0.04] hover:bg-violet-500/[0.06]' : 'hover:bg-muted/50'
                     } ${idx % 2 === 0 && !isSelected ? 'bg-muted/20' : ''}`}>
@@ -215,21 +224,26 @@ const SortTh: React.FC<{ label: string; sortKey: SortKey; current: SortKey; dir:
   );
 };
 
+const isProc = (s: string) => STATUS_PROCESSING.has(s);
+const isReview = (s: string) => STATUS_REVIEW.has(s);
+const isVerified = (s: string) => STATUS_VERIFIED.has(s);
+const isFailed = (s: string) => STATUS_FAILED.has(s);
+
 const ActionBtn: React.FC<{ doc: Document; onOpen: (d: Document) => void; onDownload: (d: Document) => void; onReprocess: (d: Document) => void; onDelete: (d: Document) => void }> = ({ doc, onOpen, onDownload, onReprocess, onDelete }) => (
   <>
     <Button variant="ghost" size="xs" onClick={e => { e.stopPropagation(); onOpen(doc); }}
-      disabled={doc.status === 'processing'} className="h-7 text-[11px] px-2 font-medium">
-      {doc.status === 'processing' ? <><Clock size={11} className="animate-spin mr-1" />Proc.</> :
-       doc.status === 'verified' ? <><Eye size={11} className="mr-1" />View</> :
-       doc.status === 'failed' ? 'Details' : 'Review'}
+      disabled={isProc(doc.status)} className="h-7 text-[11px] px-2 font-medium">
+      {isProc(doc.status) ? <><Clock size={11} className="animate-spin mr-1" />Proc.</> :
+       isVerified(doc.status) ? <><Eye size={11} className="mr-1" />View</> :
+       isFailed(doc.status) ? 'Details' : 'Review'}
     </Button>
-    {(doc.status === 'needs_review' || doc.status === 'verified' || doc.status === 'failed') && (
+    {(isReview(doc.status) || isVerified(doc.status) || isFailed(doc.status)) && (
       <Button variant="ghost" size="icon-xs" onClick={e => { e.stopPropagation(); onDownload(doc); }}
         title="Download report" className="h-7 w-7 text-muted-foreground hover:text-foreground">
         <Download size={11} />
       </Button>
     )}
-    {(doc.status === 'failed' || doc.status === 'needs_review') && (
+    {(isFailed(doc.status) || isReview(doc.status)) && (
       <Button variant="ghost" size="icon-xs" onClick={e => { e.stopPropagation(); onReprocess(doc); }}
         title="Reprocess" className="h-7 w-7 text-muted-foreground hover:text-foreground">
         <RotateCcw size={11} />

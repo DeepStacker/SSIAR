@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { CanvasCrop } from './CanvasCrop';
+import { SdqGrid } from './SdqGrid';
 
 interface Props {
   doc: Document;
@@ -211,13 +212,13 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
       <div className="px-5 pb-5">
         <Card>
           <CardContent className="p-5">
-            <h3 className="text-sm mb-4 flex items-center gap-1" style={{ color: 'var(--accent-emerald)' }}>
+            <h3 className="text-sm mb-4 flex items-center gap-1 text-emerald-500">
               <Check size={14} /> Verified — {doc.filename}
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {fields.map(f => (
                 <div key={f.key}>
-                  <label className="text-xs block" style={{ color: 'var(--text-muted)' }}>{f.label}</label>
+                  <label className="text-xs block text-[var(--text-muted)]">{f.label}</label>
                   <div className="flex items-center gap-2 py-1">
                     <Input
                       className="w-[100px] text-sm font-medium"
@@ -228,50 +229,51 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
                       onMouseEnter={e => handleCropEnter(e, f.key)}
                       onMouseMove={e => handleCropMove(e, f.key)}
                       onMouseLeave={handleCropLeave}>
-                      {v2Trust[f.key]?.bbox ? (
+                      {v2Trust[f.key]?.polygon ? (
                         <CanvasCrop
                           pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
-                          bbox={v2Trust[f.key]!.bbox as number[]}
-                          style={{ width: '120px', height: '30px', objectFit: 'contain', border: '1px solid var(--color-border)' }}
-                          className="bg-black/15 rounded cursor-zoom-in"
+                          polygon={v2Trust[f.key]?.polygon as number[] | undefined}
+                          className="w-[120px] h-[30px] object-contain border border-[var(--color-border)] bg-black/15 rounded cursor-zoom-in"
                           onDataUrl={url => { cropDataUrls.current[f.key] = url; }}
                         />
                       ) : (
-                        <div className="w-[120px] h-[30px] bg-black/15 rounded" style={{ border: '1px solid var(--color-border)' }} />
+                        <div className="w-[120px] h-[30px] bg-black/15 rounded border border-[var(--color-border)]" />
                       )}
                     </div>
                     {reprocessingField === f.key ? (
-                      <Loader2 size={14} className="animate-spin shrink-0" style={{ color: 'var(--accent-cyan)' }} />
+                      <Loader2 size={14} className="animate-spin shrink-0 text-[var(--accent-cyan)]" />
                     ) : (
                       <button onClick={() => handleReprocessField(f.key)}
                         title="Re-run OCR on this field"
-                        className="bg-none border-none cursor-pointer p-0.5 opacity-50 text-sm"
-                        style={{ background: 'none', border: 'none' }}>⟳</button>
+                        className="bg-none border-none cursor-pointer p-0.5 opacity-50 text-sm">⟳</button>
                     )}
                   </div>
                 </div>
               ))}
               <div>
-                <label className="text-xs block" style={{ color: 'var(--text-muted)' }}>Consent</label>
+                <label className="text-xs block text-[var(--text-muted)]">Consent</label>
                 <div className="flex items-center gap-2 py-1">
-                  {['Yes', 'No', 'Unanswered'].map(c => (
-                    <button key={c} onClick={() => onDetailsChange?.({ ...details, consent: c })}
-                      style={{
-                        padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
-                        border: '1px solid',
-                        background: (details.consent || 'Unanswered') === c ? 'rgba(from var(--accent-emerald) r g b / 0.15)' : 'var(--bg-highlight)',
-                        borderColor: (details.consent || 'Unanswered') === c ? 'var(--accent-emerald)' : 'var(--color-border)',
-                        color: (details.consent || 'Unanswered') === c ? 'var(--accent-emerald)' : 'var(--text-secondary)',
-                      }}>{c}</button>
-                  ))}
+                  {['Yes', 'No', 'Unanswered'].map(c => {
+                    const isConsentActive = (details.consent || 'Unanswered') === c;
+                    return (
+                      <button key={c} onClick={() => onDetailsChange?.({ ...details, consent: c })}
+                        className={`
+                          px-3 py-[4px] rounded text-xs font-semibold cursor-pointer border text-center
+                          ${isConsentActive
+                            ? 'bg-emerald-500/15 border-[var(--accent-emerald)] text-[var(--accent-emerald)]'
+                            : 'bg-[var(--bg-highlight)] border-[var(--color-border)] text-[var(--text-secondary)]'
+                          }
+                        `}
+                      >{c}</button>
+                    );
+                  })}
                 </div>
               </div>
               <div>
-                <label className="text-xs block" style={{ color: 'var(--text-muted)' }}>Remarks</label>
+                <label className="text-xs block text-[var(--text-muted)]">Remarks</label>
                 <div className="flex items-center gap-2 py-1">
                   <textarea
-                    className="w-full text-sm px-2 py-1 resize-y rounded"
-                    style={{ height: '50px', background: 'var(--bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--text-primary)' }}
+                    className="w-full text-sm px-2 py-1 resize-y rounded h-[50px] bg-[var(--bg-secondary)] border border-[var(--color-border)] text-[var(--text-primary)]"
                     value={details.remarks || ''} onChange={e => {
                       if (onDetailsChange) onDetailsChange({ ...details, remarks: e.target.value });
                     }} />
@@ -282,58 +284,12 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
         </Card>
       </div>
 
-      <div className="px-5 pb-5">
-        <Card>
-          <CardContent className="p-6">
-            <h3 className="text-lg mb-4" style={{ color: 'var(--text-secondary)' }}>SDQ Responses (Q1–Q25)</h3>
-            <div className="grid grid-cols-2 gap-1.5">
-              {Array.from({ length: 25 }, (_, i) => {
-                const qi = i + 1;
-                const q = `q${qi}`;
-                const raw = details.responses?.[q];
-                const isMulti = Array.isArray(raw) && raw.filter((x: number) => x > 0).length > 1;
-                return (
-                  <div key={q} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg"
-                    style={{
-                      background: isMulti ? 'rgba(from var(--accent-violet) r g b / 0.08)' : 'var(--bg-highlight)',
-                      border: `1px solid ${isMulti ? 'rgba(from var(--accent-violet) r g b / 0.25)' : 'transparent'}`,
-                    }}>
-                    <div className="w-6 text-xs font-bold shrink-0" style={{ color: 'var(--text-muted)' }}>Q{qi}</div>
-                    <div ref={el => { cropRefs.current[`sdq_${q}`] = el; }} className="leading-none"
-                      onMouseEnter={e => {
-                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        const src = cropDataUrls.current[`sdq_${q}`] || '';
-                        if (src) setZoomImg({ src, x: rect.left + rect.width / 2, y: rect.top });
-                      }}
-                      onMouseMove={e => {
-                        const src = cropDataUrls.current[`sdq_${q}`] || '';
-                        if (src) setZoomImg({ src, x: e.clientX, y: e.clientY });
-                      }}
-                      onMouseLeave={handleCropLeave}>
-                      {v2Trust[q]?.bbox ? (
-                        <CanvasCrop
-                          pageUrl={api.getPageUrl(doc.id, v2Trust[q]?.page || (qi >= 13 ? 2 : 1))}
-                          bbox={v2Trust[q].bbox}
-                          style={{ width: '160px', height: '50px', objectFit: 'contain' }}
-                          className="bg-black/20 rounded cursor-zoom-in shrink-0"
-                          onDataUrl={url => { cropDataUrls.current[`sdq_${q}`] = url; }}
-                        />
-                      ) : (
-                        <div className="w-[160px] h-[50px] bg-black/20 rounded shrink-0" />
-                      )}
-                    </div>
-                    <span className="text-sm font-bold min-w-[24px] text-center"
-                      style={{ color: isMulti ? 'var(--accent-violet)' : 'var(--text-primary)' }}>
-                      {Array.isArray(raw) ? raw.filter((x: number) => x > 0).join(',') || '—' : raw || '—'}
-                    </span>
-                    {isMulti && <span className="ml-0.5 text-xs" style={{ color: 'var(--accent-violet)' }}>✦</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <SdqGrid docId={doc.id} responses={details.responses || {}}
+        checkboxConf={details.confidence_scores?.checkbox || {}}
+        multiTicks={details.confidence_scores?.multi_ticks || {}}
+        v2Trust={v2Trust}
+        onChange={newResp => onDetailsChange?.({ ...details, responses: newResp })}
+        onZoom={setZoomImg} />
 
       <ZoomPopup zoom={zoomImg} />
       {pageViewer && <PageViewer docId={doc.id} pageNum={pageViewer} onClose={() => setPageViewer(null)} onChangePage={setPageViewer} />}

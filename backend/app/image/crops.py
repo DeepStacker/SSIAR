@@ -85,3 +85,84 @@ def get_crop_page(crop_name):
             pass
     return None
 
+
+def get_field_coordinates(field_name: str, img_w: float, img_h: float) -> tuple[list[float], int]:
+    """
+    Get the default coordinates (polygon) and page number for a given field name,
+    scaled to the actual image width and height (img_w x img_h pixels).
+    """
+    from app.image.roi import ROIS_P1_POINTS as ROIS_P1, ROIS_P2_POINTS as ROIS_P2, ROIS_REMARKS_POINTS as ROIS_REMARKS
+    from app.image.pdf import P1_Y_RANGES, P2_Y_RANGES, COLS_X_PTS
+    
+    scale_x = img_w / 595.0
+    scale_y = img_h / 842.0
+    
+    all_rois = {**ROIS_P1, **ROIS_P2}
+    if field_name in all_rois:
+        x0, y0, x1, y1 = all_rois[field_name]
+        page = 1 if field_name in ROIS_P1 else 2
+        polygon = [
+            x0 * scale_x, y0 * scale_y,
+            x1 * scale_x, y0 * scale_y,
+            x1 * scale_x, y1 * scale_y,
+            x0 * scale_x, y1 * scale_y
+        ]
+        return polygon, page
+        
+    if field_name == "consent":
+        x0, y0, x1, y1 = 470.0, 190.0, 555.0, 240.0
+        polygon = [
+            x0 * scale_x, y0 * scale_y,
+            x1 * scale_x, y0 * scale_y,
+            x1 * scale_x, y1 * scale_y,
+            x0 * scale_x, y1 * scale_y
+        ]
+        return polygon, 1
+        
+    if field_name == "remarks":
+        x0, y0, x1, y1 = ROIS_REMARKS['remarks']
+        polygon = [
+            x0 * scale_x, y0 * scale_y,
+            x1 * scale_x, y0 * scale_y,
+            x1 * scale_x, y1 * scale_y,
+            x0 * scale_x, y1 * scale_y
+        ]
+        return polygon, 2
+        
+    if field_name.startswith("q"):
+        try:
+            q_num = int(field_name[1:])
+        except ValueError:
+            return [], 1
+        
+        page = 2 if q_num >= 13 else 1
+        if 1 <= q_num <= 12:
+            idx = q_num - 1
+            y0, y1 = P1_Y_RANGES[idx]
+        elif 13 <= q_num <= 25:
+            idx = q_num - 13
+            y0, y1 = P2_Y_RANGES[idx]
+        else:
+            return [], page
+            
+        base_zoom = 300.0 / 72.0
+        y0_pt = y0 / base_zoom
+        y1_pt = y1 / base_zoom
+        y0_scaled = y0_pt * scale_y
+        y1_scaled = y1_pt * scale_y
+        
+        # Calculate checkbox row x range
+        cx3 = (COLS_X_PTS[-1] + 2.5) * scale_x
+        row_x_start = 230.0 * scale_x
+        row_x_end = cx3 + 70.0 * scale_x
+        
+        polygon = [
+            row_x_start, y0_scaled,
+            row_x_end, y0_scaled,
+            row_x_end, y1_scaled,
+            row_x_start, y1_scaled
+        ]
+        return polygon, page
+        
+    return [], 1
+

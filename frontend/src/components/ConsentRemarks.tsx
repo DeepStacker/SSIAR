@@ -20,12 +20,12 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
 
   const consentInfo = v2Trust?.consent;
   const consentPage = consentInfo?.page || 1;
-  const consentBbox = consentInfo?.bbox;
+  const consentPolygon = consentInfo?.polygon;
   const consentPageUrl = api.getPageUrl(docId, consentPage);
 
   const remarksInfo = v2Trust?.remarks;
   const remarksPage = remarksInfo?.page || 2;
-  const remarksBbox = remarksInfo?.bbox;
+  const remarksPolygon = remarksInfo?.polygon;
   const remarksPageUrl = api.getPageUrl(docId, remarksPage);
 
   const handleZoom = useCallback((key: string, x: number, y: number) => {
@@ -59,7 +59,7 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
                 </button>
               ))}
             </div>
-            {consentBbox ? (
+            {consentPolygon ? (
               <div
                 style={{ width: '100%', height: '50px', background: 'rgba(0,0,0,0.15)', borderRadius: '6px', cursor: 'zoom-in', overflow: 'hidden' }}
                 onMouseEnter={e => {
@@ -69,7 +69,7 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
                 onMouseMove={e => handleZoom('consent', e.clientX, e.clientY - 20)}
                 onMouseLeave={() => onZoom(null)}
               >
-                <CanvasCrop pageUrl={consentPageUrl} bbox={consentBbox} polygon={consentInfo?.polygon}
+                <CanvasCrop pageUrl={consentPageUrl} polygon={consentPolygon}
                   style={{ width: '100%', height: '50px', objectFit: 'contain' }}
                   onDataUrl={url => setUrl('consent', url)} />
               </div>
@@ -79,7 +79,7 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
             <label htmlFor="remarks-input" className="text-sm text-[var(--text-muted)] block mb-2 font-semibold">Remarks</label>
             <Textarea id="remarks-input" className="min-h-[80px] text-sm resize-y font-mono"
               value={remarks} onChange={e => onRemarksChange(e.target.value)} />
-            {remarksBbox ? (
+            {remarksPolygon ? (
               <div
                 className="bg-background"
                 style={{ width: '100%', height: '50px', borderRadius: '6px', cursor: 'zoom-in', marginTop: '8px', overflow: 'hidden' }}
@@ -90,7 +90,7 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
                 onMouseMove={e => handleZoom('remarks', e.clientX, e.clientY - 20)}
                 onMouseLeave={() => onZoom(null)}
               >
-                <CanvasCrop pageUrl={remarksPageUrl} bbox={remarksBbox} polygon={remarksInfo?.polygon}
+                <CanvasCrop pageUrl={remarksPageUrl} polygon={remarksPolygon}
                   style={{ width: '100%', height: '50px', objectFit: 'contain' }}
                   onDataUrl={url => setUrl('remarks', url)} />
               </div>

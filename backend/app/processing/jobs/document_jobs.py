@@ -477,9 +477,21 @@ def process_document_background(
             from app.image.pdf import render_pdf_to_arrays
             raw_pages = render_pdf_to_arrays(pdf_bytes)
             
-            # Keep original, clean, natural page renders to prevent "burned scan" look and preserve maximum legibility
+            # Apply morphological closing background normalization (shadow removal/contrast enhancement)
+            # to make the page extremely clean and enhance detection without creating burned concrete marks.
             for img in raw_pages:
-                pages.append(img)
+                try:
+                    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (31, 31))
+                    channels = cv2.split(img)
+                    enhanced_channels = []
+                    for ch in channels:
+                        bg = cv2.morphologyEx(ch, cv2.MORPH_CLOSE, kernel)
+                        norm = cv2.divide(ch, bg, scale=255)
+                        enhanced_channels.append(norm)
+                    enhanced_img = cv2.merge(enhanced_channels)
+                    pages.append(enhanced_img)
+                except Exception:
+                    pages.append(img)
             
             # Release raw pages container immediately
             raw_pages = None

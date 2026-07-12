@@ -1,8 +1,7 @@
 import React from 'react';
 import { Download, FileWarning } from 'lucide-react';
-import { Document, ReportFormat } from '../api';
+import { Document, ReportFormat, STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '../api';
 import { api } from '../api';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
@@ -30,8 +29,17 @@ export const ReportingView: React.FC<Props> = ({
   onDateFromChange, onDateToChange, onStatusChange, onClassChange, onFormatChange,
   onToggleSelect, onToggleSelectAll, onOpenDoc,
 }) => {
+  const matchStatusGroup = (status: string, group: string) => {
+    if (!group) return true;
+    if (group === 'processing') return STATUS_PROCESSING.has(status);
+    if (group === 'needs_review') return STATUS_REVIEW.has(status);
+    if (group === 'verified') return STATUS_VERIFIED.has(status);
+    if (group === 'failed') return STATUS_FAILED.has(status);
+    return status === group;
+  };
+
   const reportResults = documents.filter(d => {
-    if (reportStatus && d.status !== reportStatus) return false;
+    if (reportStatus && !matchStatusGroup(d.status, reportStatus)) return false;
     if (reportClass && d.class !== reportClass) return false;
     if (dateFrom && d.created_at && d.created_at.slice(0, 10) < dateFrom) return false;
     if (dateTo && d.created_at && d.created_at.slice(0, 10) > dateTo) return false;
@@ -52,8 +60,15 @@ export const ReportingView: React.FC<Props> = ({
   const statusBadge = (status: string) => {
     const map: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; dot: string; label: string }> = {
       processing: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
+      uploaded: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
+      queued: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
+      azure_completed: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
+      validation_completed: { variant: "outline", dot: "bg-violet-500 animate-pulse", label: "Processing" },
       needs_review: { variant: "secondary", dot: "bg-amber-500", label: "Needs Review" },
+      review_required: { variant: "secondary", dot: "bg-amber-500", label: "Needs Review" },
       verified: { variant: "default", dot: "bg-emerald-500", label: "Verified" },
+      approved: { variant: "default", dot: "bg-emerald-500", label: "Verified" },
+      exported: { variant: "default", dot: "bg-emerald-500", label: "Verified" },
       failed: { variant: "destructive", dot: "bg-rose-500", label: "Failed" },
     };
     const s = map[status] || { variant: "outline" as const, dot: "bg-muted-foreground", label: status };
@@ -110,16 +125,21 @@ export const ReportingView: React.FC<Props> = ({
             </div>
           </div>
           <div className="flex gap-2 mt-4 pt-4 border-t border-[var(--color-border)]">
-            <Button variant="default" size="sm" render={<a href={getExportLink(reportFormat)} />}>
+            <a href={getExportLink(reportFormat)}
+              className="inline-flex shrink-0 items-center justify-center h-7 gap-1 px-2.5 text-[0.8rem] font-medium whitespace-nowrap rounded-lg border bg-primary text-primary-foreground hover:bg-primary/80 transition-all select-none">
               <Download size={14} /> Generate {reportFormat.toUpperCase()}
-            </Button>
-            <Button variant="outline" size="sm" render={<a href={getExportLink('excel')} />}>Excel</Button>
-            <Button variant="outline" size="sm" render={<a href={getExportLink('csv')} />}>CSV</Button>
-            <Button variant="outline" size="sm" render={<a href={getExportLink('excel', 'hi')} />}>निर्यात</Button>
+            </a>
+            <a href={getExportLink('excel')}
+              className="inline-flex shrink-0 items-center justify-center h-7 gap-1 px-2.5 text-[0.8rem] font-medium whitespace-nowrap rounded-lg border border-border bg-background hover:bg-muted hover:text-foreground transition-all select-none">Excel</a>
+            <a href={getExportLink('csv')}
+              className="inline-flex shrink-0 items-center justify-center h-7 gap-1 px-2.5 text-[0.8rem] font-medium whitespace-nowrap rounded-lg border border-border bg-background hover:bg-muted hover:text-foreground transition-all select-none">CSV</a>
+            <a href={getExportLink('excel', 'hi')}
+              className="inline-flex shrink-0 items-center justify-center h-7 gap-1 px-2.5 text-[0.8rem] font-medium whitespace-nowrap rounded-lg border border-border bg-background hover:bg-muted hover:text-foreground transition-all select-none">निर्यात</a>
             {selectedReportDocs.size > 0 && (
-              <Button variant="default" size="sm" render={<a href={getExportLink(reportFormat, undefined, Array.from(selectedReportDocs).join(','))} />}>
+              <a href={getExportLink(reportFormat, undefined, Array.from(selectedReportDocs).join(','))}
+                className="inline-flex shrink-0 items-center justify-center h-7 gap-1 px-2.5 text-[0.8rem] font-medium whitespace-nowrap rounded-lg border bg-primary text-primary-foreground hover:bg-primary/80 transition-all select-none">
                 <Download size={14} /> Selected ({selectedReportDocs.size})
-              </Button>
+              </a>
             )}
           </div>
         </CardContent>

@@ -107,7 +107,7 @@ export const clearApiCache = () => cache.clear()
 export interface Document {
   id: string;
   filename: string;
-  status: "processing" | "needs_review" | "verified" | "failed";
+  status: string;
   created_at: string;
   roll_number?: string;
   class?: string;
@@ -520,6 +520,11 @@ export interface DlqTask {
 
 export type ViewMode = 'dashboard' | 'reporting' | 'analytics' | 'dlq';
 export type TabType = 'all' | 'needs_review' | 'verified' | 'processing' | 'failed';
+
+export const STATUS_REVIEW = new Set(['needs_review', 'review_required']);
+export const STATUS_VERIFIED = new Set(['verified', 'approved']);
+export const STATUS_PROCESSING = new Set(['processing', 'uploaded', 'queued', 'azure_completed', 'validation_completed']);
+export const STATUS_FAILED = new Set(['failed']);
 export type SortKey = 'filename' | 'roll_number' | 'status' | 'created_at';
 export type ReportFormat = 'excel' | 'csv';
 

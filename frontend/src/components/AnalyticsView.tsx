@@ -31,7 +31,6 @@ interface SummaryData {
   data_completeness: number;
   processing_trend: Array<{ date: string; count: number }>;
   processed_today: number;
-  needs_review?: number;
   pending_review?: number;
   throughput_window_days?: number;
   throughput_forms_per_min?: number;
@@ -280,10 +279,11 @@ export function AnalyticsView({ onBack, classFilter, genderFilter, ...rest }: An
       try {
         switch (subTab) {
           case 'executive': {
+            const filters = { class: classFilter, gender: genderFilter };
             const [sumRes, procRes, confRes, qsRes] = await Promise.all([
-              api.getAnalyticsSummary().catch(() => null),
-              api.getAnalyticsProcessing().catch(() => null),
-              api.getPerFieldConfidence().catch(() => null),
+              api.getAnalyticsSummary(filters).catch(() => null),
+              api.getAnalyticsProcessing(filters).catch(() => null),
+              api.getPerFieldConfidence(filters).catch(() => null),
               api.getQueueStatus().catch(() => null),
             ]);
             setSummary(sumRes as SummaryData);
@@ -292,21 +292,26 @@ export function AnalyticsView({ onBack, classFilter, genderFilter, ...rest }: An
             setQueueStatus(qsRes);
             break;
           }
-          case 'demographics':
-            setDemographics(await api.getAnalyticsDemographics().catch(() => null) as DemographicsData);
+          case 'demographics': {
+            const filters = { class: classFilter, gender: genderFilter };
+            setDemographics(await api.getAnalyticsDemographics(filters).catch(() => null) as DemographicsData);
             break;
+          }
           case 'sdq':
           case 'domains': {
             if (!loadedTabs.current.has('sdq') || !loadedTabs.current.has('domains')) {
               loadedTabs.current.add('sdq');
               loadedTabs.current.add('domains');
-              setQuestionnaire(await api.getAnalyticsQuestionnaire().catch(() => null) as QuestionnaireData);
+              const filters = { class: classFilter, gender: genderFilter };
+              setQuestionnaire(await api.getAnalyticsQuestionnaire(filters).catch(() => null) as QuestionnaireData);
             }
             break;
           }
-          case 'academic':
-            setAcademic(await api.getAnalyticsAcademic().catch(() => null) as AcademicData);
+          case 'academic': {
+            const filters = { class: classFilter, gender: genderFilter };
+            setAcademic(await api.getAnalyticsAcademic(filters).catch(() => null) as AcademicData);
             break;
+          }
           case 'correlations':
             setCorrelations(await api.getAnalyticsCorrelations({ class: classFilter, gender: genderFilter }).catch(() => null) as CorrelationsData);
             break;
