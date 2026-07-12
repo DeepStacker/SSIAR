@@ -4,42 +4,42 @@ set -e
 VM_IP="20.193.129.253"
 SSH_KEY="$HOME/Downloads/ssiar-vm_key.pem"
 REMOTE_DIR="/home/azureuser/SSIAR"
-LOCAL_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOCAL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "=== SSIAR Deploy Script ==="
+echo "=== SSIAR Deploy ==="
+SSH="ssh -i $SSH_KEY -o StrictHostKeyChecking=no"
 
-# 1. Sync backend Python files
-echo "[1/4] Syncing backend files..."
-rsync -avz --delete -e "ssh -i $SSH_KEY" \
-  --include='*.py' --include='requirements.txt' --include='Dockerfile' \
-  --exclude='__pycache__' --exclude='*.pyc' --exclude='**/__pycache__/**' \
-  "$LOCAL_DIR/backend/" "azureuser@$VM_IP:$REMOTE_DIR/backend/"
+# 1. Build frontend locally
+echo "[1/4] Building frontend..."
+cd "$LOCAL_DIR/frontend" && npm run build
 
-# 2. Sync frontend dist to VM + Caddy root
-echo "[2/4] Syncing frontend dist..."
-rsync -avz --delete -e "ssh -i $SSH_KEY" \
-  "$LOCAL_DIR/frontend/dist/" "azureuser@$VM_IP:$REMOTE_DIR/frontend/dist/"
-ssh -i "$SSH_KEY" azureuser@"$VM_IP" "sudo rsync -avz --delete $REMOTE_DIR/frontend/dist/ /var/www/ssiar/dist/"
+# 2. Push latest code to GitHub
+echo "[2/4] Pushing to GitHub..."
+cd "$LOCAL_DIR" && git push origin main
 
-# 3. Sync config files
-echo "[3/4] Syncing config files..."
-scp -i "$SSH_KEY" "$LOCAL_DIR/docker-compose.yml" "azureuser@$VM_IP:$REMOTE_DIR/"
-scp -i "$SSH_KEY" "$LOCAL_DIR/backend/.env" "azureuser@$VM_IP:$REMOTE_DIR/"
+# 3. Pull code on VM, sync frontend dist + .env
+echo "[3/4] Deploying to VM..."
+$SSH azureuser@$VM_IP "
+  cd $REMOTE_DIR
+  git pull origin main
+" 
+rsync -avz --delete -e "$SSH" "$LOCAL_DIR/frontend/dist/" "azureuser@$VM_IP:$REMOTE_DIR/frontend/dist/"
+scp -q -i "$SSH_KEY" -o StrictHostKeyChecking=no "$LOCAL_DIR/backend/.env" "azureuser@$VM_IP:$REMOTE_DIR/backend/.env"
 
-# Sync minimal shared (templates + metadata only)
-rsync -avz -e "ssh -i $SSH_KEY" \
-  "$LOCAL_DIR/shared/templates/" "azureuser@$VM_IP:$REMOTE_DIR/shared/templates/"
-rsync -avz -e "ssh -i $SSH_KEY" \
-  "$LOCAL_DIR/shared/metadata/" "azureuser@$VM_IP:$REMOTE_DIR/shared/metadata/"
+$SSH azureuser@$VM_IP "
+  sudo rsync -aqz --delete $REMOTE_DIR/frontend/dist/ /var/www/ssiar/dist/
+"
 
 # 4. Rebuild and restart Docker
 echo "[4/4] Rebuilding Docker..."
-ssh -i "$SSH_KEY" azureuser@"$VM_IP" "
+$SSH azureuser@$VM_IP "
   cd $REMOTE_DIR
-  set -a
-  . ./.env
-  set +a
-  sudo -E docker compose build --no-cache app && sudo -E docker compose up -d
+  set -a && . ./backend/.env && set +a
+  sudo -E docker compose -f infra/docker-compose.yml build --no-cache app
+  sudo -E docker compose -f infra/docker-compose.yml up -d
+  sleep 2
+  curl -s http://localhost:8000/api/v3/system/health
 "
 
+echo ""
 echo "=== Deploy complete ==="
