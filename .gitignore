@@ -70,6 +70,10 @@ ehthumbs.db
 *.log
 /tmp/
 
+# --- Test artifacts ---
+test-results/
+
 # --- Backend generated artifacts ---
 backend/app/__pycache__/
 backend/app/.pytest_cache/
+ssiar-vm_key.pem

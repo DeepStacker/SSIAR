@@ -11,7 +11,7 @@ Calculates a holistic trust score using:
 - Statistical anomaly detection
 """
 from typing import Optional
-from app.processing.types import (
+from app.core.types import (
     TrustConfidence,
     ValidationResult,
     FieldDefinition,

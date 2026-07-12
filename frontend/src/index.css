@@ -566,7 +566,7 @@ h1, h2, h3, h4 {
     animation: chart-enter 0.4s ease-out both;
   }
 
-  /* ===== Skeleton loading ===== */
+  /* ===== Skeleton loading (legacy - use Skeleton component from @/components/ui/skeleton) ===== */
   .skeleton {
     background: linear-gradient(90deg, var(--bg-highlight) 25%, transparent 50%, var(--bg-highlight) 75%);
     background-size: 200% 100%;

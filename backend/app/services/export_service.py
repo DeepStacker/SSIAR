@@ -142,11 +142,11 @@ def build_export(
     filtered_docs: list,
     lang: str,
     columns: str | None,
-    format: str,
+    fmt: str,
 ):
     meta = load_metadata()
     
-    if format == "csv":
+    if fmt == "csv":
         rows_data = []
         for d in filtered_docs:
             full_doc = get_document(d["id"])
@@ -175,7 +175,7 @@ def build_export(
             rows_data.append(row_vals)
             
         return _build_csv(HEADERS_EXTRACTED, rows_data)
-        
+
     return _build_excel(meta, filtered_docs, lang)
 
 def _build_csv(headers: list, rows: list) -> StreamingResponse:

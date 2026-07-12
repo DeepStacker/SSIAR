@@ -6,21 +6,14 @@ Uses anchors & relationships to locate field values in Azure's normalized output
 """
 import re
 from typing import Optional
-from app.processing.types import (
+from app.core.types import (
     NormalizedAzureResponse,
     NormalizedPage,
     FieldDefinition,
     ReviewPriority,
 )
 from app.processing.azure_processor import find_text_near
-
-
-def _polygon_to_bbox(poly: list[float]) -> list[float]:
-    if not poly or len(poly) < 8:
-        return [0.0, 0.0, 0.0, 0.0]
-    xs = poly[0::2]
-    ys = poly[1::2]
-    return [min(xs), min(ys), max(xs), max(ys)]
+from app.geometry.polygon import polygon_bounds
 
 
 def resolve_field_from_tables(
@@ -95,7 +88,7 @@ def resolve_field_from_tables(
                         if unit == "inch":
                             poly = [pt * 300.0 for pt in poly]
                         if poly and len(poly) >= 8:
-                            bbox = _polygon_to_bbox(poly)
+                            bbox = polygon_bounds(poly)
                             
                     # Get average confidence of words inside cell or default
                     conf = 1.0
@@ -300,8 +293,8 @@ def resolve_field(
     scale = 300.0 / 72.0
     # Try inline value extraction first (if the matching line contains both label and value)
     if anchor_el:
-        for el in page.elements:
-            if el.element_type == "line" and anchor_text.lower() in el.text.lower():
+        for el in page.lines:
+            if anchor_text.lower() in el.text.lower():
                 cleaned = el.text.replace(anchor_text, "").strip()
                 cleaned = re.sub(r'^[:\-\s\=]+', '', cleaned).strip()
                 if cleaned:
@@ -314,7 +307,7 @@ def resolve_field(
                         is_valid = True
                     if is_valid:
                         # Extract the trailing parts as the value
-                        return cleaned, el.confidence, True, el.bbox, el.polygon, page.page
+                        return cleaned, el.confidence, True, polygon_bounds(el.polygon), el.polygon, page.page
 
     # Find candidate elements near the anchor using direction-aware tolerance
     # For right/left: cross-axis (dy) should be strictly constrained to same row (max 150 pixels)
@@ -333,11 +326,11 @@ def resolve_field(
     # If the field is remarks, we only want candidates that are reasonably close (within 150px vertically)
     # to avoid jumping over empty answer space into the next section/table.
     if field_def.name == "remarks" and candidates:
-        anchor_bottom = anchor_el.bbox[3] if anchor_el else 3640.0
+        anchor_bottom = polygon_bounds(anchor_el.polygon)[3] if anchor_el else 3640.0
         # If the candidate is a printed form label, discard candidates to force template fallback bbox
         if candidates[0].text in ("प्रतिशत", "भाषा", "गणित", "विज्ञान", "हिंदी"):
             candidates = []
-        elif candidates[0].bbox[1] - anchor_bottom > 200.0:
+        elif candidates[0].polygon and polygon_bounds(candidates[0].polygon)[1] - anchor_bottom > 200.0:
             candidates = []
     
     if not candidates:
@@ -353,23 +346,25 @@ def resolve_field(
     value_el = candidates[0]
     text = value_el.text.strip()
     confidence = value_el.confidence
-    bbox = value_el.bbox
+    bbox = polygon_bounds(value_el.polygon)
     polygon = value_el.polygon
     
     # Merge consecutive words on the same row (e.g. "40" and "%")
     # Crucial: Ensure we do not merge words across distinct column/table boundaries.
     if value_el.element_type == "word":
         row_words = []
-        v_center = (value_el.bbox[1] + value_el.bbox[3]) / 2.0
+        vb = polygon_bounds(value_el.polygon)
+        v_center = (vb[1] + vb[3]) / 2.0
         for el in page.elements:
             if el.element_type == "word" and el is not anchor_el:
-                el_v_center = (el.bbox[1] + el.bbox[3]) / 2.0
+                eb = polygon_bounds(el.polygon)
+                el_v_center = (eb[1] + eb[3]) / 2.0
                 if abs(el_v_center - v_center) < 25.0:
-                    if direction == "right" and anchor_el and el.bbox[0] < anchor_el.bbox[2] - 15.0:
+                    if direction == "right" and anchor_el and eb[0] < polygon_bounds(anchor_el.polygon)[2] - 15.0:
                         continue
                     row_words.append(el)
                     
-        row_words.sort(key=lambda x: x.bbox[0])
+        row_words.sort(key=lambda x: polygon_bounds(x.polygon)[0])
         
         segments = []
         current_segment = []
@@ -378,7 +373,7 @@ def resolve_field(
                 current_segment.append(el)
             else:
                 prev_el = current_segment[-1]
-                gap = el.bbox[0] - prev_el.bbox[2]
+                gap = polygon_bounds(el.polygon)[0] - polygon_bounds(prev_el.polygon)[2]
                 if gap < 80.0:
                     current_segment.append(el)
                 else:
@@ -400,10 +395,10 @@ def resolve_field(
             
             # If we merged multiple words, compute the bounding box/polygon of the merged group
             if len(merged_elements) > 1:
-                mx0 = min(el.bbox[0] for el in merged_elements)
-                my0 = min(el.bbox[1] for el in merged_elements)
-                mx1 = max(el.bbox[2] for el in merged_elements)
-                my1 = max(el.bbox[3] for el in merged_elements)
+                mx0 = min(polygon_bounds(el.polygon)[0] for el in merged_elements)
+                my0 = min(polygon_bounds(el.polygon)[1] for el in merged_elements)
+                mx1 = max(polygon_bounds(el.polygon)[2] for el in merged_elements)
+                my1 = max(polygon_bounds(el.polygon)[3] for el in merged_elements)
                 bbox = [mx0, my0, mx1, my1]
                 polygon = [
                     mx0, my0,
@@ -414,7 +409,7 @@ def resolve_field(
     
     # For selection marks, return the state
     if value_el.element_type == "selection_mark":
-        return text, confidence, True, value_el.bbox, value_el.polygon, page.page
+        return text, confidence, True, polygon_bounds(value_el.polygon), value_el.polygon, page.page
     
     # Some anchors detect the label itself (e.g., "जन्म तिथि") — skip if too similar
     if is_label(text, anchor_text):
@@ -422,7 +417,7 @@ def resolve_field(
             value_el = candidates[1]
             text = value_el.text.strip()
             confidence = value_el.confidence
-            bbox = value_el.bbox
+            bbox = polygon_bounds(value_el.polygon)
             polygon = value_el.polygon
         else:
             calculated_poly = [

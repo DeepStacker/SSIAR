@@ -1,5 +1,6 @@
 import React from 'react';
-import { useToast } from '../context/ToastContext';
+import { useToast } from '@/context/ToastContext';
+import { cn } from '@/lib/utils';
 
 export const Toast: React.FC = () => {
   const { toast, dismiss } = useToast();
@@ -12,9 +13,11 @@ export const Toast: React.FC = () => {
       role="alert"
       aria-live="polite"
       aria-atomic="true"
-      className="fixed bottom-6 right-6 z-[99999] flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg"
+      className={cn(
+        'fixed bottom-6 right-6 z-[99999] flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg',
+        toast.type === 'success' ? 'bg-emerald-500/95' : 'bg-rose-500/95'
+      )}
       style={{
-        background: toast.type === 'success' ? 'rgba(16,185,129,0.95)' : 'rgba(244,63,94,0.95)',
         animation: 'enter 0.3s ease-out',
         '--tw-enter-opacity': '0',
         '--tw-enter-translate-x': '100%',
@@ -48,10 +51,8 @@ export const Toast: React.FC = () => {
         ×
       </button>
       <div
-        className="absolute bottom-0 left-0 h-0.5 rounded-b-lg"
+        className="absolute bottom-0 left-0 h-0.5 rounded-b-lg bg-white/60"
         style={{
-          width: '100%',
-          background: 'rgba(255,255,255,0.6)',
           animation: `toast-shrink ${duration}ms linear forwards`,
         }}
       />
