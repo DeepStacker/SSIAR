@@ -37,3 +37,21 @@ class MetricRecordRequest(BaseModel):
 class BatchFolderRequest(BaseModel):
     folder_path: str
     auto_verify: bool = False
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class UpdateRoleRequest(BaseModel):
+    role: str

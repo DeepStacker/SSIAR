@@ -176,7 +176,7 @@ export interface DataQualityData {
   total_documents?: number;
 }
 
-export type ViewMode = 'dashboard' | 'reporting' | 'analytics' | 'dlq';
+export type ViewMode = 'dashboard' | 'reporting' | 'analytics' | 'dlq' | 'users';
 export type TabType = 'all' | 'needs_review' | 'verified' | 'processing' | 'failed';
 export type SortKey = 'filename' | 'roll_number' | 'status' | 'created_at';
 export type ReportFormat = 'excel' | 'csv';

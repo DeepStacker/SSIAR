@@ -26,7 +26,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("JWT_SECRET", "pytest-insecure-jwt-secret-for-testing")
 os.environ.setdefault("SURYA_ENABLED", "0")
 
-from app.processing.azure_processor import normalize_azure_response, polygon_bounds
+from app.processing.azure_processor import normalize_azure_response
+from app.geometry.polygon import polygon_bounds
 from app.core.types import NormalizedElement, NormalizedAzureResponse
 from app.processing.field_resolver import resolve_field
 from app.processing.templates import get_template, init_templates_v2

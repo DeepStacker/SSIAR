@@ -106,7 +106,7 @@ class TestV2Pipeline(unittest.TestCase):
         }
         
         normalized = normalize_azure_response("doc_test2", raw)
-        responses, consent, conf, bboxes, polys = resolve_page_selection_marks(
+        responses, consent, conf, polys = resolve_page_selection_marks(
             normalized.pages[0].elements, is_page_2=False,
             page_width=normalized.pages[0].width,
             page_height=normalized.pages[0].height,

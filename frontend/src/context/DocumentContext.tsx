@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useMemo } from 'react';
-import type { Document, DocumentDetails, QueueStatus, TabType, SortKey, ReportFormat, EscBreakdown } from '@/api';
+import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
+import type { Document, DocumentDetails, QueueStatus, ReportFormat, EscBreakdown } from '@/api';
 import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '@/api';
 
 interface DocumentContextValue {
@@ -15,22 +15,14 @@ interface DocumentContextValue {
   setDocDetails: React.Dispatch<React.SetStateAction<DocumentDetails | null>>;
   detailsLoading: boolean;
   setDetailsLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  searchQuery: string;
-  setSearchQuery: React.Dispatch<React.SetStateAction<string>>;
-  activeTab: TabType;
-  setActiveTab: React.Dispatch<React.SetStateAction<TabType>>;
-  sortKey: SortKey;
-  setSortKey: React.Dispatch<React.SetStateAction<SortKey>>;
-  sortDir: 'asc' | 'desc';
-  setSortDir: React.Dispatch<React.SetStateAction<'asc' | 'desc'>>;
-  selectedDashDocs: Set<string>;
-  setSelectedDashDocs: React.Dispatch<React.SetStateAction<Set<string>>>;
+  detailsError: string | null;
+  setDetailsError: React.Dispatch<React.SetStateAction<string | null>>;
+  isDragOver: boolean;
+  setIsDragOver: React.Dispatch<React.SetStateAction<boolean>>;
   autoVerify: boolean;
   setAutoVerify: React.Dispatch<React.SetStateAction<boolean>>;
   splitPages: boolean;
   setSplitPages: React.Dispatch<React.SetStateAction<boolean>>;
-  selectedReportDocs: Set<string>;
-  setSelectedReportDocs: React.Dispatch<React.SetStateAction<Set<string>>>;
   reportDateFrom: string;
   setReportDateFrom: React.Dispatch<React.SetStateAction<string>>;
   reportDateTo: string;
@@ -50,8 +42,8 @@ interface DocumentContextValue {
   processing: Document[];
   failed: Document[];
   escBreakdown: EscBreakdown | null;
-  filtered: Document[];
-  reportResults: Document[];
+  updateDocument: (id: string, updater: (doc: Document) => Document) => void;
+  removeDocument: (id: string) => void;
 }
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
@@ -63,14 +55,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [docDetails, setDocDetails] = useState<DocumentDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<TabType>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('created_at');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [selectedDashDocs, setSelectedDashDocs] = useState<Set<string>>(new Set());
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [autoVerify, setAutoVerify] = useState(true);
   const [splitPages, setSplitPages] = useState(false);
-  const [selectedReportDocs, setSelectedReportDocs] = useState<Set<string>>(new Set());
   const [reportDateFrom, setReportDateFrom] = useState('');
   const [reportDateTo, setReportDateTo] = useState('');
   const [reportStatus, setReportStatus] = useState('verified');
@@ -85,33 +73,15 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const failed = useMemo(() => documents.filter(d => STATUS_FAILED.has(d.status)), [documents]);
   const escBreakdown = queueStatus?.by_escalation || null;
 
-  const reportResults = useMemo(() => documents.filter(d => {
-    if (reportStatus && d.status !== reportStatus) return false;
-    if (reportClass && d.class !== reportClass) return false;
-    if (reportDateFrom && d.created_at && d.created_at.slice(0, 10) < reportDateFrom) return false;
-    if (reportDateTo && d.created_at && d.created_at.slice(0, 10) > reportDateTo) return false;
-    return true;
-  }), [documents, reportStatus, reportClass, reportDateFrom, reportDateTo]);
+  const updateDocument = useCallback((id: string, updater: (doc: Document) => Document) => {
+    setDocuments(prev => prev.map(d => d.id === id ? updater(d) : d));
+  }, []);
 
-  const filtered = useMemo(() => {
-    const list = activeTab === 'all' ? documents :
-      activeTab === 'needs_review' ? needsReview :
-      activeTab === 'verified' ? verified :
-      activeTab === 'processing' ? processing : failed;
-    let result = list;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = list.filter(d =>
-        d.filename.toLowerCase().includes(q) ||
-        (d.roll_number && d.roll_number.includes(q))
-      );
-    }
-    return [...result].sort((a, b) => {
-      const av = (a[sortKey] || '').toLowerCase();
-      const bv = (b[sortKey] || '').toLowerCase();
-      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-    });
-  }, [documents, activeTab, needsReview, verified, processing, failed, searchQuery, sortKey, sortDir]);
+  const removeDocument = useCallback((id: string) => {
+    setDocuments(prev => prev.filter(d => d.id !== id));
+    setSelectedDoc(prev => prev?.id === id ? null : prev);
+    setDocDetails(prev => prev?.id === id ? null : prev);
+  }, []);
 
   const value: DocumentContextValue = {
     documents, setDocuments,
@@ -120,14 +90,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     selectedDoc, setSelectedDoc,
     docDetails, setDocDetails,
     detailsLoading, setDetailsLoading,
-    searchQuery, setSearchQuery,
-    activeTab, setActiveTab,
-    sortKey, setSortKey,
-    sortDir, setSortDir,
-    selectedDashDocs, setSelectedDashDocs,
+    detailsError, setDetailsError,
+    isDragOver, setIsDragOver,
     autoVerify, setAutoVerify,
     splitPages, setSplitPages,
-    selectedReportDocs, setSelectedReportDocs,
     reportDateFrom, setReportDateFrom,
     reportDateTo, setReportDateTo,
     reportStatus, setReportStatus,
@@ -140,8 +106,8 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     processing,
     failed,
     escBreakdown,
-    filtered,
-    reportResults,
+    updateDocument,
+    removeDocument,
   };
 
   return (

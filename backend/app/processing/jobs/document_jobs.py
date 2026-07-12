@@ -232,7 +232,6 @@ def process_document_background(
         responses = {}
         consent = "Unanswered"
         cb_confidences = {}
-        cb_bboxes = {}
         cb_polygons = {}
         cb_resolved_pages = {}
         if combined_normalized:
@@ -244,13 +243,12 @@ def process_document_background(
                         page_obj = p
                         break
                 if page_obj:
-                    p_resp, p_consent, p_conf, p_bbox, p_poly = resolve_page_selection_marks(
+                    p_resp, p_consent, p_conf, p_poly = resolve_page_selection_marks(
                         page_obj.elements, is_p2, page_obj.width, page_obj.height,
                         raw_response=raw_responses, page_img=pages[i]
                     )
                     responses.update(p_resp)
                     cb_confidences.update(p_conf)
-                    cb_bboxes.update(p_bbox)
                     cb_polygons.update(p_poly)
                     for qk in p_resp:
                         cb_resolved_pages[qk] = i + 1

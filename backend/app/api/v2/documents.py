@@ -535,7 +535,7 @@ def reprocess_field(doc_id: str, field_name: str):
             normalized = normalize_azure_response(f"{doc_id}_{k}", v)
             combined.pages.extend(normalized.pages)
             
-    text, conf, found, bbox, page_num = resolve_field(fd, combined)
+    text, conf, found, _, page_num = resolve_field(fd, combined)
     if not found:
         return {
             "field_name": field_name,

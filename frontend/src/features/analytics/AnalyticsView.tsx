@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, Users, Brain, GraduationCap, HelpCircle, AlertOctagon, Download } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 
 import { useAnalyticsData } from './hooks';
@@ -13,11 +13,33 @@ import { DataQualitySection } from './DataQualitySection';
 import { ExportSection } from './ExportSection';
 import type { AnalyticsViewProps, SubTab } from './types';
 
+const tabs = [
+  { id: 'executive' as const, label: 'Executive Stats', icon: TrendingUp },
+  { id: 'demographics' as const, label: 'Demographics', icon: Users },
+  { id: 'sdq' as const, label: 'Questionnaire (SDQ)', icon: HelpCircle },
+  { id: 'academic' as const, label: 'Academic Performance', icon: GraduationCap },
+  { id: 'data-quality' as const, label: 'Data Quality', icon: AlertOctagon },
+  { id: 'export' as const, label: 'SPSS / R Export', icon: Download },
+];
+
 export function AnalyticsView({ onBack, classFilter, genderFilter }: AnalyticsViewProps) {
   const [subTab, setSubTab] = useState<SubTab>(() => {
     const params = new URLSearchParams(window.location.search);
     return (params.get('tab') as SubTab) || 'executive';
   });
+  const [animatingTab, setAnimatingTab] = useState<SubTab | null>(null);
+
+  const handleTabChange = useCallback((v: string) => {
+    setAnimatingTab(v as SubTab);
+    setSubTab(v as SubTab);
+  }, []);
+
+  useEffect(() => {
+    if (animatingTab) {
+      const t = setTimeout(() => setAnimatingTab(null), 300);
+      return () => clearTimeout(t);
+    }
+  }, [animatingTab]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -46,79 +68,88 @@ export function AnalyticsView({ onBack, classFilter, genderFilter }: AnalyticsVi
         </CardHeader>
       </Card>
 
-      <Tabs value={subTab} onValueChange={(v) => setSubTab(v as SubTab)} className="w-full">
-        <TabsList className="w-full flex-wrap">
-          {[
-            { id: 'executive' as const, label: 'Executive Stats', icon: TrendingUp },
-            { id: 'demographics' as const, label: 'Demographics', icon: Users },
-            { id: 'sdq' as const, label: 'Questionnaire (SDQ)', icon: HelpCircle },
-            { id: 'academic' as const, label: 'Academic Performance', icon: GraduationCap },
-            { id: 'data-quality' as const, label: 'Data Quality', icon: AlertOctagon },
-            { id: 'export' as const, label: 'SPSS / R Export', icon: Download }
-          ].map(t => {
-            const Icon = t.icon;
-            return (
-              <TabsTrigger key={t.id} value={t.id}>
-                <Icon className="w-4 h-4" />
-                {t.label}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
+      <div className="glass-card rounded-xl p-1">
+        <Tabs value={subTab} onValueChange={handleTabChange} className="w-full">
+          <TabsList variant="line" className="w-full flex-wrap gap-0 bg-transparent">
+            {tabs.map(t => {
+              const Icon = t.icon;
+              const isActive = subTab === t.id;
+              return (
+                <TabsTrigger
+                  key={t.id}
+                  value={t.id}
+                  className="relative flex items-center gap-1.5 px-3 py-2 text-xs font-semibold whitespace-nowrap transition-all duration-200"
+                  style={{
+                    color: isActive ? 'var(--accent-violet)' : 'var(--text-muted)',
+                  }}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {t.label}
+                  {isActive && (
+                    <span className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-[var(--accent-violet)] animate-chart-enter" />
+                  )}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </Tabs>
+      </div>
 
-        <Card>
-          <CardContent className="min-h-[400px]">
-            <TabsContent value="executive" className="animate-in fade-in duration-300 mt-0">
-              <SummarySection
-                summary={summary}
-                processing={processing}
-                fieldConf={fieldConf}
-                queueStatus={queueStatus}
-                tabLoading={tabLoading}
-                classFilter={classFilter}
-                genderFilter={genderFilter}
-              />
-            </TabsContent>
-
-            <TabsContent value="demographics" className="animate-in fade-in duration-300 mt-0">
-              <DemographicsSection
-                demographics={demographics}
-                questionnaire={questionnaire}
-                tabLoading={tabLoading}
-              />
-            </TabsContent>
-
-            <TabsContent value="sdq" className="animate-in fade-in duration-300 mt-0">
-              <QuestionnaireSection
-                questionnaire={questionnaire}
-                tabLoading={tabLoading}
-              />
-            </TabsContent>
-
-            <TabsContent value="academic" className="animate-in fade-in duration-300 mt-0">
-              <AcademicSection
-                academic={academic}
-                questionnaire={questionnaire}
-                tabLoading={tabLoading}
-              />
-            </TabsContent>
-
-            <TabsContent value="data-quality" className="animate-in fade-in duration-300 mt-0">
-              <DataQualitySection
-                dataQuality={dataQuality}
-                tabLoading={tabLoading}
-              />
-            </TabsContent>
-
-            <TabsContent value="export" className="animate-in fade-in duration-300 mt-0">
-              <ExportSection
-                classFilter={classFilter}
-                genderFilter={genderFilter}
-              />
-            </TabsContent>
-          </CardContent>
-        </Card>
-      </Tabs>
+      {tabs.map(t => {
+        const isActive = subTab === t.id || animatingTab === t.id;
+        if (!isActive && animatingTab !== t.id) return null;
+        return (
+          <div key={t.id} className={animatingTab ? 'animate-chart-enter' : ''} style={{ display: subTab === t.id ? 'block' : 'none' }}>
+            <Card>
+              <CardContent className="min-h-[400px]">
+                {t.id === 'executive' && (
+                  <SummarySection
+                    summary={summary}
+                    processing={processing}
+                    fieldConf={fieldConf}
+                    queueStatus={queueStatus}
+                    tabLoading={tabLoading}
+                    classFilter={classFilter}
+                    genderFilter={genderFilter}
+                  />
+                )}
+                {t.id === 'demographics' && (
+                  <DemographicsSection
+                    demographics={demographics}
+                    questionnaire={questionnaire}
+                    tabLoading={tabLoading}
+                  />
+                )}
+                {t.id === 'sdq' && (
+                  <QuestionnaireSection
+                    questionnaire={questionnaire}
+                    tabLoading={tabLoading}
+                  />
+                )}
+                {t.id === 'academic' && (
+                  <AcademicSection
+                    academic={academic}
+                    questionnaire={questionnaire}
+                    tabLoading={tabLoading}
+                  />
+                )}
+                {t.id === 'data-quality' && (
+                  <DataQualitySection
+                    dataQuality={dataQuality}
+                    tabLoading={tabLoading}
+                  />
+                )}
+                {t.id === 'export' && (
+                  <ExportSection
+                    classFilter={classFilter}
+                    genderFilter={genderFilter}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1,11 +1,8 @@
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell
-} from 'recharts';
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { exportToCsv } from '@/lib/utils';
-import { DemographicsSkeleton } from './components';
+import { DemographicsSkeleton, formatNumber } from './components';
+import { VerticalBarChart, DonutPieChart } from './charts';
 import type { DemographicsData, QuestionnaireData } from '@/api';
 
 interface Props {
@@ -14,17 +11,21 @@ interface Props {
   tabLoading: boolean;
 }
 
-const COLORS = ['var(--accent-violet)', 'var(--accent-cyan)', 'var(--accent-rose)', 'var(--accent-emerald)', 'var(--accent-amber)', 'var(--accent-rose)', 'var(--accent-cyan)'];
-
 export function DemographicsSection({ demographics, questionnaire, tabLoading }: Props) {
   if (tabLoading) return <DemographicsSkeleton />;
   if (!demographics) {
     return (
-      <div className="flex items-center justify-center min-h-[400px] text-[var(--text-muted)] text-sm">
-        No data available for this section.
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 text-[var(--text-muted)]">
+        <span className="text-4xl opacity-30">👥</span>
+        <p className="text-sm font-medium">No demographics data available</p>
+        <p className="text-xs">Student cohort data will appear once forms are verified and demographics are extracted.</p>
       </div>
     );
   }
+
+  const hasClassData = demographics.class_distribution && demographics.class_distribution.length > 0;
+  const hasGenderData = demographics.gender_distribution && demographics.gender_distribution.length > 0;
+  const hasAgeData = demographics.age_distribution && demographics.age_distribution.length > 0;
 
   return (
     <div className="flex flex-col gap-6 w-full">
@@ -51,18 +52,18 @@ export function DemographicsSection({ demographics, questionnaire, tabLoading }:
           <CardContent>
             <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">Cohort Distribution by Class Grade</h3>
             <div className="h-[230px] w-full">
-              {demographics.class_distribution && demographics.class_distribution.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={demographics.class_distribution}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="class" stroke="var(--text-muted)" fontSize={11} />
-                    <YAxis stroke="var(--text-muted)" fontSize={11} />
-                    <Tooltip contentStyle={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--color-border)', color: '#fff' }} />
-                    <Bar dataKey="count" fill="var(--accent-violet)" radius={[4, 4, 0, 0]} name="Students" />
-                  </BarChart>
-                </ResponsiveContainer>
+              {hasClassData ? (
+                <VerticalBarChart
+                  data={demographics.class_distribution}
+                  dataKey="count" nameKey="class"
+                  barColor="var(--accent-violet)"
+                  yLabel="Students"
+                  xLabel="Class"
+                />
               ) : (
-                <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">No class data available.</div>
+                <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
+                  No class data available
+                </div>
               )}
             </div>
           </CardContent>
@@ -72,24 +73,14 @@ export function DemographicsSection({ demographics, questionnaire, tabLoading }:
           <CardContent>
             <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">Cohort Distribution by Gender</h3>
             <div className="h-[230px] w-full flex items-center justify-center">
-              {demographics.gender_distribution && demographics.gender_distribution.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={demographics.gender_distribution}
-                      cx="50%" cy="50%" innerRadius={60} outerRadius={80}
-                      paddingAngle={5} dataKey="count" nameKey="gender"
-                      label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
-                    >
-                      {demographics.gender_distribution.map((_: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--color-border)', color: '#fff' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+              {hasGenderData ? (
+                <DonutPieChart
+                  data={demographics.gender_distribution}
+                  dataKey="count" nameKey="gender"
+                  innerRadius={60} outerRadius={80}
+                />
               ) : (
-                <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">No gender data available.</div>
+                <div className="text-[var(--text-muted)] text-sm">No gender data available</div>
               )}
             </div>
           </CardContent>
@@ -101,18 +92,18 @@ export function DemographicsSection({ demographics, questionnaire, tabLoading }:
           <CardContent>
             <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-4">Age Distribution</h3>
             <div className="h-[230px] w-full">
-              {demographics.age_distribution && demographics.age_distribution.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={demographics.age_distribution}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="age" stroke="var(--text-muted)" fontSize={11} />
-                    <YAxis stroke="var(--text-muted)" fontSize={11} />
-                    <Tooltip contentStyle={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--color-border)', color: '#fff' }} />
-                    <Bar dataKey="count" fill="var(--accent-cyan)" radius={[4, 4, 0, 0]} name="Students" />
-                  </BarChart>
-                </ResponsiveContainer>
+              {hasAgeData ? (
+                <VerticalBarChart
+                  data={demographics.age_distribution}
+                  dataKey="count" nameKey="age"
+                  barColor="var(--accent-cyan)"
+                  yLabel="Students"
+                  xLabel="Age Group"
+                />
               ) : (
-                <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">No age data available.</div>
+                <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
+                  No age data available
+                </div>
               )}
             </div>
           </CardContent>
@@ -126,7 +117,7 @@ export function DemographicsSection({ demographics, questionnaire, tabLoading }:
                 if (!questionnaire || !questionnaire.cohort_summary) return;
                 const headers = ['Class', 'Cohort Size', 'Consent Rate (%)', 'Mean SDQ Total Difficulties', 'Mean Prosocial', 'Mean Math', 'Mean Science', 'Mean Language'];
                 const rows = questionnaire.cohort_summary.map((r: any) => [
-                  r.class, String(r.cohort_size), `${r.consent_rate}%`, String(r.mean_sdq_difficulties),
+                  r.class, formatNumber(r.cohort_size), `${r.consent_rate}%`, String(r.mean_sdq_difficulties),
                   String(r.mean_prosocial), `${r.mean_math}%`, `${r.mean_science}%`, `${r.mean_language}%`
                 ]);
                 exportToCsv(headers, rows, 'cohort_research_summary.csv');
@@ -153,7 +144,7 @@ export function DemographicsSection({ demographics, questionnaire, tabLoading }:
                     questionnaire.cohort_summary.map((row: any, i: number) => (
                       <TableRow key={i}>
                         <TableCell className="font-bold text-xs">Class {row.class}</TableCell>
-                        <TableCell className="text-center text-xs">{row.cohort_size}</TableCell>
+                        <TableCell className="text-center text-xs">{formatNumber(row.cohort_size)}</TableCell>
                         <TableCell className="text-center text-xs">{row.consent_rate}%</TableCell>
                         <TableCell className="text-center text-xs font-semibold text-[var(--accent-violet)]">{row.mean_sdq_difficulties}</TableCell>
                         <TableCell className="text-center text-xs font-semibold text-[var(--accent-emerald)]">{row.mean_prosocial}</TableCell>
@@ -164,7 +155,9 @@ export function DemographicsSection({ demographics, questionnaire, tabLoading }:
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-xs text-[var(--text-muted)] py-4">No cohort summary data available.</TableCell>
+                      <TableCell colSpan={8} className="text-center text-xs text-[var(--text-muted)] py-6">
+                        No cohort summary data available
+                      </TableCell>
                     </TableRow>
                   )}
                 </TableBody>

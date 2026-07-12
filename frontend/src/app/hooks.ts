@@ -1,12 +1,13 @@
-import { useEffect, useRef } from 'react';
-import { isTokenExpired, clearAuth, scheduleTokenRefresh, clearApiCache, api } from '@/api';
+import { useEffect, useRef, useMemo } from 'react';
+import { isTokenExpired, redirectToLogin, scheduleTokenRefresh, invalidateCache, api } from '@/api';
 import type { Document } from '@/api';
+import { useDocument } from '@/context/DocumentContext';
+import { useUI } from '@/context/UIContext';
 
 export function useInitAuth() {
   useEffect(() => {
     if (isTokenExpired()) {
-      clearAuth();
-      window.location.href = '/';
+      redirectToLogin();
     } else {
       scheduleTokenRefresh();
     }
@@ -16,14 +17,15 @@ export function useInitAuth() {
 
 export function useSSE(
   loadAll: () => Promise<void>,
-  selectedDoc: Document | null,
 ) {
+  const doc = useDocument();
+
   useEffect(() => {
     loadAll();
     let es: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     const connect = () => {
-      if (isTokenExpired()) { clearAuth(); window.location.href = '/'; return; }
+      if (isTokenExpired()) { redirectToLogin(); return; }
       try {
         es?.close();
         es = new EventSource(api.getEventsUrl());
@@ -31,20 +33,38 @@ export function useSSE(
           try {
             const parsed = JSON.parse(event.data);
             const { event: eventType, data } = parsed;
+            
             if (eventType === 'document_updated' && data?.doc_id) {
-              clearApiCache();
-              if (selectedDoc?.id === data.doc_id) {
-                api.getDocumentDetails(data.doc_id)
-                  .then(() => { /* handled by caller */ })
-                  .catch(() => {});
-              }
-              loadAll();
+              invalidateCache(`/documents/${data.doc_id}`);
+              invalidateCache('/documents');
+              api.getDocumentDetails(data.doc_id).then(detail => {
+                doc.updateDocument(data.doc_id, () => ({...detail} as any));
+              }).catch(() => {});
             } else if (eventType === 'document_deleted' && data?.doc_id) {
-              loadAll();
+              doc.removeDocument(data.doc_id);
+            } else if (eventType === 'document_upload' && data?.doc_id) {
+              invalidateCache('/documents');
+              doc.setDocuments(prev => {
+                const exists = prev.some(item => item.id === data.doc_id);
+                if (exists) {
+                  return prev.map(item => item.id === data.doc_id ? { ...item, ...data } : item);
+                } else {
+                  return [{
+                    id: data.doc_id,
+                    filename: data.filename || 'Uploading...',
+                    status: data.status || 'processing',
+                    created_at: new Date().toISOString(),
+                    roll_number: '',
+                    class: ''
+                  }, ...prev];
+                }
+              });
             } else if (eventType !== 'connected') {
+              invalidateCache('/documents');
               loadAll();
             }
-          } catch {
+          } catch (err) {
+            console.error("SSE targeted update error:", err);
             loadAll();
           }
         };
@@ -57,11 +77,11 @@ export function useSSE(
     };
     connect();
     const fallback = setInterval(() => {
-      if (isTokenExpired()) { clearAuth(); window.location.href = '/'; return; }
-      if (!es || es.readyState !== EventSource.OPEN) { clearApiCache(); loadAll(); }
+      if (isTokenExpired()) { redirectToLogin(); return; }
+      if (!es || es.readyState !== EventSource.OPEN) { invalidateCache('/documents'); loadAll(); }
     }, 15000);
     return () => { es?.close(); if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(fallback); };
-  }, [loadAll, selectedDoc?.id]);
+  }, [loadAll, doc]);
 }
 
 export function useKeyboardShortcuts(
@@ -111,4 +131,29 @@ export function useUrlSync(selectedDoc: Document | null) {
   }, [selectedDoc?.id]);
 
   return { initialLoadDone };
+}
+
+export function useFilteredDocuments() {
+  const doc = useDocument();
+  const ui = useUI();
+
+  return useMemo(() => {
+    const list = ui.activeTab === 'all' ? doc.documents :
+      ui.activeTab === 'needs_review' ? doc.needsReview :
+      ui.activeTab === 'verified' ? doc.verified :
+      ui.activeTab === 'processing' ? doc.processing : doc.failed;
+    let result = list;
+    if (ui.searchQuery.trim()) {
+      const q = ui.searchQuery.toLowerCase();
+      result = list.filter(d =>
+        d.filename.toLowerCase().includes(q) ||
+        (d.roll_number && d.roll_number.includes(q))
+      );
+    }
+    return [...result].sort((a, b) => {
+      const av = (a[ui.sortKey] || '').toLowerCase();
+      const bv = (b[ui.sortKey] || '').toLowerCase();
+      return ui.sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+  }, [doc.documents, doc.needsReview, doc.verified, doc.processing, doc.failed, ui.activeTab, ui.searchQuery, ui.sortKey, ui.sortDir]);
 }

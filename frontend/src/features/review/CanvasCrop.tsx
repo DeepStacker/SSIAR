@@ -57,7 +57,14 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
   const [isVisible, setIsVisible] = useState(false);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [resizeKey, setResizeKey] = useState(0);
   const dataUrlRef = useRef<string>('');
+
+  useEffect(() => {
+    const handleResize = () => setResizeKey(k => k + 1);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -78,9 +85,36 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
   useEffect(() => {
     if (!isVisible) return;
 
-    let resolvedPolygon = polygon;
+    if (!polygon || polygon.length < 8) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
 
-    if (!resolvedPolygon || resolvedPolygon.length < 8) {
+    const [x0, y0, x1, y1, x2, y2, x3, y3] = polygon;
+
+    if (x0 < 0 && x1 < 0 && x2 < 0 && x3 < 0) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
+
+    if (x0 < 0 || y0 < 0 || x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0 || x3 < 0 || y3 < 0) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
+
+    const w = Math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2);
+    const h = Math.sqrt((x3 - x0) ** 2 + (y3 - y0) ** 2);
+
+    if (w < 10 || w > 5000 || h < 10 || h > 5000) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
+
+    if (w <= 0 || h <= 0) {
       setError(true);
       setLoading(false);
       return;
@@ -100,21 +134,7 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
         return;
       }
 
-      const x0 = resolvedPolygon![0];
-      const y0 = resolvedPolygon![1];
-      const x1 = resolvedPolygon![2];
-      const y1 = resolvedPolygon![3];
-      const x3 = resolvedPolygon![6];
-      const y3 = resolvedPolygon![7];
-
-      const w = Math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2);
-      const h = Math.sqrt((x3 - x0) ** 2 + (y3 - y0) ** 2);
-
-      if (w <= 0 || h <= 0) {
-        setError(true);
-        setLoading(false);
-        return;
-      }
+      const dpr = window.devicePixelRatio || 1;
 
       const theta = Math.atan2(y1 - y0, x1 - x0);
 
@@ -124,8 +144,12 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
       const cropW = Math.ceil(w + 2 * padX);
       const cropH = Math.ceil(h + 2 * padY);
 
-      canvas.width = cropW;
-      canvas.height = cropH;
+      canvas.width = cropW * dpr;
+      canvas.height = cropH * dpr;
+      canvas.style.width = `${cropW}px`;
+      canvas.style.height = `${cropH}px`;
+
+      ctx.scale(dpr, dpr);
 
       ctx.save();
       ctx.translate(padX, padY);
@@ -152,7 +176,7 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
     );
 
     return () => { isMounted = false; };
-  }, [isVisible, pageUrl, polygon, paddingPercent, onDataUrl]);
+  }, [isVisible, pageUrl, polygon, paddingPercent, onDataUrl, resizeKey]);
 
   if (!isVisible) {
     return <div ref={containerRef} className={className} style={style} />;
@@ -174,7 +198,10 @@ export const CanvasCrop: React.FC<CanvasCropProps> = ({
         </div>
       )}
       <canvas
+        key={resizeKey}
         ref={canvasRef}
+        role="img"
+        aria-label="OCR field crop"
         className={"block rounded" + (className ? " " + className : "")}
         style={style}
       />

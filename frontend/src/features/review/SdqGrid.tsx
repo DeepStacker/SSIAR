@@ -82,24 +82,36 @@ export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, v2Tru
   };
 
   return (
-    <Card className="mb-5">
-      <CardContent className="p-6">
+    <Card className="mb-5 glass-card">
+      <CardContent className="p-5">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-base text-[var(--text-secondary)]">SDQ Responses (Q1–Q25)</h3>
-          <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-            <span><kbd className="px-1 py-0.5 rounded bg-muted font-mono text-[9px]">1</kbd>/<kbd className="px-1 py-0.5 rounded bg-muted font-mono text-[9px]">2</kbd>/<kbd className="px-1 py-0.5 rounded bg-muted font-mono text-[9px]">3</kbd>/<kbd className="px-1 py-0.5 rounded bg-muted font-mono text-[9px]">0</kbd> select</span>
-            <span><kbd className="px-1 py-0.5 rounded bg-muted font-mono text-[9px]">↑</kbd><kbd className="px-1 py-0.5 rounded bg-muted font-mono text-[9px]">↓</kbd> navigate</span>
-            <span>{Array.from({ length: 25 }, (_, i) => `q${i + 1}`).filter(q => getCheckboxConf(q) === 'high').length} high conf</span>
+          <h3 className="text-sm font-bold text-[var(--text-secondary)]">SDQ Responses (Q1–Q25)</h3>
+          <div className="flex items-center gap-4 text-[10px] text-[var(--text-muted)]">
+            <span className="flex items-center gap-0.5">
+              <kbd className="px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono text-[9px] border border-[var(--color-border)]">1</kbd>
+              <kbd className="px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono text-[9px] border border-[var(--color-border)]">2</kbd>
+              <kbd className="px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono text-[9px] border border-[var(--color-border)]">3</kbd>
+              <kbd className="px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono text-[9px] border border-[var(--color-border)]">0</kbd>
+              {' '}select
+            </span>
+            <span className="flex items-center gap-0.5">
+              <kbd className="px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono text-[9px] border border-[var(--color-border)]">↑</kbd>
+              <kbd className="px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono text-[9px] border border-[var(--color-border)]">↓</kbd>
+              {' '}navigate
+            </span>
+            <span className="text-[var(--accent-emerald)] font-semibold">
+              {Array.from({ length: 25 }, (_, i) => `q${i + 1}`).filter(q => getCheckboxConf(q) === 'high').length} high conf
+            </span>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {Array.from({ length: 25 }, (_, i) => {
             const qi = i + 1;
             const q = `q${qi}`;
             const raw = responses[q];
             const isMulti = Array.isArray(raw) && raw.filter(x => x > 0).length > 1;
             const confLevel = getCheckboxConf(q);
-            const cellColorCls = isMulti ? 'text-violet-400' : confLevel === 'high' ? 'text-emerald-400' : confLevel === 'medium' ? 'text-amber-400' : 'text-rose-400';
+            const cellColorCls = isMulti ? 'text-[var(--accent-violet)]' : confLevel === 'high' ? 'text-[var(--accent-emerald)]' : confLevel === 'medium' ? 'text-[var(--accent-amber)]' : 'text-[var(--accent-rose)]';
             const cur = responses[q];
             const isFocused = focusedQ === q;
             const qInfo = v2Trust?.[q];
@@ -117,6 +129,13 @@ export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, v2Tru
               return r;
             })();
 
+            const anySelected = (() => {
+              const r = responses[q];
+              if (r === undefined || r === -1) return false;
+              if (Array.isArray(r)) return r.some(x => x > 0);
+              return r > 0;
+            })();
+
             return (
               <div
                 key={q}
@@ -128,14 +147,20 @@ export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, v2Tru
                 onBlur={() => setFocusedQ(null)}
                 onKeyDown={e => handleKeyOnRow(q, e, qi)}
                 className={`
-                  flex items-center gap-1 px-2.5 py-1.5 rounded-lg outline-none
-                  ${isMulti ? 'bg-violet-500/10 border border-violet-500/25' : 'bg-black/10 border border-transparent'}
-                  ${isFocused ? 'ring-2 ring-violet-500/50' : ''}
+                  flex items-center gap-2 px-3 py-2 rounded-xl outline-none transition-all duration-150
+                  group cursor-pointer
+                  ${anySelected
+                    ? 'bg-[var(--accent-violet)]/8 border border-[var(--accent-violet)]/20 hover:bg-[var(--accent-violet)]/12'
+                    : 'bg-[var(--bg-highlight)]/30 border border-transparent hover:bg-[var(--bg-highlight)]/60 hover:border-[var(--color-border)]'}
+                  ${isFocused ? 'ring-2 ring-[var(--accent-violet)]/40 border-[var(--accent-violet)]/30' : ''}
+                  ${isMulti ? 'bg-[var(--accent-violet)]/12 border border-[var(--accent-violet)]/25' : ''}
                 `}
               >
-                <div className="w-6 text-xs font-bold text-[var(--text-muted)] shrink-0">Q{qi}</div>
+                <span className="w-6 text-xs font-extrabold text-[var(--text-muted)] shrink-0 text-right">
+                  {qi}
+                </span>
                 {qPolygon ? (
-                  <div className="shrink-0 w-[160px] h-[50px] bg-black/20 rounded cursor-zoom-in overflow-hidden"
+                  <div className="shrink-0 w-[140px] h-[46px] bg-black/20 rounded-lg cursor-zoom-in overflow-hidden border border-[var(--color-border)]/50"
                     onMouseEnter={e => {
                       const rect = e.currentTarget.getBoundingClientRect();
                       handleZoom(q, rect.left + rect.width / 2, rect.top);
@@ -144,33 +169,45 @@ export const SdqGrid: React.FC<Props> = ({ docId, responses, checkboxConf, v2Tru
                     onMouseLeave={() => onZoom(null)}
                   >
                     <CanvasCrop pageUrl={pageUrl} polygon={qPolygon}
-                      className="w-[160px] h-[50px] object-contain"
+                      className="w-[140px] h-[46px] object-contain"
                       onDataUrl={url => { dataUrls.current[q] = url; }} />
                   </div>
                 ) : (
-                  <div className="shrink-0 w-[160px] h-[50px] bg-black/20 rounded" />
-                )}
-                <div className="flex items-center gap-3 justify-end flex-1 shrink-0">
-                  <span className={`text-2xl font-extrabold shrink-0 min-w-[30px] text-center ${cellColorCls}`}>
-                    {displayVal}
-                    {isMulti && <span className="ml-0.5 text-[10px] text-[var(--accent-violet)]">✦</span>}
-                  </span>
-                  <span className="w-px h-6 bg-[var(--color-border)] shrink-0 inline-block" />
-                  <div className="flex gap-1 shrink-0">
-                    {[1, 2, 3, 0].map(v => {
-                      const selected = Array.isArray(cur) ? cur.includes(v) : cur === v;
-                      return (
-                        <button key={v}
-                          onClick={() => onChange({ ...responses, [q]: toggleValue(cur, v) })}
-                          className={`
-                            px-2.5 py-1 rounded border-2 text-sm font-bold leading-tight cursor-pointer
-                            ${selected ? 'bg-violet-500/20 border-[var(--accent-violet)] text-[var(--accent-cyan)]' : 'bg-black/15 border-[var(--color-border)] text-[var(--text-secondary)]'}
-                          `}>
-                          {v === 0 ? '✗' : v}
-                        </button>
-                      );
-                    })}
+                  <div className="shrink-0 w-[140px] h-[46px] bg-black/20 rounded-lg border border-[var(--color-border)]/50 flex items-center justify-center">
+                    <span className="text-[10px] text-[var(--text-muted)]">No crop</span>
                   </div>
+                )}
+
+                <div className="flex-1 min-w-0">
+                  <span className={`text-xl font-extrabold block ${cellColorCls}`}>
+                    {displayVal}
+                    {isMulti && <span className="ml-0.5 text-[9px] text-[var(--accent-violet)] align-top">✦</span>}
+                  </span>
+                  <div className={`
+                    text-[9px] font-semibold mt-0.5
+                    ${confLevel === 'high' ? 'text-[var(--accent-emerald)]' : confLevel === 'medium' ? 'text-[var(--accent-amber)]' : 'text-[var(--accent-rose)]'}
+                  `}>
+                    {confLevel === 'high' ? 'High conf' : confLevel === 'medium' ? 'Med conf' : 'Low conf'}
+                  </div>
+                </div>
+
+                <div className="flex gap-1 shrink-0">
+                  {[1, 2, 3, 0].map(v => {
+                    const selected = Array.isArray(cur) ? cur.includes(v) : cur === v;
+                    return (
+                      <button key={v}
+                        onClick={() => onChange({ ...responses, [q]: toggleValue(cur, v) })}
+                        className={`
+                          w-8 h-8 rounded-lg text-xs font-bold transition-all duration-150
+                          flex items-center justify-center border-2
+                          ${selected
+                            ? 'bg-[var(--accent-violet)]/20 border-[var(--accent-violet)] text-[var(--accent-cyan)] shadow-sm scale-105'
+                            : 'bg-transparent border-[var(--color-border)] text-[var(--text-secondary)] hover:border-[var(--accent-violet)]/40 hover:bg-[var(--accent-violet)]/5 group-hover:border-[var(--color-border)]'}
+                        `}>
+                        {v === 0 ? '✗' : v}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             );

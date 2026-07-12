@@ -1,5 +1,5 @@
 export * from './types';
-export { API_BASE, isTokenExpired, clearAuth, scheduleTokenRefresh, authHeaders, clearApiCache } from './client';
+export { API_BASE, isTokenExpired, clearAuth, scheduleTokenRefresh, authHeaders, clearApiCache, invalidateCache, unwrapV3, extractErrorMessage, redirectToLogin, getAndClearReferrer } from './client';
 export { documentsApi } from './documents';
 export { uploadApi } from './upload';
 export { exportApi } from './export';

@@ -46,10 +46,31 @@ def verify_password(password: str, stored: str) -> bool:
         return False
 
 
-def create_jwt(user_id: str, email: str) -> str:
+def get_current_role() -> str:
+    user_id = get_current_user_id()
+    if not user_id:
+        return "user"
+    from app.database import get_db_connection, put_conn, USE_POSTGRES
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT role FROM users WHERE id = %s" if USE_POSTGRES else
+            "SELECT role FROM users WHERE id = ?", (user_id,)
+        )
+        row = cur.fetchone()
+        return row[0] if (row and row[0]) else "user"
+    except Exception:
+        return getattr(_auth_local, "role", "user")
+    finally:
+        put_conn(conn)
+
+
+def create_jwt(user_id: str, email: str, role: str = "user") -> str:
     payload = {
         "sub": user_id,
         "email": email,
+        "role": role,
         "iat": int(time.time()),
         "exp": int((datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS)).timestamp()),
     }
@@ -76,6 +97,8 @@ def require_auth(request: Request):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     _auth_local.user_id = payload.get("sub")
     _auth_local.email = payload.get("email")
+    _auth_local.role = payload.get("role", "user")
     request.state.user_id = payload.get("sub")
     request.state.email = payload.get("email")
+    request.state.role = payload.get("role", "user")
     return payload

@@ -130,7 +130,7 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.verifyDocument(doc.id, {
+      const result = await api.verifyDocument(doc.id, {
         roll_number: details.roll_number || '',
         class_val: details.class || '',
         dob: details.dob || '',
@@ -140,7 +140,7 @@ export const VerifiedView: React.FC<Props> = ({ doc, details, onClose, onDetails
         academic_scores: details.academic_scores || {},
         remarks: details.remarks || '',
       });
-      show('Changes saved', 'success');
+      show(result.message || 'Changes saved', 'success');
     } catch (e: any) {
       show(e.message || 'Save failed', 'error');
     } finally {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, Search, ArrowUpDown, Check, AlertTriangle, ArrowRight, Sparkles, Image, Scan, BarChart, FileWarning, Hash, X, ArrowLeft, ArrowRightCircle } from 'lucide-react';
 import type { DlqTask } from '@/api';
-import { api } from '@/api';
+import { api, clearApiCache } from '@/api';
 import { CanvasCrop } from '@/features/review/CanvasCrop';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -35,12 +35,16 @@ const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, polygon }) =
         return;
       }
 
+      const dpr = window.devicePixelRatio || 1;
       const imgW = img.naturalWidth;
       const imgH = img.naturalHeight;
 
-      canvas.width = imgW;
-      canvas.height = imgH;
+      canvas.width = imgW * dpr;
+      canvas.height = imgH * dpr;
+      canvas.style.width = `${imgW}px`;
+      canvas.style.height = `${imgH}px`;
 
+      ctx.scale(dpr, dpr);
       ctx.drawImage(img, 0, 0);
 
       if (polygon && polygon.length >= 8) {
@@ -60,22 +64,18 @@ const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, polygon }) =
       setLoading(false);
     };
     img.onerror = () => {
-      if (isMounted) {
-        setError(true);
-        setLoading(false);
-      }
+      if (isMounted) { setError(true); setLoading(false); }
     };
     img.src = pageUrl;
-
     return () => { isMounted = false; };
   }, [pageUrl, polygon]);
 
   return (
-    <div className="relative w-full flex items-center justify-center bg-black/5 overflow-hidden rounded-xl border min-h-[300px]">
+    <div className="relative w-full flex items-center justify-center bg-black/5 overflow-hidden rounded-xl border border-[var(--color-border)] min-h-[300px]">
       {loading && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background">
-          <Loader2 className="animate-spin" size={20} />
-          <span className="text-xs text-muted-foreground">Loading Full Page Context...</span>
+          <Loader2 className="animate-spin text-[var(--accent-violet)]" size={20} />
+          <span className="text-xs text-muted-foreground">Loading Full Page...</span>
         </div>
       )}
       {error ? (
@@ -84,7 +84,7 @@ const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, polygon }) =
         </div>
       ) : (
         <div className="overflow-auto max-h-[500px] w-full flex justify-center p-2">
-          <canvas ref={canvasRef} className="max-w-full h-auto" />
+          <canvas ref={canvasRef} className="max-w-full h-auto" role="img" aria-label="Full page document preview" />
         </div>
       )}
     </div>
@@ -131,7 +131,7 @@ const DiffRow: React.FC<{ original: string; corrected: string }> = ({ original, 
 
   if (corrected === '' && !original) {
     return (
-      <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-muted/40 border border-dashed text-muted-foreground/60 text-xs">
+      <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-[var(--bg-highlight)]/30 border border-dashed border-[var(--color-border)] text-[var(--text-muted)] text-xs">
         <FileWarning size={12} /> No value to compare
       </div>
     );
@@ -139,7 +139,7 @@ const DiffRow: React.FC<{ original: string; corrected: string }> = ({ original, 
 
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
-      <div className={`p-3 rounded-lg border ${hasChanged ? 'bg-amber-500/[0.04] border-amber-500/20' : 'bg-muted/30 border-border'}`}>
+      <div className={`p-3 rounded-lg border ${hasChanged ? 'bg-amber-500/[0.04] border-amber-500/20' : 'bg-[var(--bg-highlight)]/20 border-[var(--color-border)]'}`}>
         <div className="text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1">OCR Extracted</div>
         <div className={`font-mono text-sm font-bold ${hasChanged ? 'text-amber-600 line-through decoration-2' : 'text-foreground'}`}>
           {original || <span className="italic font-normal text-muted-foreground/50 text-xs">&mdash;</span>}
@@ -160,7 +160,7 @@ const DiffRow: React.FC<{ original: string; corrected: string }> = ({ original, 
         )}
       </div>
 
-      <div className={`p-3 rounded-lg border ${hasChanged ? 'bg-emerald-500/[0.06] border-emerald-500/25' : 'bg-muted/30 border-border'}`}>
+      <div className={`p-3 rounded-lg border ${hasChanged ? 'bg-emerald-500/[0.06] border-emerald-500/25' : 'bg-[var(--bg-highlight)]/20 border-[var(--color-border)]'}`}>
         <div className="text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1">Corrected</div>
         <div className="font-mono text-sm font-bold text-emerald-600">
           {corrected || <span className="italic font-normal text-muted-foreground/50 text-xs">Blank (marked)</span>}
@@ -286,8 +286,9 @@ export const DeadLetterQueueView: React.FC = () => {
 
     setSaving(true);
     try {
-      await api.submitDlqResolution(activeTask.id, finalVal);
-      show(`Resolved ${activeTask.field_name} successfully`);
+      const result = await api.submitDlqResolution(activeTask.id, finalVal);
+      clearApiCache();
+      show(result.message || `Resolved ${activeTask.field_name} successfully`);
 
       setResolvedSessionCount(prev => prev + 1);
 
@@ -308,11 +309,7 @@ export const DeadLetterQueueView: React.FC = () => {
     }
   };
 
-  const handleMarkBlank = () => {
-    setInputValue('');
-    handleResolve('');
-  };
-
+  const handleMarkBlank = () => { setInputValue(''); handleResolve(''); };
   const handleSkip = () => {
     if (!activeTask) return;
     const currentIndex = tasks.findIndex(t => t.id === activeTask.id);
@@ -379,27 +376,27 @@ export const DeadLetterQueueView: React.FC = () => {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100vh-9rem)] overflow-hidden">
       {/* ── Left Sidebar: Filtered Task List ── */}
-      <div className="flex flex-col border rounded-xl overflow-hidden bg-card h-full shadow-sm">
-        <div className="p-4 border-b space-y-3 shrink-0">
+      <div className="flex flex-col rounded-xl overflow-hidden h-full glass-card">
+        <div className="p-4 border-b border-[var(--color-border)] space-y-3 shrink-0">
           <div className="bg-gradient-to-r from-violet-500/10 to-cyan-500/5 p-3 rounded-lg border border-violet-500/10">
             <div className="flex items-center justify-between text-xs mb-2">
               <span className="font-semibold flex items-center gap-1.5">
-                <BarChart size={12} className="text-violet-500" /> Progress
+                <BarChart size={12} className="text-[var(--accent-violet)]" /> Progress
               </span>
-              <span className="font-medium text-muted-foreground tabular-nums">
+              <span className="font-bold tabular-nums text-[var(--text-secondary)]">
                 {resolvedSessionCount}/{totalInSession}
               </span>
             </div>
-            <div className="w-full bg-black/10 rounded-full h-1.5 overflow-hidden">
+            <div className="w-full bg-[var(--bg-highlight)]/50 rounded-full h-2 overflow-hidden">
               <div
-                className="bg-gradient-to-r from-violet-500 to-cyan-500 h-full transition-all duration-500 rounded-full"
+                className="bg-gradient-to-r from-[var(--accent-violet)] to-[var(--accent-cyan)] h-full transition-all duration-500 rounded-full"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
             <div className="text-[10px] text-muted-foreground/70 flex justify-between items-center pt-1.5">
               <span className="tabular-nums">{dbTotalCount} remaining</span>
               {resolvedSessionCount > 0 && (
-                <span className="text-emerald-500 font-medium flex items-center gap-0.5">
+                <span className="text-[var(--accent-emerald)] font-semibold flex items-center gap-0.5">
                   <Check size={9} /> {progressPercent}%
                 </span>
               )}
@@ -414,18 +411,18 @@ export const DeadLetterQueueView: React.FC = () => {
               aria-label="Search tasks"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-8 text-xs h-8"
+              className="pl-8 text-xs h-8 premium-input"
             />
           </div>
 
           <div className="space-y-2 text-xs">
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label htmlFor="dlq-field-type" className="block text-muted-foreground mb-1 text-[10px]">Field Type</label>
+                <label htmlFor="dlq-field-type" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Field Type</label>
                 <select id="dlq-field-type"
                   value={fieldType}
                   onChange={e => { setFieldType(e.target.value as 'all' | 'demographic' | 'sdq'); resetProgressStats(); }}
-                  className="w-full h-7 px-2 border rounded bg-background text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full h-8 px-2 border border-[var(--color-border)] rounded-lg bg-[var(--bg-highlight)]/20 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent-violet)]/30 transition-all"
                 >
                   <option value="all">All Fields</option>
                   <option value="demographic">Demographic</option>
@@ -433,11 +430,11 @@ export const DeadLetterQueueView: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label htmlFor="dlq-priority" className="block text-muted-foreground mb-1 text-[10px]">Priority</label>
+                <label htmlFor="dlq-priority" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Priority</label>
                 <select id="dlq-priority"
                   value={priority}
                   onChange={e => { setPriority(e.target.value as 'all' | 'critical' | 'low_trust'); resetProgressStats(); }}
-                  className="w-full h-7 px-2 border rounded bg-background text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full h-8 px-2 border border-[var(--color-border)] rounded-lg bg-[var(--bg-highlight)]/20 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent-violet)]/30 transition-all"
                 >
                   <option value="all">All</option>
                   <option value="critical">Critical</option>
@@ -447,11 +444,11 @@ export const DeadLetterQueueView: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label htmlFor="dlq-error-type" className="block text-muted-foreground mb-1 text-[10px]">Error Type</label>
+                <label htmlFor="dlq-error-type" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Error Type</label>
                 <select id="dlq-error-type"
                   value={errorType}
                   onChange={e => { setErrorType(e.target.value); resetProgressStats(); }}
-                  className="w-full h-7 px-2 border rounded bg-background text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full h-8 px-2 border border-[var(--color-border)] rounded-lg bg-[var(--bg-highlight)]/20 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent-violet)]/30 transition-all"
                 >
                   <option value="all">All</option>
                   {distinctErrors.map(err => (
@@ -460,19 +457,19 @@ export const DeadLetterQueueView: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label htmlFor="dlq-sort-by" className="block text-muted-foreground mb-1 text-[10px]">Sort By</label>
+                <label htmlFor="dlq-sort-by" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Sort By</label>
                 <div className="flex items-center gap-1">
                   <select id="dlq-sort-by"
                     value={sortBy}
                     onChange={e => { setSortBy(e.target.value); resetProgressStats(); }}
-                    className="flex-1 h-7 px-2 border rounded bg-background text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="flex-1 h-8 px-2 border border-[var(--color-border)] rounded-lg bg-[var(--bg-highlight)]/20 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent-violet)]/30 transition-all"
                   >
                     <option value="filename">Filename</option>
                     <option value="priority">Priority</option>
                     <option value="confidence">Confidence</option>
                     <option value="created_at">Date</option>
                   </select>
-                  <Button variant="outline" size="icon" className="h-7 w-7 shrink-0" onClick={() => { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); resetProgressStats(); }}>
+                  <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); resetProgressStats(); }}>
                     <ArrowUpDown size={11} />
                   </Button>
                 </div>
@@ -481,40 +478,40 @@ export const DeadLetterQueueView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-48 text-muted-foreground text-sm gap-2">
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                <Loader2 className="animate-spin" size={18} />
+              <div className="w-10 h-10 rounded-full bg-[var(--bg-highlight)] flex items-center justify-center">
+                <Loader2 className="animate-spin text-[var(--accent-violet)]" size={18} />
               </div>
               <span className="text-xs font-medium">Loading tasks...</span>
             </div>
           ) : filteredTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-muted-foreground text-sm gap-3">
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-[var(--bg-highlight)] flex items-center justify-center">
                 <FileWarning size={18} className="text-muted-foreground/60" />
               </div>
-              <span className="text-xs font-medium">No unresolved fields match filters</span>
-              {search && <span className="text-[10px] text-muted-foreground/60">Try adjusting your search or filters</span>}
+              <span className="text-xs font-medium">No unresolved fields</span>
+              {search && <span className="text-[10px] text-muted-foreground/60">Try adjusting your search</span>}
             </div>
           ) : (
             filteredTasks.map(t => {
               const isSdq = t.field_name.startsWith('q') && t.field_name.substring(1).match(/^\d+$/);
-              const confColor = t.confidence_score >= 0.9 ? 'text-emerald-500' : t.confidence_score >= 0.6 ? 'text-amber-500' : 'text-rose-500';
+              const confColor = t.confidence_score >= 0.9 ? 'text-[var(--accent-emerald)]' : t.confidence_score >= 0.6 ? 'text-[var(--accent-amber)]' : 'text-[var(--accent-rose)]';
               return (
                 <div
                   key={t.id}
                   onClick={() => setSelectedTaskId(t.id)}
                   className={c(
-                    'group relative pl-3 pr-3 py-2.5 rounded-lg cursor-pointer transition-all',
+                    'group relative pl-3 pr-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 border',
                     selectedTaskId === t.id
-                      ? 'bg-violet-500/10 shadow-sm ring-1 ring-violet-500/25'
-                      : 'hover:bg-muted bg-card'
+                      ? 'bg-[var(--accent-violet)]/8 shadow-sm border-[var(--accent-violet)]/20'
+                      : 'bg-transparent border-transparent hover:bg-[var(--bg-highlight)]/40 hover:border-[var(--color-border)]/60'
                   )}
                 >
                   <div className={c(
-                    'absolute left-0 top-2.5 bottom-2.5 w-0.5 rounded-full',
-                    t.priority === 'critical' ? 'bg-rose-500' : 'bg-amber-400'
+                    'absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-full',
+                    t.priority === 'critical' ? 'bg-[var(--accent-rose)]' : 'bg-[var(--accent-amber)]'
                   )} />
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <span className={c(
@@ -523,11 +520,11 @@ export const DeadLetterQueueView: React.FC = () => {
                     )}>
                       {t.priority}
                     </span>
-                    <span className={c('text-[10px] font-medium', confColor)}>
+                    <span className={c('text-[10px] font-semibold tabular-nums', confColor)}>
                       {Math.round(t.confidence_score * 100)}%
                     </span>
                   </div>
-                  <div className="font-semibold text-xs mb-0.5 truncate flex items-center gap-1.5">
+                  <div className="font-semibold text-xs mb-1 truncate flex items-center gap-1.5">
                     {isSdq ? <Hash size={10} className="shrink-0 text-muted-foreground" /> : null}
                     {getFieldLabel(t.field_name)}
                     {isSdq && <Badge variant="outline" className="text-[8px] px-1 py-0 h-3.5 font-normal ml-auto">SDQ</Badge>}
@@ -547,13 +544,13 @@ export const DeadLetterQueueView: React.FC = () => {
       {/* ── Right Panel: Detail View ── */}
       <div className="md:col-span-2 flex flex-col h-full overflow-hidden">
         {activeTask ? (
-          <div className="flex flex-col h-full bg-card border rounded-xl overflow-hidden shadow-sm">
+          <div className="flex flex-col h-full rounded-xl overflow-hidden glass-card">
             {/* Header */}
-            <div className="px-4 py-3 border-b flex items-center justify-between shrink-0 gap-3">
+            <div className="px-5 py-3 border-b border-[var(--color-border)] flex items-center justify-between shrink-0 gap-3">
               <div className="min-w-0 flex items-center gap-3">
                 <div className={c(
                   'w-2.5 h-2.5 rounded-full shrink-0',
-                  activeTask.priority === 'critical' ? 'bg-rose-500' : 'bg-amber-400'
+                  activeTask.priority === 'critical' ? 'bg-[var(--accent-rose)]' : 'bg-[var(--accent-amber)]'
                 )} />
                 <div className="min-w-0">
                   <h2 className="text-sm font-bold truncate">{getFieldLabel(activeTask.field_name)}</h2>
@@ -563,20 +560,28 @@ export const DeadLetterQueueView: React.FC = () => {
                     <span>Page {activeTask.page_number}</span>
                     <span className="text-muted-foreground/40">&middot;</span>
                     <span className={c(
-                      activeTask.confidence_score >= 0.9 ? 'text-emerald-500' : activeTask.confidence_score >= 0.6 ? 'text-amber-500' : 'text-rose-500'
+                      'font-semibold',
+                      activeTask.confidence_score >= 0.9 ? 'text-[var(--accent-emerald)]' : activeTask.confidence_score >= 0.6 ? 'text-[var(--accent-amber)]' : 'text-[var(--accent-rose)]'
                     )}>
                       {Math.round(activeTask.confidence_score * 100)}% conf
                     </span>
                   </p>
                 </div>
               </div>
-              <div className="flex items-center bg-muted p-0.5 rounded-lg shrink-0">
+              <div className="flex items-center bg-[var(--bg-highlight)]/30 p-0.5 rounded-lg shrink-0 border border-[var(--color-border)]/50">
                 <Button variant="ghost" size="sm" onClick={() => activeTask.polygon && setPreviewMode('crop')}
-                  className={c('h-7 px-3 text-[10px] font-bold', !activeTask.polygon ? 'opacity-40 cursor-not-allowed' : '', previewMode === 'crop' ? 'bg-card shadow-sm' : '')}>
+                  className={c(
+                    'h-7 px-3 text-[10px] font-bold rounded-md transition-all',
+                    !activeTask.polygon ? 'opacity-40 cursor-not-allowed' : '',
+                    previewMode === 'crop' ? 'bg-[var(--bg-card)] shadow-sm text-[var(--accent-violet)]' : 'text-[var(--text-muted)]'
+                  )}>
                   <Scan size={12} className="mr-1" /> Field
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setPreviewMode('full')}
-                  className={c('h-7 px-3 text-[10px] font-bold', previewMode === 'full' ? 'bg-card shadow-sm' : '')}>
+                  className={c(
+                    'h-7 px-3 text-[10px] font-bold rounded-md transition-all',
+                    previewMode === 'full' ? 'bg-[var(--bg-card)] shadow-sm text-[var(--accent-violet)]' : 'text-[var(--text-muted)]'
+                  )}>
                   <Image size={12} className="mr-1" /> Full Page
                 </Button>
               </div>
@@ -588,15 +593,15 @@ export const DeadLetterQueueView: React.FC = () => {
 
                 {/* ── Section 1: Image Preview ── */}
                 <div>
-                  <div className="text-[10px] text-muted-foreground font-medium mb-2 flex items-center justify-between">
+                  <div className="text-[10px] text-muted-foreground font-semibold mb-2 flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       {previewMode === 'crop' ? <Scan size={10} /> : <Image size={10} />}
                       {previewMode === 'crop' ? 'Field Crop' : 'Full Page'}
                     </span>
-                    <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground/60 font-mono">Alt+V</kbd>
+                    <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] text-muted-foreground/60 font-mono border border-[var(--color-border)]">Alt+V</kbd>
                   </div>
                   {previewMode === 'crop' ? (
-                    <div className="w-full flex items-center justify-center p-4 border rounded-xl bg-black/[0.03] overflow-hidden min-h-[120px]">
+                    <div className="w-full flex items-center justify-center p-4 border border-[var(--color-border)] rounded-xl bg-[var(--bg-highlight)]/10 overflow-hidden min-h-[120px]">
                       <CanvasCrop
                         pageUrl={api.getPageUrl(activeTask.document_id, activeTask.page_number)}
                         polygon={activeTask.polygon}
@@ -613,7 +618,7 @@ export const DeadLetterQueueView: React.FC = () => {
 
                 {/* ── Section 2: Diff Comparison ── */}
                 <div>
-                  <div className="text-[10px] text-muted-foreground font-medium mb-2 flex items-center gap-1.5">
+                  <div className="text-[10px] text-muted-foreground font-semibold mb-2 flex items-center gap-1.5">
                     <ArrowUpDown size={10} /> OCR vs Corrected
                   </div>
                   <DiffRow original={activeTask.original_value || ''} corrected={inputValue} />
@@ -625,10 +630,10 @@ export const DeadLetterQueueView: React.FC = () => {
                 )}
 
                 {/* ── Section 4: Correction Input ── */}
-                <Card className="border-violet-500/20 bg-violet-500/[0.02]">
+                <Card className="border-[var(--accent-violet)]/20 bg-[var(--accent-violet)]/[0.02] glass-card">
                   <CardContent className="pt-4 space-y-4">
                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <Sparkles size={11} className="text-violet-500" /> Correction
+                      <Sparkles size={11} className="text-[var(--accent-violet)]" /> Correction
                     </span>
 
                     {/* DOB */}
@@ -647,16 +652,16 @@ export const DeadLetterQueueView: React.FC = () => {
                               placeholder="e.g. 24/08/2009"
                               onChange={e => handleDateChange(e.target.value)}
                               className={c(
-                                'h-10 text-sm',
-                                inputValue === '' ? '' : isValidDate ? 'border-emerald-500 ring-1 ring-emerald-500/30' : 'border-rose-500 ring-1 ring-rose-500/30'
+                                'h-10 text-sm premium-input',
+                                inputValue === '' ? '' : isValidDate ? 'border-[var(--accent-emerald)] ring-1 ring-[var(--accent-emerald)]/30' : 'border-[var(--accent-rose)] ring-1 ring-[var(--accent-rose)]/30'
                               )}
                             />
                             {inputValue && (
                               <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
                                 {isValidDate ? (
-                                  <Check size={16} className="text-emerald-500" />
+                                  <Check size={16} className="text-[var(--accent-emerald)]" />
                                 ) : (
-                                  <X size={16} className="text-rose-500" />
+                                  <X size={16} className="text-[var(--accent-rose)]" />
                                 )}
                               </div>
                             )}
@@ -673,9 +678,9 @@ export const DeadLetterQueueView: React.FC = () => {
                         <label className="text-xs font-semibold flex items-center justify-between">
                           <span>Consent</span>
                           <span className="text-[10px] text-muted-foreground/60 font-normal gap-1 flex">
-                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">Y</kbd>
-                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">N</kbd>
-                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">U</kbd>
+                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono border border-[var(--color-border)]">Y</kbd>
+                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono border border-[var(--color-border)]">N</kbd>
+                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono border border-[var(--color-border)]">U</kbd>
                           </span>
                         </label>
                         <div className="grid grid-cols-3 gap-2">
@@ -683,7 +688,7 @@ export const DeadLetterQueueView: React.FC = () => {
                             <Button key={opt}
                               variant={inputValue === opt ? 'default' : 'outline'}
                               onClick={() => { setInputValue(opt); handleResolve(opt); }}
-                              className={c('h-10 text-sm font-medium', inputValue === opt ? '' : '')}>
+                              className="h-10 text-sm font-medium">
                               {opt}
                             </Button>
                           ))}
@@ -697,8 +702,8 @@ export const DeadLetterQueueView: React.FC = () => {
                         <label className="text-xs font-semibold flex items-center justify-between">
                           <span>Gender</span>
                           <span className="text-[10px] text-muted-foreground/60 gap-1 flex">
-                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">M</kbd>
-                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">F</kbd>
+                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono border border-[var(--color-border)]">M</kbd>
+                            <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono border border-[var(--color-border)]">F</kbd>
                           </span>
                         </label>
                         <div className="grid grid-cols-2 gap-2">
@@ -739,18 +744,18 @@ export const DeadLetterQueueView: React.FC = () => {
                           <label className="text-xs font-semibold flex items-center justify-between">
                             <span>SDQ Response</span>
                             <span className="text-[10px] text-muted-foreground/60 gap-1 flex">
-                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">1</kbd>
-                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">2</kbd>
-                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">3</kbd>
-                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">0</kbd>
+                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono border border-[var(--color-border)]">1</kbd>
+                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono border border-[var(--color-border)]">2</kbd>
+                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono border border-[var(--color-border)]">3</kbd>
+                              <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono border border-[var(--color-border)]">0</kbd>
                             </span>
                           </label>
                           <div className="grid grid-cols-4 gap-2">
                             {[
-                              { val: 1, label: 'Unhappy', icon: '😟' },
-                              { val: 2, label: 'Angry', icon: '😠' },
-                              { val: 3, label: 'Calm', icon: '😌' },
-                              { val: 0, label: 'Unanswered', icon: '—' },
+                              { val: 1, label: 'Unhappy' },
+                              { val: 2, label: 'Angry' },
+                              { val: 3, label: 'Calm' },
+                              { val: 0, label: 'Unanswered' },
                             ].map(opt => {
                               const isSelected = selectedVals.includes(opt.val);
                               return (
@@ -759,7 +764,7 @@ export const DeadLetterQueueView: React.FC = () => {
                                   onClick={() => handleToggle(opt.val)}
                                   className={c(
                                     'h-16 flex flex-col items-center justify-center gap-0.5 rounded-lg',
-                                    isSelected ? 'ring-2 ring-violet-500' : ''
+                                    isSelected ? 'ring-2 ring-[var(--accent-violet)]' : ''
                                   )}>
                                   <span className="text-lg font-extrabold leading-none">{opt.val}</span>
                                   <span className="text-[9px] text-center leading-tight text-muted-foreground">{opt.label}</span>
@@ -793,7 +798,7 @@ export const DeadLetterQueueView: React.FC = () => {
                             value={inputValue}
                             onChange={e => setInputValue(e.target.value)}
                             placeholder="Type corrected value..."
-                            className="flex-1 h-10 text-sm"
+                            className="flex-1 h-10 text-sm premium-input"
                           />
                           <Button variant="outline" onClick={handleMarkBlank} className="shrink-0 h-10 px-3 text-xs">Blank</Button>
                         </div>
@@ -802,21 +807,21 @@ export const DeadLetterQueueView: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* ── Section 4: Actions ── */}
+                {/* ── Section 5: Actions ── */}
                 <div className="flex items-center justify-between pt-1">
                   <Button variant="ghost" onClick={handleSkip} className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground">
                     <ArrowLeft size={12} />
-                    <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono text-muted-foreground/80">S</kbd>
+                    <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono text-muted-foreground/80 border border-[var(--color-border)]">S</kbd>
                     Skip
                   </Button>
                   <div className="flex items-center gap-2">
                     <Button variant="outline" onClick={handleMarkBlank} className="h-8 text-xs gap-1.5">
-                      <kbd className="text-[9px] px-1 py-0.5 rounded bg-muted font-mono">E</kbd>
+                      <kbd className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-highlight)] font-mono border border-[var(--color-border)]">E</kbd>
                       Mark Blank
                     </Button>
                     <Button onClick={() => handleResolve()}
                       disabled={saving || (activeTask.field_name === 'dob' && !isValidDate && inputValue !== '')}
-                      className="bg-violet-500 hover:bg-violet-600 text-white font-bold text-xs h-8 flex items-center gap-1.5 px-4 shadow-sm">
+                      className="bg-[var(--accent-violet)] hover:bg-[var(--accent-violet)]/90 text-white font-bold text-xs h-8 flex items-center gap-1.5 px-4 shadow-sm">
                       {saving ? <Loader2 className="animate-spin" size={12} /> : <><span>Save &amp; Next</span> <ArrowRight size={12} /></>}
                     </Button>
                   </div>
@@ -825,8 +830,8 @@ export const DeadLetterQueueView: React.FC = () => {
             </div>
 
             {/* Keys footer */}
-            <div className="px-4 py-2 border-t flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-muted-foreground/60 shrink-0">
-              <span className="font-medium text-muted-foreground/40">Keys:</span>
+            <div className="px-4 py-2 border-t border-[var(--color-border)] flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-muted-foreground/60 shrink-0">
+              <span className="font-semibold text-muted-foreground/50">Keys:</span>
               <span><kbd className="font-semibold text-muted-foreground/80">S</kbd> skip</span>
               <span><kbd className="font-semibold text-muted-foreground/80">E</kbd> blank</span>
               <span><kbd className="font-semibold text-muted-foreground/80">Alt+V</kbd> toggle view</span>
@@ -838,8 +843,8 @@ export const DeadLetterQueueView: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full bg-card border rounded-xl p-10 text-center">
-            <div className="w-16 h-16 rounded-full bg-violet-500/10 text-violet-500 flex items-center justify-center mb-4">
+          <div className="flex flex-col items-center justify-center h-full rounded-xl glass-card p-10 text-center">
+            <div className="w-16 h-16 rounded-full bg-[var(--accent-violet)]/10 text-[var(--accent-violet)] flex items-center justify-center mb-4">
               <Check size={32} />
             </div>
             <h3 className="font-bold text-lg mb-1">Queue Clear!</h3>

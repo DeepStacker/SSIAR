@@ -1,20 +1,23 @@
 export function SkeletonCard({ className = '' }: { className?: string }) {
   return (
-    <div className={`animate-pulse rounded-xl bg-[var(--color-border)] ${className}`} />
+    <div className={`skeleton ${className}`} />
   );
 }
 
 export function ExecutiveSkeleton() {
   return (
     <div className="flex flex-col gap-6 w-full">
-      <SkeletonCard className="h-4 w-64 mb-2" />
+      <div className="skeleton h-4 w-64" />
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {[1,2,3,4].map(i => <SkeletonCard key={i} className="h-24" />)}
+        {[1,2,3,4].map(i => <div key={i} className="skeleton h-28 rounded-xl" />)}
       </div>
-      <SkeletonCard className="h-4 w-48" />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <SkeletonCard className="h-[250px]" />
-        <SkeletonCard className="h-[250px]" />
+      <div className="skeleton h-4 w-48" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="skeleton h-[250px] lg:col-span-2 rounded-xl" />
+        <div className="flex flex-col gap-4">
+          <div className="skeleton h-[120px] rounded-xl" />
+          <div className="skeleton h-[80px] rounded-xl" />
+        </div>
       </div>
     </div>
   );
@@ -23,12 +26,15 @@ export function ExecutiveSkeleton() {
 export function DemographicsSkeleton() {
   return (
     <div className="flex flex-col gap-6 w-full">
-      <SkeletonCard className="h-4 w-48 mb-2" />
+      <div className="skeleton h-4 w-48" />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <SkeletonCard className="h-[230px]" />
-        <SkeletonCard className="h-[230px]" />
+        <div className="skeleton h-[230px] rounded-xl" />
+        <div className="skeleton h-[230px] rounded-xl" />
       </div>
-      <SkeletonCard className="h-[200px]" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="skeleton h-[230px] rounded-xl" />
+        <div className="skeleton h-[200px] rounded-xl" />
+      </div>
     </div>
   );
 }
@@ -36,10 +42,14 @@ export function DemographicsSkeleton() {
 export function SdgSkeleton() {
   return (
     <div className="flex flex-col gap-6 w-full">
-      <SkeletonCard className="h-4 w-48 mb-2" />
-      <SkeletonCard className="h-[120px]" />
-      <SkeletonCard className="h-4 w-48" />
-      <SkeletonCard className="h-[300px]" />
+      <div className="skeleton h-4 w-48" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="skeleton h-[200px] rounded-xl" />
+        <div className="skeleton h-[200px] rounded-xl lg:col-span-2" />
+      </div>
+      <div className="skeleton h-4 w-48" />
+      <div className="skeleton h-[300px] rounded-xl" />
+      <div className="skeleton h-[200px] rounded-xl" />
     </div>
   );
 }
@@ -47,12 +57,15 @@ export function SdgSkeleton() {
 export function AcademicSkeleton() {
   return (
     <div className="flex flex-col gap-6 w-full">
-      <SkeletonCard className="h-4 w-48 mb-2" />
+      <div className="skeleton h-4 w-48" />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <SkeletonCard className="h-[300px]" />
-        <SkeletonCard className="h-[300px]" />
+        <div className="skeleton h-[300px] rounded-xl" />
+        <div className="flex flex-col gap-4">
+          <div className="skeleton h-[180px] rounded-xl" />
+          <div className="skeleton h-[120px] rounded-xl" />
+        </div>
       </div>
-      <SkeletonCard className="h-[250px]" />
+      <div className="skeleton h-[250px] rounded-xl" />
     </div>
   );
 }
@@ -60,13 +73,12 @@ export function AcademicSkeleton() {
 export function DataQualitySkeleton() {
   return (
     <div className="flex flex-col gap-6 w-full">
-      <SkeletonCard className="h-4 w-48 mb-2" />
-      <SkeletonCard className="h-4 w-full" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <SkeletonCard className="h-24" />
-        <SkeletonCard className="h-24" />
+      <div className="skeleton h-4 w-48" />
+      <div className="skeleton h-4 w-full" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[1,2,3].map(i => <div key={i} className="skeleton h-28 rounded-xl" />)}
       </div>
-      {[1,2].map(i => <SkeletonCard key={i} className="h-32" />)}
+      {[1,2,3].map(i => <div key={i} className="skeleton h-32 rounded-xl" />)}
     </div>
   );
 }
@@ -76,12 +88,12 @@ export function DonutChart({ percentage, size = 100, strokeWidth = 8, color = 'v
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (percentage / 100) * circumference;
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: 'block' }}>
-      <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke="var(--color-border)" strokeWidth={strokeWidth} />
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: 'block' }} className="animate-chart-enter">
+      <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke="var(--color-border)" strokeWidth={strokeWidth} opacity={0.4} />
       <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke={color} strokeWidth={strokeWidth}
         strokeDasharray={circumference} strokeDashoffset={offset}
         transform={`rotate(-90 ${size/2} ${size/2})`} strokeLinecap="round"
-        style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+        style={{ transition: 'stroke-dashoffset 0.6s ease', filter: 'drop-shadow(0 0 4px rgba(0,0,0,0.15))' }}
       />
       <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central"
         fill="var(--text-primary)" fontSize={size * 0.16} fontWeight="bold">
@@ -136,3 +148,9 @@ export const escalationLabels: Record<string, string> = {
   level_3: 'L3 · Alignment',
   level_4: 'L4 · Poor quality / failed',
 };
+
+export function formatNumber(n: number | string): string {
+  const num = typeof n === 'string' ? parseFloat(n) : n;
+  if (isNaN(num)) return String(n);
+  return num.toLocaleString('en-US');
+}

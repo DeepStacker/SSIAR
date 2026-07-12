@@ -12,7 +12,8 @@ from app.core.types import (
     FieldDefinition,
     ReviewPriority,
 )
-from app.processing.azure_processor import find_text_near, polygon_bounds
+from app.processing.azure_processor import find_text_near
+from app.geometry.polygon import polygon_bounds
 
 
 def resolve_field_from_tables(

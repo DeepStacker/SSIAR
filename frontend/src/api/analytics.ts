@@ -1,4 +1,4 @@
-import { API_BASE, fetchJson, authHeaders } from './client';
+import { API_BASE, fetchJson, authHeaders, unwrapV3, extractErrorMessage } from './client';
 import type {
   QueueStatus, SummaryData, DemographicsData, QuestionnaireData,
   AcademicData, ProcessingData, FieldConfData, DataQualityData
@@ -86,10 +86,11 @@ export const analyticsApi = {
       headers: authHeaders(),
     });
     if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Failed to submit resolution: ${response.status} - ${errText}`);
+      const err = await response.json().catch(() => ({}));
+      throw new Error(extractErrorMessage(err) || `Failed to submit resolution: ${response.status}`);
     }
-    return response.json();
+    const body = await response.json();
+    return unwrapV3(body);
   },
 
   getEventsUrl: (): string => {

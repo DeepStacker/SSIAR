@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Clock, AlertTriangle, Check, X, Eye, Download, RotateCcw, Trash2, ChevronUp, ChevronDown, FileWarning } from 'lucide-react';
+import { Search, Clock, AlertTriangle, Check, X, Eye, Download, RotateCcw, Trash2, ChevronUp, ChevronDown, FileWarning, Upload, Inbox } from 'lucide-react';
 import type { Document, TabType, SortKey } from '@/api';
 import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '@/api';
 import { BulkActionBar } from '@/features/documents/BulkActionBar';
@@ -10,11 +10,11 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 
 const tabConfig: { key: TabType; label: string; icon: React.ReactNode | null }[] = [
-  { key: 'all', label: 'All', icon: null },
-  { key: 'processing', label: 'Processing', icon: <Clock size={12} /> },
-  { key: 'needs_review', label: 'Review', icon: <AlertTriangle size={12} /> },
-  { key: 'verified', label: 'Verified', icon: <Check size={12} /> },
-  { key: 'failed', label: 'Failed', icon: <X size={12} /> },
+  { key: 'all', label: 'All Files', icon: null },
+  { key: 'processing', label: 'Processing', icon: <Clock size={11} /> },
+  { key: 'needs_review', label: 'Review', icon: <AlertTriangle size={11} /> },
+  { key: 'verified', label: 'Verified', icon: <Check size={11} /> },
+  { key: 'failed', label: 'Failed', icon: <X size={11} /> },
 ];
 
 const matchStatus = (doc: Document, tab: TabType): boolean => {
@@ -46,13 +46,15 @@ interface Props {
   onBulkVerify?: (docIds: string[]) => void;
   onBulkReprocess?: (docIds: string[]) => void;
   onBulkDelete?: (docIds: string[]) => void;
+  loading?: boolean;
+  onUpload?: () => void;
 }
 
 export const DocumentTable: React.FC<Props> = ({
   documents, activeTab, onTabChange, searchQuery, onSearchChange,
   sortKey, sortDir, onSortChange, selectedIds, onToggleSelect, onToggleSelectAll,
   onOpenDoc, onDownloadReport, onReprocess, onDelete, onBulkDone,
-  onBulkVerify, onBulkReprocess, onBulkDelete,
+  onBulkVerify, onBulkReprocess, onBulkDelete, loading, onUpload,
 }) => {
   const filtered = (() => {
     const list = documents.filter(d => matchStatus(d, activeTab));
@@ -80,92 +82,149 @@ export const DocumentTable: React.FC<Props> = ({
   };
 
   return (
-    <div className="rounded-xl border bg-card overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b">
+    <div className="rounded-2xl border border-white/5 bg-card overflow-hidden shadow-lg backdrop-blur-md">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-4 border-b border-border/40 bg-slate-950/10">
         <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as TabType)}>
-          <TabsList variant="line">
+          <TabsList variant="line" className="bg-transparent border-none p-0 flex gap-1">
             {tabConfig.map(tab => (
-              <TabsTrigger key={tab.key} value={tab.key} className="text-xs gap-1">
+              <TabsTrigger key={tab.key} value={tab.key} className="text-xs px-3 py-1.5 rounded-lg data-[state=active]:bg-indigo-600/10 data-[state=active]:text-indigo-400 font-semibold gap-1.5 transition-all">
                 {tab.icon} {tab.label}
-                <span className="tabular-nums opacity-70">({counts[tab.key]})</span>
+                <span className="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded-full border border-white/5 opacity-70">
+                  {counts[tab.key]}
+                </span>
               </TabsTrigger>
             ))}
           </TabsList>
         </Tabs>
-        <div className="relative w-[180px] shrink-0">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input type="text" placeholder="Search files..." className="w-full pl-8 text-xs h-8"
-            value={searchQuery} onChange={e => onSearchChange(e.target.value)} />
+        
+        <div className="flex items-center gap-3">
+          <div className="relative w-full sm:w-[220px]">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search by filename or roll number..."
+              className="w-full pl-9 text-xs h-9 premium-input border"
+              value={searchQuery}
+              onChange={e => onSearchChange(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
       <BulkActionBar selectedCount={selectedIds.size} docIds={Array.from(selectedIds)} onDone={onBulkDone}
         onBulkVerify={onBulkVerify} onBulkReprocess={onBulkReprocess} onBulkDelete={onBulkDelete} />
 
-      <div className="max-h-[500px] overflow-y-auto [&_thead]:sticky [&_thead]:top-0 [&_thead]:bg-card [&_thead]:z-10">
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-sm text-muted-foreground gap-3">
-            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-              <FileWarning size={20} className="text-muted-foreground/60" />
+      <div className="overflow-x-auto">
+        {loading ? (
+          <div className="py-6 px-6 space-y-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4">
+                <div className="skeleton h-4 w-4 rounded shrink-0" />
+                <div className="skeleton h-4 rounded flex-1" />
+                <div className="skeleton h-4 rounded w-24" />
+                <div className="skeleton h-4 rounded w-16" />
+                <div className="skeleton h-4 rounded w-20" />
+                <div className="skeleton h-4 rounded w-24" />
+                <div className="skeleton h-7 rounded w-20" />
+              </div>
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center gap-4 bg-[var(--bg-secondary)]/30">
+            <div className="w-16 h-16 rounded-2xl bg-slate-900/50 border border-white/5 flex items-center justify-center shadow-inner">
+              {searchQuery ? (
+                <Search size={26} className="text-[var(--text-muted)]" />
+              ) : activeTab === 'all' && documents.length === 0 ? (
+                <Inbox size={26} className="text-indigo-400/70" />
+              ) : activeTab === 'processing' ? (
+                <Clock size={26} className="text-violet-400/70" />
+              ) : activeTab === 'needs_review' ? (
+                <Check size={26} className="text-emerald-400/70" />
+              ) : activeTab === 'verified' ? (
+                <Check size={26} className="text-emerald-400/70" />
+              ) : activeTab === 'failed' ? (
+                <Check size={26} className="text-emerald-400/70" />
+              ) : (
+                <FileWarning size={26} className="text-indigo-400/70" />
+              )}
             </div>
-            <span className="font-medium">
-              {searchQuery ? 'No documents match your search' :
-               activeTab === 'processing' ? 'No documents are currently being processed' :
-               activeTab === 'needs_review' ? 'No documents need review' :
-               activeTab === 'verified' ? 'No verified documents yet' :
-               activeTab === 'failed' ? 'No failed documents' :
-               'No documents yet'}
-            </span>
-            {!searchQuery && activeTab === 'all' && (
-              <span className="text-xs text-muted-foreground/60">Upload a PDF above to get started</span>
+            <div>
+              <span className="font-semibold text-sm text-[var(--text-primary)] block">
+                {searchQuery ? 'No matching documents' :
+                 documents.length === 0 ? 'No documents yet' :
+                 activeTab === 'processing' ? 'No active background tasks' :
+                 activeTab === 'needs_review' ? 'All caught up! No reviews needed' :
+                 activeTab === 'verified' ? 'No verified datasets yet' :
+                 activeTab === 'failed' ? 'No failed processes' :
+                 'No documents found'}
+              </span>
+              <span className="text-xs text-[var(--text-muted)] mt-1 block">
+                {searchQuery ? 'Try a different search term' :
+                 documents.length === 0 ? 'Upload your first research PDF to get started' :
+                 activeTab === 'all' ? 'Adjust your search or filters' :
+                 'All documents are processed'}
+              </span>
+            </div>
+            {(documents.length === 0 && !searchQuery && activeTab === 'all' && onUpload) && (
+              <Button variant="default" size="sm" onClick={onUpload} className="mt-2 gap-2">
+                <Upload size={14} /> Upload Your First Document
+              </Button>
             )}
           </div>
         ) : (
           <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-8">
-                  <input type="checkbox" checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                    onChange={onToggleSelectAll} className="accent-violet-500"
-                    aria-label={selectedIds.size === filtered.length ? "Deselect all documents" : "Select all documents"} />
+            <TableHeader className="bg-slate-950/15">
+              <TableRow className="border-b border-border/40 hover:bg-transparent">
+                <TableHead className="w-10 px-6">
+                  <input
+                    type="checkbox"
+                    checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                    onChange={onToggleSelectAll}
+                    className="rounded border-border text-indigo-600 focus:ring-indigo-500 h-4 w-4 bg-slate-900"
+                    aria-label={selectedIds.size === filtered.length ? "Deselect all documents" : "Select all documents"}
+                  />
                 </TableHead>
-                <SortTh label="Filename" sortKey="filename" current={sortKey} dir={sortDir} onSort={onSortChange} />
-                <SortTh label="Roll No" sortKey="roll_number" current={sortKey} dir={sortDir} onSort={onSortChange} />
-                <TableHead className="text-xs text-muted-foreground font-medium w-16">Class</TableHead>
-                <SortTh label="Status" sortKey="status" current={sortKey} dir={sortDir} onSort={onSortChange} />
-                <SortTh label="Date" sortKey="created_at" current={sortKey} dir={sortDir} onSort={onSortChange} right />
-                <TableHead className="text-right text-xs text-muted-foreground font-medium w-28">Actions</TableHead>
+                <SortTh label="Document Filename" sortKey="filename" current={sortKey} dir={sortDir} onSort={onSortChange} />
+                <SortTh label="Class Roll Number" sortKey="roll_number" current={sortKey} dir={sortDir} onSort={onSortChange} />
+                <TableHead className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider py-3 w-20">Class</TableHead>
+                <SortTh label="Pipeline Status" sortKey="status" current={sortKey} dir={sortDir} onSort={onSortChange} />
+                <SortTh label="Processed Date" sortKey="created_at" current={sortKey} dir={sortDir} onSort={onSortChange} right />
+                <TableHead className="text-right text-[10px] text-muted-foreground font-semibold uppercase tracking-wider py-3 w-32 px-6">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((doc, idx) => {
+              {filtered.map((doc) => {
                 const isSelected = selectedIds.has(doc.id);
                 return (
                   <TableRow key={doc.id} onClick={() => onOpenDoc(doc)}
                     tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpenDoc(doc); }}
-                    className={`cursor-pointer group transition-colors ${
-                      isProc(doc.status) ? 'opacity-70' : ''
+                    className={`border-b border-border/20 cursor-pointer group transition-all duration-150 ${
+                      isProc(doc.status) ? 'opacity-65' : ''
                     } ${
-                      isSelected ? 'bg-violet-500/[0.04] hover:bg-violet-500/[0.06]' : 'hover:bg-muted/50'
-                    } ${idx % 2 === 0 && !isSelected ? 'bg-muted/20' : ''}`}>
-                    <TableCell onClick={e => e.stopPropagation()} className="py-2">
-                      <input type="checkbox" checked={isSelected}
-                        onChange={() => onToggleSelect(doc.id)} className="accent-violet-500"
-                        aria-label={`Select ${doc.filename || doc.id}`} />
+                      isSelected ? 'bg-indigo-600/5 hover:bg-indigo-600/10' : 'hover:bg-[var(--bg-highlight)]'
+                    }`}>
+                    <TableCell onClick={e => e.stopPropagation()} className="px-6 py-3">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleSelect(doc.id)}
+                        className="rounded border-border text-indigo-600 focus:ring-indigo-500 h-4 w-4 bg-slate-900"
+                        aria-label={`Select ${doc.filename || doc.id}`}
+                      />
                     </TableCell>
-                    <TableCell className="font-medium text-sm py-2 max-w-[220px]">
+                    <TableCell className="font-semibold text-[var(--text-primary)] py-3 max-w-[280px]">
                       <span className="truncate block" title={doc.filename}>{doc.filename}</span>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground py-2 tabular-nums">{doc.roll_number || '—'}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground py-2 tabular-nums">{doc.class || '—'}</TableCell>
-                    <TableCell className="py-2">
+                    <TableCell className="text-xs font-mono text-[var(--text-muted)] py-3">{doc.roll_number || '—'}</TableCell>
+                    <TableCell className="text-xs font-mono text-[var(--text-muted)] py-3">{doc.class || '—'}</TableCell>
+                    <TableCell className="py-3">
                       <StatusBadge status={doc.status} />
                     </TableCell>
-                    <TableCell className="text-right text-xs text-muted-foreground py-2 whitespace-nowrap tabular-nums">
+                    <TableCell className="text-right text-xs font-mono text-[var(--text-muted)] py-3 whitespace-nowrap">
                       {doc.created_at?.slice(0, 10)}
                     </TableCell>
-                    <TableCell className="text-right whitespace-nowrap py-2" onClick={e => e.stopPropagation()}>
-                      <span className="inline-flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                    <TableCell className="text-right whitespace-nowrap py-3 px-6" onClick={e => e.stopPropagation()}>
+                      <span className="inline-flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
                         <ActionBtn doc={doc} onOpen={onOpenDoc} onDownload={onDownloadReport} onReprocess={onReprocess} onDelete={onDelete} />
                       </span>
                     </TableCell>
@@ -174,10 +233,10 @@ export const DocumentTable: React.FC<Props> = ({
               })}
             </TableBody>
             {filtered.length > 0 && (
-              <TableFooter>
+              <TableFooter className="bg-transparent border-t border-border/20">
                 <TableRow>
-                  <TableCell colSpan={7} className="text-[11px] text-muted-foreground/70 px-4 py-2 text-right tabular-nums">
-                    {filtered.length} {filtered.length === 1 ? 'result' : 'results'}
+                  <TableCell colSpan={7} className="text-[10px] text-muted-foreground font-semibold px-6 py-3 text-right uppercase tracking-wider">
+                    Total: {filtered.length} {filtered.length === 1 ? 'document' : 'documents'}
                   </TableCell>
                 </TableRow>
               </TableFooter>
@@ -194,12 +253,12 @@ const SortTh: React.FC<{ label: string; sortKey: SortKey; current: SortKey; dir:
   return (
     <TableHead onClick={() => onSort(sortKey)} role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter') onSort(sortKey); }}
-      className={`cursor-pointer select-none text-xs text-muted-foreground font-medium group/sort${right ? ' text-right' : ''}`}>
-      <span className="inline-flex items-center gap-1">
+      className={`cursor-pointer select-none text-[10px] text-[var(--text-muted)] font-semibold uppercase tracking-wider py-3 group/sort${right ? ' text-right' : ''}`}>
+      <span className={`inline-flex items-center gap-1.5 ${right ? 'justify-end w-full' : ''}`}>
         {label}
-        <span className={`inline-flex flex-col leading-none ${isActive ? 'text-foreground' : 'opacity-0 group-hover/sort:opacity-40 transition-opacity'}`}>
-          <ChevronUp size={9} className={isActive && dir === 'asc' ? 'text-foreground' : 'text-muted-foreground/40'} />
-          <ChevronDown size={9} className={isActive && dir === 'desc' ? 'text-foreground' : 'text-muted-foreground/40'} />
+        <span className={`inline-flex flex-col leading-none ${isActive ? 'text-[var(--text-primary)]' : 'opacity-0 group-hover/sort:opacity-50 transition-opacity'}`}>
+          <ChevronUp size={9} className={isActive && dir === 'asc' ? 'text-indigo-400 font-bold' : 'text-muted-foreground/40'} />
+          <ChevronDown size={9} className={isActive && dir === 'desc' ? 'text-indigo-400 font-bold' : 'text-muted-foreground/40'} />
         </span>
       </span>
     </TableHead>
@@ -213,10 +272,10 @@ const isFailed = (s: string) => STATUS_FAILED.has(s);
 
 const ActionBtn: React.FC<{ doc: Document; onOpen: (d: Document) => void; onDownload: (d: Document) => void; onReprocess: (d: Document) => void; onDelete: (d: Document) => void }> = ({ doc, onOpen, onDownload, onReprocess, onDelete }) => (
   <>
-    <Button variant="ghost" size="xs" onClick={e => { e.stopPropagation(); onOpen(doc); }}
-      disabled={isProc(doc.status)} className="h-7 text-[11px] px-2 font-medium">
-      {isProc(doc.status) ? <><Clock size={11} className="animate-spin mr-1" />Proc.</> :
-       isVerified(doc.status) ? <><Eye size={11} className="mr-1" />View</> :
+    <Button variant="outline" size="xs" onClick={e => { e.stopPropagation(); onOpen(doc); }}
+      disabled={isProc(doc.status)} className="h-7 text-[10px] px-2.5 font-bold border-white/5 bg-slate-900/50 hover:bg-slate-900">
+      {isProc(doc.status) ? <><Clock size={10} className="animate-spin mr-1" />Proc.</> :
+       isVerified(doc.status) ? <><Eye size={10} className="mr-1 text-indigo-400" />View</> :
        isFailed(doc.status) ? 'Details' : 'Review'}
     </Button>
     {(isReview(doc.status) || isVerified(doc.status) || isFailed(doc.status)) && (
@@ -232,7 +291,7 @@ const ActionBtn: React.FC<{ doc: Document; onOpen: (d: Document) => void; onDown
       </Button>
     )}
     <Button variant="ghost" size="icon-xs" onClick={e => { e.stopPropagation(); onDelete(doc); }}
-      className="h-7 w-7 text-muted-foreground hover:text-rose-600" title="Delete">
+      className="h-7 w-7 text-muted-foreground hover:text-rose-500 hover:bg-rose-950/20" title="Delete">
       <Trash2 size={11} />
     </Button>
   </>

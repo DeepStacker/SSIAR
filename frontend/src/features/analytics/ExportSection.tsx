@@ -68,27 +68,36 @@ export function ExportSection({ classFilter, genderFilter }: Props) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 no-print">
         <a
           href={api.getResearchExportUrl("csv", { class: classFilter, gender: genderFilter })}
-          className="flex flex-col items-center gap-3 p-6 text-center rounded-xl border bg-[var(--bg-secondary)] border-[var(--color-border)] no-underline transition-all hover:-translate-y-0.5 hover:border-[var(--accent-violet)] hover:shadow-md"
+          className="glass-card rounded-xl flex flex-col items-center gap-3 p-6 text-center no-underline transition-all hover:-translate-y-0.5 hover:shadow-md animate-chart-enter"
+          style={{ animationDelay: '0ms' }}
         >
-          <Download className="w-8 h-8" style={{ color: 'var(--accent-violet)' }} />
+          <div className="w-12 h-12 rounded-xl bg-[var(--accent-violet)]/10 flex items-center justify-center">
+            <Download className="w-6 h-6" style={{ color: 'var(--accent-violet)' }} />
+          </div>
           <span className="text-sm font-bold text-[var(--text-primary)]">Standard CSV Format</span>
           <span className="text-xs text-[var(--text-secondary)] leading-relaxed">Flat variable list suitable for generic spreadsheets.</span>
         </a>
 
         <a
           href={api.getResearchExportUrl("excel", { class: classFilter, gender: genderFilter })}
-          className="flex flex-col items-center gap-3 p-6 text-center rounded-xl border bg-[var(--bg-secondary)] border-[var(--color-border)] no-underline transition-all hover:-translate-y-0.5 hover:border-[var(--accent-emerald)] hover:shadow-md"
+          className="glass-card rounded-xl flex flex-col items-center gap-3 p-6 text-center no-underline transition-all hover:-translate-y-0.5 hover:shadow-md animate-chart-enter"
+          style={{ animationDelay: '80ms' }}
         >
-          <Download className="w-8 h-8" style={{ color: 'var(--accent-emerald)' }} />
+          <div className="w-12 h-12 rounded-xl bg-[var(--accent-emerald)]/10 flex items-center justify-center">
+            <Download className="w-6 h-6" style={{ color: 'var(--accent-emerald)' }} />
+          </div>
           <span className="text-sm font-bold text-[var(--text-primary)]">Excel Spreadsheet</span>
           <span className="text-xs text-[var(--text-secondary)] leading-relaxed">Formatted workbook with domain averages.</span>
         </a>
 
         <a
           href={api.getResearchExportUrl("spss", { class: classFilter, gender: genderFilter })}
-          className="flex flex-col items-center gap-3 p-6 text-center rounded-xl border bg-[var(--bg-secondary)] border-[var(--color-border)] no-underline transition-all hover:-translate-y-0.5 hover:border-[var(--accent-violet)] hover:shadow-md"
+          className="glass-card rounded-xl flex flex-col items-center gap-3 p-6 text-center no-underline transition-all hover:-translate-y-0.5 hover:shadow-md animate-chart-enter"
+          style={{ animationDelay: '160ms' }}
         >
-          <Download className="w-8 h-8" style={{ color: 'var(--accent-violet)' }} />
+          <div className="w-12 h-12 rounded-xl bg-[var(--accent-violet)]/10 flex items-center justify-center">
+            <Download className="w-6 h-6" style={{ color: 'var(--accent-violet)' }} />
+          </div>
           <span className="text-sm font-bold text-[var(--text-primary)]">SPSS Import CSV</span>
           <span className="text-xs text-[var(--text-secondary)] leading-relaxed">SPSS-compliant column headers and numeric tags.</span>
         </a>

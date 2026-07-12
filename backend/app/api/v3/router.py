@@ -4,8 +4,11 @@ V3 API Router
 Clean V3 API under /api/v3/* that delegates to existing v1/v2 handlers.
 """
 import logging
+import hashlib
+import json
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, Request, UploadFile, File, HTTPException
+from fastapi.responses import Response
 from app.auth import require_auth
 from app.core.response import APIResponse
 from app.models import RegisterRequest, LoginRequest, VerifyDataRequest, BulkRequest, BatchFolderRequest
@@ -40,6 +43,19 @@ async def _call_async(handler, *args, **kwargs):
     except Exception as e:
         logger.exception("Internal server error in async handler")
         return APIResponse.error(status=500, message="Internal server error")
+
+
+def _compute_etag(data) -> str:
+    if isinstance(data, dict):
+        timestamp = str(data.get("updated_at") or data.get("created_at") or "")
+        data_str = json.dumps(data, sort_keys=True, default=str) + timestamp
+    else:
+        data_str = json.dumps(data, sort_keys=True, default=str)
+    return hashlib.md5(data_str.encode()).hexdigest()
+
+
+def _add_cache_headers(response, max_age: int):
+    response.headers["Cache-Control"] = f"private, max-age={max_age}"
 
 
 # ---------------------------------------------------------------------------
@@ -88,13 +104,50 @@ from app.api.v2.documents import (
 
 
 @v3_router.get("/documents", dependencies=[_Auth])
-async def v3_documents_list():
-    return await _call_async(_doc_list)
+async def v3_documents_list(request: Request):
+    try:
+        data = await _doc_list()
+
+        fields_param = request.query_params.get("fields", "")
+        if fields_param:
+            requested_fields = set(f.strip() for f in fields_param.split(",") if f.strip())
+            data = [{k: v for k, v in doc.items() if k in requested_fields} for doc in data]
+
+        etag = _compute_etag(data)
+        if_none_match = request.headers.get("if-none-match")
+        if if_none_match and if_none_match.strip('"') == etag:
+            return Response(status_code=304, headers={"ETag": f'"{etag}"'})
+
+        response = APIResponse.success(data=data)
+        _add_cache_headers(response, 10)
+        response.headers["ETag"] = f'"{etag}"'
+        return response
+    except HTTPException as e:
+        return APIResponse.error(status=e.status_code, message=e.detail)
+    except Exception:
+        logger.exception("Internal server error in documents list")
+        return APIResponse.error(status=500, message="Internal server error")
 
 
 @v3_router.get("/documents/{doc_id}", dependencies=[_Auth])
-async def v3_documents_get(doc_id: str):
-    return await _call_async(_doc_get, doc_id)
+async def v3_documents_get(doc_id: str, request: Request):
+    try:
+        data = await _doc_get(doc_id)
+
+        etag = _compute_etag(data)
+        if_none_match = request.headers.get("if-none-match")
+        if if_none_match and if_none_match.strip('"') == etag:
+            return Response(status_code=304, headers={"ETag": f'"{etag}"'})
+
+        response = APIResponse.success(data=data)
+        _add_cache_headers(response, 30)
+        response.headers["ETag"] = f'"{etag}"'
+        return response
+    except HTTPException as e:
+        return APIResponse.error(status=e.status_code, message=e.detail)
+    except Exception:
+        logger.exception("Internal server error in document detail")
+        return APIResponse.error(status=500, message="Internal server error")
 
 
 @v3_router.delete("/documents/{doc_id}", dependencies=[_Auth])
@@ -281,7 +334,9 @@ def v3_analytics_summary(
     date_from: str = Query(None),
     date_to: str = Query(None),
 ):
-    return _call(_analytics_summary, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    response = _call(_analytics_summary, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    _add_cache_headers(response, 120)
+    return response
 
 
 @v3_router.get("/analytics/demographics", dependencies=[_Auth])
@@ -291,7 +346,9 @@ def v3_analytics_demographics(
     date_from: str = Query(None),
     date_to: str = Query(None),
 ):
-    return _call(_analytics_demographics, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    response = _call(_analytics_demographics, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    _add_cache_headers(response, 120)
+    return response
 
 
 @v3_router.get("/analytics/questionnaire", dependencies=[_Auth])
@@ -301,7 +358,9 @@ def v3_analytics_questionnaire(
     date_from: str = Query(None),
     date_to: str = Query(None),
 ):
-    return _call(_analytics_questionnaire, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    response = _call(_analytics_questionnaire, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    _add_cache_headers(response, 120)
+    return response
 
 
 @v3_router.get("/analytics/academic", dependencies=[_Auth])
@@ -311,7 +370,9 @@ def v3_analytics_academic(
     date_from: str = Query(None),
     date_to: str = Query(None),
 ):
-    return _call(_analytics_academic, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    response = _call(_analytics_academic, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    _add_cache_headers(response, 120)
+    return response
 
 
 @v3_router.get("/analytics/processing", dependencies=[_Auth])
@@ -321,7 +382,9 @@ def v3_analytics_processing(
     date_from: str = Query(None),
     date_to: str = Query(None),
 ):
-    return _call(_analytics_processing, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    response = _call(_analytics_processing, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    _add_cache_headers(response, 120)
+    return response
 
 
 @v3_router.get("/analytics/data-quality", dependencies=[_Auth])
@@ -331,7 +394,9 @@ def v3_analytics_data_quality(
     date_from: str = Query(None),
     date_to: str = Query(None),
 ):
-    return _call(_analytics_data_quality, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    response = _call(_analytics_data_quality, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    _add_cache_headers(response, 120)
+    return response
 
 
 @v3_router.get("/analytics/per-field-confidence", dependencies=[_Auth])
@@ -341,7 +406,9 @@ def v3_analytics_per_field_confidence(
     date_from: str = Query(None),
     date_to: str = Query(None),
 ):
-    return _call(_analytics_per_field_confidence, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    response = _call(_analytics_per_field_confidence, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
+    _add_cache_headers(response, 120)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +419,9 @@ from app.api.v2.documents import queue_status as _queue_status, event_stream as 
 
 @v3_router.get("/system/health")
 def v3_system_health():
-    return APIResponse.success(data={"status": "healthy", "service": "SSIAR Document Intelligence Platform V3"})
+    response = APIResponse.success(data={"status": "healthy", "service": "SSIAR Document Intelligence Platform V3"})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @v3_router.get("/system/queue-status", dependencies=[_Auth])

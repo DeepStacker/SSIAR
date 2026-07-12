@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { API_BASE, scheduleTokenRefresh } from '@/api';
+import { API_BASE, scheduleTokenRefresh, unwrapV3, extractErrorMessage, getAndClearReferrer } from '@/api';
 
 interface AuthState {
   token: string | null;
   user_id: string | null;
   email: string | null;
+  role: string | null;
 }
 
 interface AuthContextType extends AuthState {
@@ -15,7 +16,7 @@ interface AuthContextType extends AuthState {
 }
 
 const AuthContext = createContext<AuthContextType>({
-  token: null, user_id: null, email: null,
+  token: null, user_id: null, email: null, role: null,
   login: async () => {}, register: async () => {}, logout: () => {},
   loading: false,
 });
@@ -25,22 +26,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const token = localStorage.getItem('ssiar_token');
     const user_id = localStorage.getItem('ssiar_user_id');
     const email = localStorage.getItem('ssiar_email');
-    return { token, user_id, email };
+    const role = localStorage.getItem('ssiar_role');
+    return { token, user_id, email, role };
   });
   const [loading, setLoading] = useState(false);
 
-  const saveState = (token: string, user_id: string, email: string) => {
+  const saveState = (token: string, user_id: string, email: string, role: string) => {
     localStorage.setItem('ssiar_token', token);
     localStorage.setItem('ssiar_user_id', user_id);
     localStorage.setItem('ssiar_email', email);
-    setState({ token, user_id, email });
+    localStorage.setItem('ssiar_role', role);
+    setState({ token, user_id, email, role });
   };
 
   const clearState = () => {
     localStorage.removeItem('ssiar_token');
     localStorage.removeItem('ssiar_user_id');
     localStorage.removeItem('ssiar_email');
-    setState({ token: null, user_id: null, email: null });
+    localStorage.removeItem('ssiar_role');
+    setState({ token: null, user_id: null, email: null, role: null });
   };
 
   const login = useCallback(async (email: string, password: string) => {
@@ -53,11 +57,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Login failed');
+        throw new Error(extractErrorMessage(err) || 'Login failed');
       }
-      const data = await res.json();
-      saveState(data.token, data.user_id, data.email);
+      const body = await res.json();
+      const data = unwrapV3<{ token: string; user_id: string; email: string; role: string }>(body);
+      saveState(data.token, data.user_id, data.email, data.role);
       scheduleTokenRefresh();
+      const redirect = getAndClearReferrer();
+      if (redirect) window.location.href = redirect;
     } finally {
       setLoading(false);
     }
@@ -73,11 +80,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Registration failed');
+        throw new Error(extractErrorMessage(err) || 'Registration failed');
       }
-      const data = await res.json();
-      saveState(data.token, data.user_id, data.email);
+      const body = await res.json();
+      const data = unwrapV3<{ token: string; user_id: string; email: string; role: string }>(body);
+      saveState(data.token, data.user_id, data.email, data.role);
       scheduleTokenRefresh();
+      const redirect = getAndClearReferrer();
+      if (redirect) window.location.href = redirect;
     } finally {
       setLoading(false);
     }

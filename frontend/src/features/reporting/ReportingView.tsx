@@ -1,14 +1,13 @@
 import React from 'react';
 import { Download, FileWarning } from 'lucide-react';
 import type { Document, ReportFormat } from '@/api';
-import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '@/api';
 import { api } from '@/api';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 
 interface Props {
-  documents: Document[];
+  reportResults: Document[];
   dateFrom: string;
   dateTo: string;
   reportStatus: string;
@@ -26,27 +25,10 @@ interface Props {
 }
 
 export const ReportingView: React.FC<Props> = ({
-  documents, dateFrom, dateTo, reportStatus, reportClass, reportFormat, selectedReportDocs,
+  reportResults, dateFrom, dateTo, reportStatus, reportClass, reportFormat, selectedReportDocs,
   onDateFromChange, onDateToChange, onStatusChange, onClassChange, onFormatChange,
   onToggleSelect, onToggleSelectAll, onOpenDoc,
 }) => {
-  const matchStatusGroup = (status: string, group: string) => {
-    if (!group) return true;
-    if (group === 'processing') return STATUS_PROCESSING.has(status);
-    if (group === 'needs_review') return STATUS_REVIEW.has(status);
-    if (group === 'verified') return STATUS_VERIFIED.has(status);
-    if (group === 'failed') return STATUS_FAILED.has(status);
-    return status === group;
-  };
-
-  const reportResults = documents.filter(d => {
-    if (reportStatus && !matchStatusGroup(d.status, reportStatus)) return false;
-    if (reportClass && d.class !== reportClass) return false;
-    if (dateFrom && d.created_at && d.created_at.slice(0, 10) < dateFrom) return false;
-    if (dateTo && d.created_at && d.created_at.slice(0, 10) > dateTo) return false;
-    return true;
-  });
-
   const getExportLink = (fmt: ReportFormat, lang?: string, docIds?: string) =>
     api.getExportUrl({
       format: fmt,

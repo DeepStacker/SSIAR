@@ -1,9 +1,30 @@
-import { API_BASE, authHeaders, clearAuth, fetchJson } from './client';
+import { API_BASE, authHeaders, redirectToLogin, fetchJson, unwrapV3, extractErrorMessage } from './client';
 import type { Document, DocumentDetails } from './types';
 
+async function v3Post<T>(url: string, options?: { body?: unknown; headers?: Record<string, string> }): Promise<T> {
+  const headers = { ...authHeaders(), "Content-Type": "application/json", ...(options?.headers || {}) };
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+  });
+  if (response.status === 401) { redirectToLogin(); throw new Error('Session expired'); }
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(err));
+  }
+  const body = await response.json();
+  return unwrapV3<T>(body);
+}
+
 export const documentsApi = {
-  listDocuments: async (): Promise<Document[]> => {
-    return fetchJson<Document[]>(`${API_BASE}/documents`)
+  listDocuments: async (fields?: string[]): Promise<Document[]> => {
+    const params = new URLSearchParams();
+    if (fields && fields.length > 0) {
+      params.set('fields', fields.join(','));
+    }
+    const qs = params.toString();
+    return fetchJson<Document[]>(`${API_BASE}/documents${qs ? `?${qs}` : ''}`);
   },
 
   getDocumentDetails: async (docId: string): Promise<DocumentDetails> => {
@@ -23,15 +44,7 @@ export const documentsApi = {
       remarks: string;
     }
   ): Promise<{ message: string }> => {
-    const response = await fetch(`${API_BASE}/documents/${docId}/verify`, {
-      method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-      throw new Error("Failed to verify document");
-    }
-    return response.json();
+    return v3Post<{ message: string }>(`${API_BASE}/documents/${docId}/verify`, { body: data })
   },
 
   deleteDocument: async (docId: string): Promise<{ message: string }> => {
@@ -39,20 +52,17 @@ export const documentsApi = {
       method: "DELETE",
       headers: authHeaders(),
     });
-    if (response.status === 401) { clearAuth(); window.location.href = '/'; throw new Error('Session expired'); }
-    if (!response.ok) throw new Error("Delete failed");
-    return response.json();
+    if (response.status === 401) { redirectToLogin(); throw new Error('Session expired'); }
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(extractErrorMessage(err));
+    }
+    const body = await response.json();
+    return unwrapV3<{ message: string }>(body);
   },
 
   reprocessDocument: async (docId: string): Promise<{ message: string }> => {
-    const response = await fetch(`${API_BASE}/documents/${docId}/reprocess`, {
-      method: "POST",
-      headers: authHeaders(),
-    });
-    if (!response.ok) {
-      throw new Error("Failed to reprocess document");
-    }
-    return response.json();
+    return v3Post<{ message: string }>(`${API_BASE}/documents/${docId}/reprocess`)
   },
 
   reprocessField: async (docId: string, fieldName: string): Promise<{
@@ -69,38 +79,22 @@ export const documentsApi = {
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to reprocess field");
+      throw new Error(extractErrorMessage(err));
     }
-    return response.json();
+    const body = await response.json();
+    return unwrapV3(body);
   },
 
   bulkDelete: async (docIds: string[]): Promise<{ message: string }> => {
-    const response = await fetch(`${API_BASE}/documents/bulk-delete`, {
-      method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ doc_ids: docIds }),
-    });
-    if (!response.ok) throw new Error("Bulk delete failed");
-    return response.json();
+    return v3Post<{ message: string }>(`${API_BASE}/documents/bulk-delete`, { body: { doc_ids: docIds } })
   },
 
   bulkVerify: async (docIds: string[]): Promise<{ message: string }> => {
-    const response = await fetch(`${API_BASE}/documents/bulk-verify`, {
-      method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ doc_ids: docIds }),
-    });
-    if (!response.ok) throw new Error("Bulk verify failed");
-    return response.json();
+    return v3Post<{ message: string }>(`${API_BASE}/documents/bulk-verify`, { body: { doc_ids: docIds } })
   },
 
   recoverStuckDocuments: async (): Promise<{ recovered: number; message: string }> => {
-    const response = await fetch(`${API_BASE}/documents/recover-stuck`, {
-      method: "POST",
-      headers: { ...authHeaders() },
-    });
-    if (!response.ok) throw new Error("Recovery failed");
-    return response.json();
+    return v3Post<{ recovered: number; message: string }>(`${API_BASE}/documents/recover-stuck`)
   },
 
   getCropUrl: (docId: string, filename: string): string => {

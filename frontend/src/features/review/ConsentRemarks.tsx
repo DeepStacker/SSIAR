@@ -34,13 +34,12 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
   }, [getUrl, onZoom]);
 
   return (
-    <Card className="mb-5">
+    <Card className="mb-5 glass-card">
       <CardContent className="p-5">
-        <div className="grid grid-cols-2 gap-5">
-          <div>
-            <label htmlFor="consent-select" className="text-sm text-[var(--text-muted)] block mb-2 font-semibold">Consent</label>
-            <div id="consent-select" role="group" aria-label="Consent"
-              className="flex gap-2 items-center mb-2"
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="space-y-2.5">
+            <label htmlFor="consent-select" className="text-xs font-bold text-[var(--text-secondary)] block">Consent</label>
+            <div id="consent-select" role="group" aria-label="Consent" className="flex gap-1.5"
               onKeyDown={e => {
                 if (e.key.toLowerCase() === 'y') { onConsentChange('Yes'); e.preventDefault(); }
                 else if (e.key.toLowerCase() === 'n') { onConsentChange('No'); e.preventDefault(); }
@@ -49,19 +48,19 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
               {['Yes', 'No', 'Unanswered'].map(o => (
                 <button key={o} onClick={() => onConsentChange(o)}
                   aria-pressed={consent === o}
-                  className="px-4 py-1.5 rounded-md border-2 text-sm font-bold cursor-pointer"
-                  style={{
-                    background: consent === o ? 'rgba(139,92,246,0.2)' : 'rgba(0,0,0,0.12)',
-                    borderColor: consent === o ? 'var(--accent-violet)' : 'var(--color-border)',
-                    color: consent === o ? 'var(--accent-cyan)' : 'var(--text-secondary)',
-                  }}>
+                  className={`
+                    flex-1 py-2 rounded-lg border-2 text-xs font-bold cursor-pointer transition-all duration-150
+                    ${consent === o
+                      ? 'bg-[var(--accent-violet)]/20 border-[var(--accent-violet)] text-[var(--accent-cyan)]'
+                      : 'bg-transparent border-[var(--color-border)] text-[var(--text-secondary)] hover:border-[var(--accent-violet)]/30 hover:bg-[var(--accent-violet)]/5'}
+                  `}>
                   {o}
                 </button>
               ))}
             </div>
             {consentPolygon ? (
               <div
-                style={{ width: '100%', height: '50px', background: 'rgba(0,0,0,0.15)', borderRadius: '6px', cursor: 'zoom-in', overflow: 'hidden' }}
+                className="w-full h-[56px] rounded-xl overflow-hidden cursor-zoom-in bg-[var(--bg-highlight)]/30 border border-[var(--color-border)]/50"
                 onMouseEnter={e => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   handleZoom('consent', rect.left + rect.width / 2, rect.top);
@@ -70,19 +69,21 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
                 onMouseLeave={() => onZoom(null)}
               >
                 <CanvasCrop pageUrl={consentPageUrl} polygon={consentPolygon}
-                  style={{ width: '100%', height: '50px', objectFit: 'contain' }}
+                  className="w-full h-[56px] object-contain"
                   onDataUrl={url => setUrl('consent', url)} />
               </div>
             ) : null}
           </div>
-          <div>
-            <label htmlFor="remarks-input" className="text-sm text-[var(--text-muted)] block mb-2 font-semibold">Remarks</label>
-            <Textarea id="remarks-input" className="min-h-[80px] text-sm resize-y font-mono"
-              value={remarks} onChange={e => onRemarksChange(e.target.value)} />
+
+          <div className="space-y-2.5">
+            <label htmlFor="remarks-input" className="text-xs font-bold text-[var(--text-secondary)] block">Remarks</label>
+            <Textarea id="remarks-input"
+              className="min-h-[80px] text-sm resize-y font-mono premium-input"
+              value={remarks} onChange={e => onRemarksChange(e.target.value)}
+              placeholder="Enter remarks..." />
             {remarksPolygon ? (
               <div
-                className="bg-background"
-                style={{ width: '100%', height: '50px', borderRadius: '6px', cursor: 'zoom-in', marginTop: '8px', overflow: 'hidden' }}
+                className="w-full h-[56px] rounded-xl overflow-hidden cursor-zoom-in bg-[var(--bg-highlight)]/30 border border-[var(--color-border)]/50"
                 onMouseEnter={e => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   handleZoom('remarks', rect.left + rect.width / 2, rect.top);
@@ -91,7 +92,7 @@ export const ConsentRemarks: React.FC<Props> = ({ docId, consent, remarks, v2Tru
                 onMouseLeave={() => onZoom(null)}
               >
                 <CanvasCrop pageUrl={remarksPageUrl} polygon={remarksPolygon}
-                  style={{ width: '100%', height: '50px', objectFit: 'contain' }}
+                  className="w-full h-[56px] object-contain"
                   onDataUrl={url => setUrl('remarks', url)} />
               </div>
             ) : null}

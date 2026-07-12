@@ -1,4 +1,4 @@
-import { API_BASE, authHeaders } from './client';
+import { API_BASE, authHeaders, redirectToLogin, unwrapV3, extractErrorMessage } from './client';
 
 export const uploadApi = {
   uploadFiles: async (files: File[], autoVerify?: boolean, split?: boolean): Promise<{ message: string; document_ids: string[]; auto_verify: boolean }> => {
@@ -14,10 +14,12 @@ export const uploadApi = {
       headers,
       body: formData,
     });
+    if (response.status === 401) { redirectToLogin(); throw new Error('Session expired'); }
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to upload files");
+      throw new Error(extractErrorMessage(err));
     }
-    return response.json();
+    const body = await response.json();
+    return unwrapV3(body);
   },
 };

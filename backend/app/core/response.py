@@ -4,13 +4,19 @@ from fastapi.responses import JSONResponse
 
 class APIResponse:
     @staticmethod
-    def success(data: Any = None, message: str = "OK", meta: Optional[dict] = None):
-        return JSONResponse({
+    def success(data: Any = None, message: str = "OK", meta: Optional[dict] = None,
+                cache_control: str = None, etag: str = None):
+        resp = JSONResponse({
             "success": True,
             "data": data,
             "message": message,
             "meta": meta or {}
         })
+        if cache_control:
+            resp.headers["Cache-Control"] = cache_control
+        if etag:
+            resp.headers["ETag"] = f'"{etag}"'
+        return resp
 
     _status_code_to_code = {
         400: "VALIDATION_ERROR",

@@ -1,31 +1,37 @@
-import type { Document, QueueStatus } from '@/api';
-import { STATUS_FAILED, api } from '@/api';
+import type { Document } from '@/api';
+import { STATUS_FAILED, api, invalidateCache } from '@/api';
 import { useDocument } from '@/context/DocumentContext';
 import { useUI } from '@/context/UIContext';
 import { useReview } from '@/context/ReviewContext';
+import { useSelection } from '@/context/SelectionContext';
 import { useToast } from '@/context/ToastContext';
 
 export function useHandlers(
-  loadAll: () => Promise<void>,
   closeDoc: () => void,
   closeDocForce: () => void,
+  refreshDocuments: () => void,
 ) {
   const { show } = useToast();
   const doc = useDocument();
   const ui = useUI();
   const review = useReview();
+  const sel = useSelection();
 
   const loadDocDetails = async (d: Document) => {
     doc.setSelectedDoc(d);
     review.setDirty(false);
     doc.setDetailsLoading(true);
+    doc.setDetailsError(null);
     try {
       const data = await api.getDocumentDetails(d.id);
       if (!data.responses) data.responses = {};
       if (!data.academic_scores) data.academic_scores = { math_pct: "", science_pct: "", language_pct: "", rank: "" };
       doc.setDocDetails(data);
+      doc.setDetailsError(null);
     } catch (err) {
       console.error(err);
+      doc.setDocDetails(null);
+      doc.setDetailsError((err instanceof Error ? err.message : null) || 'Failed to load details');
       show("Failed to load details", 'error');
     } finally {
       doc.setDetailsLoading(false);
@@ -49,8 +55,15 @@ export function useHandlers(
     const { selectedDoc, docDetails } = doc;
     if (!selectedDoc || !docDetails) return;
     review.setSaving(true);
+    
+    // Save original documents state for rollback
+    const origDocs = [...doc.documents];
+    
+    // Optimistic Update
+    doc.setDocuments(prev => prev.map(d => d.id === selectedDoc.id ? { ...d, status: 'verified' } : d));
+    
     try {
-      await api.verifyDocument(selectedDoc.id, {
+      const result = await api.verifyDocument(selectedDoc.id, {
         roll_number: docDetails.roll_number || '',
         class_val: docDetails.class || '',
         dob: docDetails.dob || '',
@@ -61,18 +74,13 @@ export function useHandlers(
         remarks: docDetails.remarks || ''
       });
       review.setDirty(false);
-      show(`Saved ${selectedDoc.filename}`);
-      doc.setDocuments(prev => prev.map(x =>
-        x.id === selectedDoc.id ? { ...x, status: 'verified' as const, verified_by_human: 1 } : x
-      ));
-      doc.setQueueStatus((prev: QueueStatus | null) => prev ? {
-        ...prev,
-        needs_review: Math.max(0, prev.needs_review - 1),
-        verified: prev.verified + 1,
-      } : prev);
+      show(result.message || `Saved ${selectedDoc.filename}`);
+      invalidateCache('/documents');
+      invalidateCache(`/documents/${selectedDoc.id}`);
       nextDoc();
     } catch (err) {
       console.error(err);
+      doc.setDocuments(origDocs); // Rollback
       show("Save failed", 'error');
     } finally {
       review.setSaving(false);
@@ -152,14 +160,20 @@ export function useHandlers(
       confirmVariant: 'default',
       confirmLabel: 'Reprocess',
       onConfirm: async () => {
+        const origDocs = [...doc.documents];
+        // Optimistic Update
+        doc.setDocuments(prev => prev.map(d => d.id === selectedDoc.id ? { ...d, status: 'processing' } : d));
+        doc.setSelectedDoc((prev: Document | null) => prev ? { ...prev, status: 'processing' } : null);
+        doc.setDocDetails(null);
+        review.setDirty(false);
         try {
           await api.reprocessDocument(selectedDoc.id);
-          doc.setDocDetails(null);
-          doc.setSelectedDoc((prev: Document | null) => prev ? { ...prev, status: 'processing' } : null);
-          review.setDirty(false);
-          await loadAll();
+          invalidateCache('/documents');
+          invalidateCache(`/documents/${selectedDoc.id}`);
         } catch (err) {
           console.error(err);
+          doc.setDocuments(origDocs); // Rollback
+          doc.setSelectedDoc(selectedDoc);
           show("Reprocess failed", 'error');
         }
       },
@@ -173,11 +187,18 @@ export function useHandlers(
       confirmVariant: 'destructive',
       confirmLabel: 'Delete',
       onConfirm: async () => {
+        const origDocs = [...doc.documents];
+        doc.removeDocument(d.id);
         try {
           await api.deleteDocument(d.id);
+          invalidateCache('/documents');
+          invalidateCache(`/documents/${d.id}`);
           if (doc.selectedDoc?.id === d.id) closeDoc();
-          await loadAll();
-        } catch { show("Delete failed", 'error'); }
+          show("Document deleted");
+        } catch {
+          doc.setDocuments(origDocs);
+          show("Delete failed", 'error');
+        }
       },
     });
   };
@@ -192,10 +213,17 @@ export function useHandlers(
       description: `Reprocess "${d.filename}"?`,
       confirmLabel: 'Reprocess',
       onConfirm: async () => {
+        const origDocs = [...doc.documents];
+        // Optimistic Update
+        doc.setDocuments(prev => prev.map(x => x.id === d.id ? { ...x, status: 'processing' } : x));
         try {
           await api.reprocessDocument(d.id);
-          await loadAll();
-        } catch { show("Reprocess failed", 'error'); }
+          invalidateCache('/documents');
+          invalidateCache(`/documents/${d.id}`);
+        } catch {
+          doc.setDocuments(origDocs); // Rollback
+          show("Reprocess failed", 'error');
+        }
       },
     });
   };
@@ -208,10 +236,16 @@ export function useHandlers(
       description: `Reprocess all ${failedDocs.length} failed documents?`,
       confirmLabel: 'Reprocess All',
       onConfirm: async () => {
+        const origDocs = [...doc.documents];
+        // Optimistic Update
+        doc.setDocuments(prev => prev.map(x => STATUS_FAILED.has(x.status) ? { ...x, status: 'processing' } : x));
         try {
           await Promise.all(failedDocs.map(d => api.reprocessDocument(d.id)));
-          await loadAll();
-        } catch { show("Batch reprocess failed", 'error'); }
+          invalidateCache('/documents');
+        } catch {
+          doc.setDocuments(origDocs); // Rollback
+          show("Batch reprocess failed", 'error');
+        }
       },
     });
   };
@@ -223,12 +257,19 @@ export function useHandlers(
       confirmLabel: 'Verify',
       confirmVariant: 'default',
       onConfirm: async () => {
+        const origDocs = [...doc.documents];
+        const targetIds = new Set(docIds);
+        // Optimistic Update
+        doc.setDocuments(prev => prev.map(d => targetIds.has(d.id) ? { ...d, status: 'verified' } : d));
         try {
-          await api.bulkVerify(docIds);
-          show(`Verified ${docIds.length} documents`);
-          doc.setSelectedDashDocs(new Set());
-          await loadAll();
-        } catch { show("Bulk verify failed", 'error'); }
+          const result = await api.bulkVerify(docIds);
+          invalidateCache('/documents');
+          show(result.message || `Verified ${docIds.length} documents`);
+          sel.setSelectedDashDocs(new Set());
+        } catch {
+          doc.setDocuments(origDocs); // Rollback
+          show("Bulk verify failed", 'error');
+        }
       },
     });
   };
@@ -239,11 +280,19 @@ export function useHandlers(
       description: `Reprocess ${docIds.length} selected documents?`,
       confirmLabel: 'Reprocess',
       onConfirm: async () => {
+        const origDocs = [...doc.documents];
+        const targetIds = new Set(docIds);
+        // Optimistic Update
+        doc.setDocuments(prev => prev.map(d => targetIds.has(d.id) ? { ...d, status: 'processing' } : d));
         try {
           await Promise.all(docIds.map(id => api.reprocessDocument(id)));
+          invalidateCache('/documents');
           show(`Reprocessing ${docIds.length} documents`);
-          doc.setSelectedDashDocs(new Set());
-        } catch { show("Bulk reprocess failed", 'error'); }
+          sel.setSelectedDashDocs(new Set());
+        } catch {
+          doc.setDocuments(origDocs); // Rollback
+          show("Bulk reprocess failed", 'error');
+        }
       },
     });
   };
@@ -255,11 +304,19 @@ export function useHandlers(
       confirmVariant: 'destructive',
       confirmLabel: 'Delete',
       onConfirm: async () => {
+        const origDocs = [...doc.documents];
+        const targetIds = new Set(docIds);
+        // Optimistic Update
+        doc.setDocuments(prev => prev.filter(d => !targetIds.has(d.id)));
         try {
-          await api.bulkDelete(docIds);
-          show(`Deleted ${docIds.length} documents`);
-          doc.setSelectedDashDocs(new Set());
-        } catch { show("Bulk delete failed", 'error'); }
+          const result = await api.bulkDelete(docIds);
+          invalidateCache('/documents');
+          show(result.message || `Deleted ${docIds.length} documents`);
+          sel.setSelectedDashDocs(new Set());
+        } catch {
+          doc.setDocuments(origDocs); // Rollback
+          show("Bulk delete failed", 'error');
+        }
       },
     });
   };
@@ -267,40 +324,38 @@ export function useHandlers(
   const handleUpload = async (files: File[]) => {
     if (!files.length) return;
     ui.setUploading(true);
-    try { await api.uploadFiles(files, doc.autoVerify, doc.splitPages); await loadAll(); }
-    catch { show("Upload failed", 'error'); }
-    finally { ui.setUploading(false); }
-  };
+    
+    // Optimistic Update: Add temporary processing document tags
+    const tempDocs: Document[] = files.map(file => ({
+      id: `temp-${Date.now()}-${Math.random()}`,
+      filename: file.name,
+      status: 'processing',
+      created_at: new Date().toISOString(),
+      roll_number: '',
+      class: ''
+    }));
+    doc.setDocuments(prev => [...tempDocs, ...prev]);
 
-  const toggleDashDoc = (id: string) => {
-    doc.setSelectedDashDocs((prev: Set<string>) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAllDashDocs = (filtered: Document[]) => {
-    if (doc.selectedDashDocs.size === filtered.length) doc.setSelectedDashDocs(new Set());
-    else doc.setSelectedDashDocs(new Set(filtered.map(d => d.id)));
-  };
-
-  const toggleReportDoc = (id: string) => {
-    doc.setSelectedReportDocs((prev: Set<string>) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAllReportDocs = () => {
-    if (doc.selectedReportDocs.size === doc.reportResults.length) doc.setSelectedReportDocs(new Set());
-    else doc.setSelectedReportDocs(new Set(doc.reportResults.map(d => d.id)));
+    try { 
+      const result = await api.uploadFiles(files, doc.autoVerify, doc.splitPages); 
+      show(result.message || `Uploaded ${result.document_ids?.length || files.length} file(s)`); 
+      invalidateCache('/documents');
+      
+      // Clean up temporary placeholders and fetch real entities
+      refreshDocuments();
+    } catch { 
+      // Remove temporary tags on failure
+      const tempIds = new Set(tempDocs.map(t => t.id));
+      doc.setDocuments(prev => prev.filter(d => !tempIds.has(d.id)));
+      show("Upload failed", 'error'); 
+    } finally { 
+      ui.setUploading(false); 
+    }
   };
 
   const toggleSort = (key: import('@/api').SortKey) => {
-    if (doc.sortKey === key) doc.setSortDir((d: 'asc' | 'desc') => d === 'asc' ? 'desc' : 'asc');
-    else { doc.setSortKey(key); doc.setSortDir('asc'); }
+    if (ui.sortKey === key) ui.setSortDir((d: 'asc' | 'desc') => d === 'asc' ? 'desc' : 'asc');
+    else { ui.setSortKey(key); ui.setSortDir('asc'); }
   };
 
   return {
@@ -316,10 +371,6 @@ export function useHandlers(
     handleBulkReprocess,
     handleBulkDelete,
     handleUpload,
-    toggleDashDoc,
-    toggleAllDashDocs,
-    toggleReportDoc,
-    toggleAllReportDocs,
     toggleSort,
     nextDoc,
     prevDoc,

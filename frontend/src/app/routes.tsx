@@ -1,22 +1,25 @@
-import { lazy, Suspense } from 'react';
-import { Loader2, FileText, Clock, AlertTriangle, Check, X } from 'lucide-react';
+import { lazy, Suspense, memo, useRef } from 'react';
+import { Loader2, FileText, Clock, AlertTriangle, Check, X, RefreshCw, Upload, Eye, Activity, Users } from 'lucide-react';
 import type { Document } from '@/api';
 import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '@/api';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useDocument } from '@/context/DocumentContext';
 import { useUI } from '@/context/UIContext';
 import { useReview } from '@/context/ReviewContext';
+import { useSelection } from '@/context/SelectionContext';
 import { StatCards } from '@/features/analytics/StatCards';
 import { UploadZone } from '@/features/documents/UploadZone';
 import { DocumentTable } from '@/features/documents/DocumentTable';
+import { UsersView } from '@/components/UsersView';
 
-const ReviewView = lazy(() => import('@/features/review/ReviewView').then(m => ({ default: m.ReviewView })));
-const VerifiedView = lazy(() => import('@/features/verification/VerifiedView').then(m => ({ default: m.VerifiedView })));
-const FailedView = lazy(() => import('@/features/verification/FailedView').then(m => ({ default: m.FailedView })));
-const ProcessingView = lazy(() => import('@/features/documents/ProcessingView').then(m => ({ default: m.ProcessingView })));
-const AnalyticsView = lazy(() => import('@/features/analytics/AnalyticsView').then(m => ({ default: m.AnalyticsView })));
-const DeadLetterQueueView = lazy(() => import('@/features/dead-letter-queue/DeadLetterQueueView').then(m => ({ default: m.DeadLetterQueueView })));
-const ReportingView = lazy(() => import('@/features/reporting/ReportingView').then(m => ({ default: m.ReportingView })));
+const ReviewView = memo(lazy(() => import('@/features/review/ReviewView').then(m => ({ default: m.ReviewView }))));
+const VerifiedView = memo(lazy(() => import('@/features/verification/VerifiedView').then(m => ({ default: m.VerifiedView }))));
+const FailedView = memo(lazy(() => import('@/features/verification/FailedView').then(m => ({ default: m.FailedView }))));
+const ProcessingView = memo(lazy(() => import('@/features/documents/ProcessingView').then(m => ({ default: m.ProcessingView }))));
+const AnalyticsView = memo(lazy(() => import('@/features/analytics/AnalyticsView').then(m => ({ default: m.AnalyticsView }))));
+const DeadLetterQueueView = memo(lazy(() => import('@/features/dead-letter-queue/DeadLetterQueueView').then(m => ({ default: m.DeadLetterQueueView }))));
+const ReportingView = memo(lazy(() => import('@/features/reporting/ReportingView').then(m => ({ default: m.ReportingView }))));
 
 interface Props {
   onClose: () => void;
@@ -36,7 +39,10 @@ interface Props {
   onRetryAllFailed: () => void;
   onToggleSelect: (id: string) => void;
   onToggleSelectAll: () => void;
+  onReportToggleSelect: (id: string) => void;
+  onReportToggleSelectAll: () => void;
   toggleSort: (key: import('@/api').SortKey) => void;
+  onRetryDetails: (d: Document) => void;
 }
 
 function LoadingFallback() {
@@ -53,8 +59,32 @@ export function AppContent(props: Props) {
   const doc = useDocument();
   const ui = useUI();
   const review = useReview();
+  const sel = useSelection();
+  const quickUploadRef = useRef<HTMLInputElement>(null);
 
   if (doc.selectedDoc) {
+    if (doc.detailsError && !doc.detailsLoading) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <Card className="flex flex-col items-center justify-center p-8 min-h-[200px] max-w-md text-center gap-4">
+            <div className="rounded-full bg-red-50 p-3 dark:bg-red-900/20">
+              <AlertTriangle className="h-8 w-8 text-red-500" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">Failed to load document</h3>
+              <p className="text-xs text-muted-foreground mt-1">{doc.detailsError}</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="default" size="sm" onClick={() => props.onRetryDetails(doc.selectedDoc!)}>
+                <RefreshCw size={14} className="mr-1.5" />Retry
+              </Button>
+              <Button variant="outline" size="sm" onClick={props.onClose}>Go Back</Button>
+            </div>
+          </Card>
+        </div>
+      );
+    }
+
     if (STATUS_PROCESSING.has(doc.selectedDoc.status) || doc.detailsLoading) {
       return <Suspense fallback={<LoadingFallback />}><ProcessingView doc={doc.selectedDoc} /></Suspense>;
     }
@@ -104,20 +134,20 @@ export function AppContent(props: Props) {
     return (
       <Suspense fallback={<LoadingFallback />}>
         <ReportingView
-          documents={doc.documents}
+          reportResults={sel.reportResults}
           dateFrom={doc.reportDateFrom}
           dateTo={doc.reportDateTo}
           reportStatus={doc.reportStatus}
           reportClass={doc.reportClass}
           reportFormat={doc.reportFormat}
-          selectedReportDocs={doc.selectedReportDocs}
+          selectedReportDocs={sel.selectedReportDocs}
           onDateFromChange={doc.setReportDateFrom}
           onDateToChange={doc.setReportDateTo}
           onStatusChange={doc.setReportStatus}
           onClassChange={doc.setReportClass}
           onFormatChange={doc.setReportFormat}
-          onToggleSelect={props.onToggleSelect}
-          onToggleSelectAll={props.onToggleSelectAll}
+          onToggleSelect={props.onReportToggleSelect}
+          onToggleSelectAll={props.onReportToggleSelectAll}
           onOpenDoc={props.onOpenDoc}
         />
       </Suspense>
@@ -140,19 +170,37 @@ export function AppContent(props: Props) {
     return <Suspense fallback={<LoadingFallback />}><DeadLetterQueueView /></Suspense>;
   }
 
+  if (ui.view === 'users') {
+    return <UsersView />;
+  }
+
+  const needsReviewCount = doc.queueStatus?.needs_review ?? doc.needsReview.length;
+  const processingCount = doc.queueStatus?.processing ?? doc.processing.length;
+  const workerCount = doc.queueStatus?.workers ?? 0;
+
   return (
     <>
       <StatCards
         statCards={[
-          { label: 'Total', value: doc.queueStatus?.total ?? doc.documents.length, color: 'var(--accent-cyan)', icon: FileText },
-          { label: 'Processing', value: doc.queueStatus?.processing ?? doc.processing.length, color: 'var(--accent-violet)', icon: Clock, pulse: (doc.queueStatus?.processing ?? doc.processing.length) > 0 },
-          { label: 'Needs Review', value: doc.queueStatus?.needs_review ?? doc.needsReview.length, color: 'var(--accent-amber)', icon: AlertTriangle },
-          { label: 'Verified', value: doc.queueStatus?.verified ?? doc.verified.length, color: 'var(--accent-emerald)', icon: Check },
+          { label: 'Total', value: doc.queueStatus?.total ?? doc.documents.length, color: 'var(--accent-violet)', icon: FileText },
+          { label: 'Verified', value: doc.queueStatus?.verified ?? doc.verified.length, color: 'var(--accent-cyan)', icon: Check },
+          { label: 'Processing', value: processingCount, color: 'var(--accent-amber)', icon: Clock, pulse: processingCount > 0 },
+          { label: 'Needs Review', value: needsReviewCount, color: 'var(--accent-emerald)', icon: AlertTriangle },
           { label: 'Failed', value: doc.queueStatus?.failed ?? doc.failed.length, color: 'var(--accent-rose)', icon: X },
         ]}
         escBreakdown={doc.escBreakdown}
-        onTabClick={doc.setActiveTab}
+        onTabClick={ui.setActiveTab}
       />
+
+      <div className="flex gap-3 mb-6">
+        <button onClick={() => quickUploadRef.current?.click()} className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent-violet)] text-white rounded-lg shadow-sm hover:shadow-md transition-all text-sm font-semibold">
+          <Upload size={16} /> Upload Documents
+        </button>
+        <button onClick={() => ui.setActiveTab('needs_review')} className="flex items-center gap-2 px-4 py-2.5 glass-card rounded-lg hover:shadow-md transition-all text-sm font-medium text-[var(--text-secondary)]">
+          <Eye size={16} /> Review Pending ({needsReviewCount})
+        </button>
+        <input ref={quickUploadRef} type="file" multiple accept=".pdf" className="hidden" onChange={e => { if (e.target.files?.length) props.onUpload(Array.from(e.target.files)); e.target.value = ''; }} />
+      </div>
 
       <UploadZone
         uploading={ui.uploading}
@@ -163,20 +211,20 @@ export function AppContent(props: Props) {
         onUpload={props.onUpload}
         failedCount={doc.failed.length}
         onRetryAllFailed={props.onRetryAllFailed}
-        isDragOver={ui.isDragOver}
-        onDragOver={ui.setIsDragOver}
+        isDragOver={doc.isDragOver}
+        onDragOver={doc.setIsDragOver}
       />
 
       <DocumentTable
         documents={doc.documents}
-        activeTab={doc.activeTab}
-        onTabChange={doc.setActiveTab}
-        searchQuery={doc.searchQuery}
-        onSearchChange={doc.setSearchQuery}
-        sortKey={doc.sortKey}
-        sortDir={doc.sortDir}
+        activeTab={ui.activeTab}
+        onTabChange={ui.setActiveTab}
+        searchQuery={ui.searchQuery}
+        onSearchChange={ui.setSearchQuery}
+        sortKey={ui.sortKey}
+        sortDir={ui.sortDir}
         onSortChange={props.toggleSort}
-        selectedIds={doc.selectedDashDocs}
+        selectedIds={sel.selectedDashDocs}
         onToggleSelect={props.onToggleSelect}
         onToggleSelectAll={props.onToggleSelectAll}
         onOpenDoc={props.onOpenDoc}
@@ -187,15 +235,36 @@ export function AppContent(props: Props) {
         onBulkVerify={props.onBulkVerify}
         onBulkReprocess={props.onBulkReprocess}
         onBulkDelete={props.onBulkDelete}
+        loading={doc.loading}
+        onUpload={() => quickUploadRef.current?.click()}
       />
 
-      {doc.loading && (
-        <div className="sticky bottom-0 left-0 right-0 z-20">
-          <div className="h-0.5 bg-violet-500/20">
-            <div className="h-full bg-violet-500 rounded-full animate-pulse w-2/3" />
+      <div className="sticky bottom-0 left-0 right-0 z-20 mt-4">
+        <div className="glass-card rounded-lg px-5 py-2.5 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-3 text-[var(--text-muted)]">
+            <span className="flex items-center gap-1.5">
+              <Activity size={13} className={processingCount > 0 ? 'text-[var(--accent-amber)] animate-pulse' : 'text-[var(--text-muted)]'} />
+              {processingCount > 0 ? (
+                <span className="font-medium text-[var(--accent-amber)]">{processingCount} processing</span>
+              ) : (
+                <span>Queue idle</span>
+              )}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Users size={13} />
+              <span>{workerCount} worker{workerCount !== 1 ? 's' : ''}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[var(--text-muted)]">{doc.documents.length} total docs</span>
+            {doc.loading && (
+              <span className="flex items-center gap-1 text-[var(--accent-violet)] font-medium">
+                <Loader2 size={12} className="animate-spin" />Syncing...
+              </span>
+            )}
           </div>
         </div>
-      )}
+      </div>
     </>
   );
 }

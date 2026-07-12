@@ -1,11 +1,12 @@
 import { useRef, useCallback, useEffect } from 'react';
-import { clearApiCache, api } from '@/api';
+import { clearApiCache, invalidateCache, api } from '@/api';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { ToastProvider, useToast } from '@/context/ToastContext';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { DocumentProvider, useDocument } from '@/context/DocumentContext';
 import { UIProvider, useUI } from '@/context/UIContext';
 import { ReviewProvider, useReview } from '@/context/ReviewContext';
+import { SelectionProvider, useSelection } from '@/context/SelectionContext';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { Header } from '@/features/layout/Header';
 import { Sidebar } from '@/features/layout/Sidebar';
@@ -14,40 +15,56 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AppContent } from '@/app/routes';
 import { useHandlers } from '@/app/actions';
-import { useInitAuth, useSSE, useKeyboardShortcuts, useUnsavedWarning, useUrlSync } from '@/app/hooks';
+import { useInitAuth, useSSE, useKeyboardShortcuts, useUnsavedWarning, useUrlSync, useFilteredDocuments } from '@/app/hooks';
 
 function AppInnerContents() {
   const { show } = useToast();
   const doc = useDocument();
   const ui = useUI();
   const review = useReview();
+  const sel = useSelection();
 
   useInitAuth();
 
   const loadingRef = useRef(false);
 
+  const showRef = useRef(show);
+  showRef.current = show;
+  const setLoadingRef = useRef(doc.setLoading);
+  setLoadingRef.current = doc.setLoading;
+  const setDocumentsRef = useRef(doc.setDocuments);
+  setDocumentsRef.current = doc.setDocuments;
+  const setQueueStatusRef = useRef(doc.setQueueStatus);
+  setQueueStatusRef.current = doc.setQueueStatus;
+
   const loadAll = useCallback(async () => {
     if (loadingRef.current) return;
-    clearApiCache();
+    invalidateCache('/documents');
+    invalidateCache('/queue-status');
     loadingRef.current = true;
-    doc.setLoading(true);
+    setLoadingRef.current(true);
     try {
       const [docs, qs] = await Promise.all([
-        api.listDocuments(),
+        api.listDocuments(['id', 'status', 'filename', 'roll_number', 'class', 'created_at', 'error_message', 'verified_by_human', 'classification', 'escalation_level']),
         api.getQueueStatus().catch(() => null),
       ]);
-      doc.setDocuments(docs);
-      if (qs) doc.setQueueStatus(qs);
+      setDocumentsRef.current(docs);
+      if (qs) setQueueStatusRef.current(qs);
     } catch (err) {
       console.error(err);
-      show("Failed to load documents from backend", 'error');
+      showRef.current("Failed to load documents from backend", 'error');
     } finally {
-      doc.setLoading(false);
+      setLoadingRef.current(false);
       loadingRef.current = false;
     }
-  }, [show, doc]);
+  }, []);
 
-  useSSE(loadAll, doc.selectedDoc);
+  const refreshDocuments = useCallback(() => {
+    clearApiCache();
+    loadAll();
+  }, [loadAll]);
+
+  useSSE(loadAll);
 
   const closeDoc = useCallback((force = false) => {
     if (review.dirty && !force) {
@@ -70,11 +87,13 @@ function AppInnerContents() {
 
   const closeDocForce = useCallback(() => closeDoc(true), [closeDoc]);
 
-  const handlers = useHandlers(loadAll, closeDoc, closeDocForce);
+  const handlers = useHandlers(closeDoc, closeDocForce, refreshDocuments);
 
   useKeyboardShortcuts(doc.selectedDoc, doc.docDetails, handlers.prevDoc, handlers.nextDoc, handlers.handleSkip, handlers.handleVerify, closeDoc);
   useUnsavedWarning(review.dirty);
   const { initialLoadDone } = useUrlSync(doc.selectedDoc);
+
+  const filtered = useFilteredDocuments();
 
   useEffect(() => {
     if (doc.documents.length > 0 && !initialLoadDone.current) {
@@ -89,10 +108,10 @@ function AppInnerContents() {
   }, [doc.documents]);
 
   useEffect(() => {
-    const sel = doc.selectedDoc;
-    if (!sel) return;
-    const match = doc.documents.find(d => d.id === sel.id);
-    if (match && match.status !== sel.status) {
+    const sel_ = doc.selectedDoc;
+    if (!sel_) return;
+    const match = doc.documents.find(d => d.id === sel_.id);
+    if (match && match.status !== sel_.status) {
       doc.setSelectedDoc(match);
     }
   }, [doc.documents, doc.selectedDoc?.id]);
@@ -140,15 +159,18 @@ function AppInnerContents() {
               onDownloadReport={handlers.downloadIndividualReport}
               onReprocessDoc={handlers.handleReprocessDoc}
               onDeleteDoc={handlers.handleDeleteDoc}
-              onBulkDone={() => { doc.setSelectedDashDocs(new Set()); loadAll(); }}
+              onBulkDone={() => { sel.setSelectedDashDocs(new Set()); refreshDocuments(); }}
               onBulkVerify={handlers.handleBulkVerify}
               onBulkReprocess={handlers.handleBulkReprocess}
               onBulkDelete={handlers.handleBulkDelete}
               onUpload={handlers.handleUpload}
               onRetryAllFailed={handlers.handleReprocessAllFailed}
-              onToggleSelect={handlers.toggleDashDoc}
-              onToggleSelectAll={() => handlers.toggleAllDashDocs(doc.filtered)}
+              onToggleSelect={sel.onToggleDashDoc}
+              onToggleSelectAll={() => sel.onToggleAllDashDocs(filtered.map(d => d.id))}
+              onReportToggleSelect={sel.onToggleReportDoc}
+              onReportToggleSelectAll={sel.onToggleAllReportDocs}
               toggleSort={handlers.toggleSort}
+              onRetryDetails={handlers.loadDocDetails}
             />
           </div>
           {!doc.selectedDoc && (
@@ -180,9 +202,11 @@ function AppInner() {
   return (
     <DocumentProvider>
       <UIProvider>
-        <ReviewProvider>
-          <AppInnerContents />
-        </ReviewProvider>
+        <SelectionProvider>
+          <ReviewProvider>
+            <AppInnerContents />
+          </ReviewProvider>
+        </SelectionProvider>
       </UIProvider>
     </DocumentProvider>
   );

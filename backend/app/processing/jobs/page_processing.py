@@ -6,7 +6,7 @@ Checkbox density analysis and selection mark resolution for document pages.
 import numpy as np
 import cv2
 from typing import Optional, Any
-from app.processing.azure_processor import polygon_bounds
+from app.geometry.polygon import polygon_bounds
 
 
 def check_checkbox_density(page_img: np.ndarray, poly: list[float], page_w: float, page_h: float, unit: str = "pixel") -> float:
@@ -53,7 +53,7 @@ def resolve_page_selection_marks(
     page_height: float = 3508.0,
     raw_response: dict = None,
     page_img: np.ndarray = None
-) -> tuple[dict[str, Any], str, dict[str, float], dict[str, list[float]], dict[str, list[float]]]:
+) -> tuple[dict[str, Any], str, dict[str, float], dict[str, list[float]]]:
     """
     Resolve checkbox selections directly from Azure's table model,
     falling back to pixel density classification if Azure missed the selection state.
@@ -62,17 +62,15 @@ def resolve_page_selection_marks(
       responses: dict of q_key -> selected_col (int or list of ints)
       consent_val: str ("Yes", "No", "Unanswered")
       confidences: dict of q_key -> confidence (float)
-      bboxes: dict of q_key -> [x0, y0, x1, y1]
       polygons: dict of q_key -> [x0, y0, x1, y1, x2, y2, x3, y3]
     """
     responses = {}
     confidences = {}
-    q_bboxes = {}
     q_polygons = {}
     consent_val = "Unanswered"
 
     if not raw_response:
-        return {}, "Unanswered", {}, {}, {}
+        return {}, "Unanswered", {}, {}
 
     page_num = 2 if is_page_2 else 1
 
@@ -150,7 +148,7 @@ def resolve_page_selection_marks(
                 consent_val = "Yes" if yes_density > no_density else "No"
 
     if not tables:
-        return {}, consent_val, {}, {}, {}
+        return {}, consent_val, {}, {}
 
     table = tables[1] if (page_num == 1 and len(tables) >= 2) else tables[0]
 
@@ -211,7 +209,6 @@ def resolve_page_selection_marks(
             else:
                 bbox, poly = None, None
 
-        q_bboxes[q_key] = bbox
         q_polygons[q_key] = poly
 
         # 1. Native pass: check ':selected:'
@@ -317,4 +314,4 @@ def resolve_page_selection_marks(
         responses[q_key] = selected_col
         confidences[q_key] = conf
 
-    return responses, consent_val, confidences, q_bboxes, q_polygons
+    return responses, consent_val, confidences, q_polygons

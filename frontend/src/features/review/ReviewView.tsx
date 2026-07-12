@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Check, Loader2, X, ArrowLeft, ArrowRight, RotateCcw, Hash, Percent, Calendar, User, GraduationCap, ListOrdered, Download } from 'lucide-react';
+import { Check, Loader2, X, ArrowLeft, ArrowRight, RotateCcw, Hash, Percent, Calendar, User, GraduationCap, ListOrdered, Download, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 import type { Document, DocumentDetails, ZoomImage } from '@/api';
 import { api } from '@/api';
-import { exportToCsv } from '@/lib/utils';
+import { exportToCsv, cn } from '@/lib/utils';
 import { SdqGrid } from '@/features/review/SdqGrid';
 import { ConsentRemarks } from '@/features/review/ConsentRemarks';
 import { ZoomPopup } from '@/components/ZoomPopup';
@@ -29,7 +29,8 @@ interface Props {
   saving: boolean;
 }
 
-const CONF_THRESHOLD = 0.8;
+const CONF_HIGH = 0.8;
+const CONF_MED = 0.5;
 
 const MAIN_FIELDS = [
   { key: 'roll_number', label: 'Roll Number', icon: Hash },
@@ -43,7 +44,7 @@ const MAIN_FIELDS = [
 ];
 
 const KBD = ({ children }: { children: React.ReactNode }) => (
-  <kbd className="bg-white/[0.06] px-1.5 py-0.5 rounded-[3px] text-[10px] border border-[var(--color-border)]">{children}</kbd>
+  <kbd className="bg-white/[0.06] px-1.5 py-0.5 rounded-[3px] text-[10px] border border-[var(--color-border)] font-mono">{children}</kbd>
 );
 
 export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onDirtyChange, reviewIndex, totalReview, onClose, onVerify, onReprocess, onNext, onPrev, saving }) => {
@@ -53,6 +54,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
   const [zoomImg, setZoomImg] = useState<ZoomImage | null>(null);
   const [reprocessingField, setReprocessingField] = useState<string | null>(null);
   const [pageViewer, setPageViewer] = useState<1 | 2 | null>(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const rollRef = useRef<HTMLInputElement>(null);
   const origValuesRef = useRef<Record<string, string>>({});
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -98,9 +100,9 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
   const v2Trust = details.confidence_scores?.v2_trust || {};
 
   const fieldConf = (key: string): number => {
-    const v2Trust = details.confidence_scores?.v2_trust?.[key];
-    if (v2Trust && typeof v2Trust.trust_confidence === 'number') {
-      return v2Trust.trust_confidence;
+    const vt = details.confidence_scores?.v2_trust?.[key];
+    if (vt && typeof vt.trust_confidence === 'number') {
+      return vt.trust_confidence;
     }
     const c = conf[key];
     if (typeof c === 'number') return c;
@@ -109,7 +111,19 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
     return 1;
   };
 
-  const isHighConf = (key: string) => fieldConf(key) >= CONF_THRESHOLD;
+  const isHighConf = (key: string) => fieldConf(key) >= CONF_HIGH;
+
+  const getConfColor = (confidence: number) => {
+    if (confidence >= CONF_HIGH) return 'text-[var(--accent-emerald)]';
+    if (confidence >= CONF_MED) return 'text-[var(--accent-amber)]';
+    return 'text-[var(--accent-rose)]';
+  };
+
+  const getConfBg = (confidence: number) => {
+    if (confidence >= CONF_HIGH) return 'bg-[var(--accent-emerald)]/10';
+    if (confidence >= CONF_MED) return 'bg-[var(--accent-amber)]/10';
+    return 'bg-[var(--accent-rose)]/10';
+  };
 
   const getFieldVal = (key: string) => {
     if (key === 'roll_number') return details.roll_number || '';
@@ -131,7 +145,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
   const handleAccept = useCallback((key: string) => {
     setFieldAccepted(prev => ({ ...prev, [key]: true }));
     setFlashField(key);
-    setTimeout(() => setFlashField(null), 500);
+    setTimeout(() => setFlashField(null), 600);
   }, []);
 
   const focusNextField = useCallback((fi: number) => {
@@ -150,7 +164,6 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
     }
   }, [handleAccept, focusNextField, activeFields]);
 
-  // Data URLs for zoom from client-side canvas crops
   const cropDataUrls = useRef<Record<string, string>>({});
 
   const showZoomForCrop = useCallback((key: string) => {
@@ -242,6 +255,11 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
     return c === 'high' || c === 'high_confidence' || !c;
   }).length;
 
+  const dirtyFields = activeFields.filter(f => {
+    const val = getFieldVal(f.key);
+    return val !== '' && origValuesRef.current[f.key] !== undefined && val !== origValuesRef.current[f.key];
+  });
+
   return (
     <div className="app-container">
       <header className="main-header">
@@ -274,19 +292,27 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
 
       <div className="p-5">
         <Card size="sm" className="mb-4">
-          <CardContent className="flex justify-between items-center !px-5">
-            <span className="text-[13px] text-[var(--text-secondary)]">
-              {doc.filename} — {reviewFields.length > 0 && !showAllFields ? (
-                <>
-                  Reviewing <b className="text-[var(--accent-amber)]">{reviewFields.length}</b> issue fields ({acceptedCount}/{activeFields.length} accepted)
-                </>
-              ) : (
-                <>
-                  <b className="text-white">{acceptedCount}/{activeFields.length}</b> main fields accepted
-                </>
+          <CardContent className="flex justify-between items-center !px-5 py-3">
+            <div className="flex items-center gap-3">
+              <span className="text-[13px] text-[var(--text-secondary)]">
+                {doc.filename} — {reviewFields.length > 0 && !showAllFields ? (
+                  <>
+                    Reviewing <b className="text-[var(--accent-amber)]">{reviewFields.length}</b> issue fields ({acceptedCount}/{activeFields.length} accepted)
+                  </>
+                ) : (
+                  <>
+                    <b className="text-[var(--text-primary)]">{acceptedCount}/{activeFields.length}</b> main fields accepted
+                  </>
+                )}
+                + <b className="text-[var(--accent-emerald)]">{highConfQCount}/25</b> questions auto-verified
+              </span>
+              {dirtyFields.length > 0 && (
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-[var(--accent-amber)] bg-[var(--accent-amber)]/10 px-2 py-0.5 rounded-full">
+                  <AlertCircle size={11} />
+                  {dirtyFields.length} unsaved change{dirtyFields.length > 1 ? 's' : ''}
+                </span>
               )}
-              + <b className="text-[var(--accent-emerald)]">{highConfQCount}/25</b> questions auto-verified
-            </span>
+            </div>
             <div className="flex gap-2">
               {reviewFields.length > 0 && (
                 <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowAllFields(prev => !prev)}>
@@ -323,161 +349,200 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
           </CardContent>
         </Card>
 
-        <div className="flex gap-4 mb-3 text-[11px] text-[var(--text-muted)] px-1 flex-wrap">
-          <span><KBD>←</KBD><KBD>→</KBD> prev/next doc</span>
-          <span><KBD>S</KBD> skip doc</span>
-          <span><KBD>Tab</KBD> next field</span>
-          <span><KBD>Enter</KBD> accept & advance</span>
-          <span><KBD>M</KBD> <KBD>F</KBD> gender</span>
-          <span><KBD>Y</KBD> <KBD>N</KBD> <KBD>U</KBD> consent</span>
-          <span><KBD>1</KBD><KBD>2</KBD><KBD>3</KBD><KBD>0</KBD> SDQ</span>
-          <span><KBD>⌘↵</KBD> save & next</span>
-          <span><KBD>Esc</KBD> close</span>
-        </div>
+        <button
+          onClick={() => setShowShortcuts(!showShortcuts)}
+          className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] mb-3 px-1 transition-colors"
+        >
+          <span className="font-semibold">Keyboard Shortcuts</span>
+          {showShortcuts ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+        {showShortcuts && (
+          <Card className="mb-3 glass-card">
+            <CardContent className="!p-3">
+              <div className="flex gap-4 text-[11px] text-[var(--text-muted)] flex-wrap">
+                <span><KBD>←</KBD><KBD>→</KBD> prev/next doc</span>
+                <span><KBD>S</KBD> skip doc</span>
+                <span><KBD>Tab</KBD> next field</span>
+                <span><KBD>Enter</KBD> accept & advance</span>
+                <span><KBD>M</KBD> <KBD>F</KBD> gender</span>
+                <span><KBD>Y</KBD> <KBD>N</KBD> <KBD>U</KBD> consent</span>
+                <span><KBD>1</KBD><KBD>2</KBD><KBD>3</KBD><KBD>0</KBD> SDQ</span>
+                <span><KBD>⌘↵</KBD> save & next</span>
+                <span><KBD>Esc</KBD> close</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card className="mb-5 !py-0">
-          <CardContent className="!p-0">
-            <div className="grid grid-cols-1 lg:grid-cols-2">
-              {activeFields.map((f, fi) => {
-                const val = getFieldVal(f.key);
-                const accepted = fieldAccepted[f.key];
-                const confidence = fieldConf(f.key);
-                const isClass = f.key === 'class';
-                const isGender = f.key === 'gender';
-                const isPct = f.key === 'math_pct' || f.key === 'science_pct' || f.key === 'language_pct';
-                const isDob = f.key === 'dob';
-                const isRoll = f.key === 'roll_number';
-                const isRank = f.key === 'rank';
-                const isEdited = val !== '' && origValuesRef.current[f.key] !== undefined && val !== origValuesRef.current[f.key];
-                const Icon = f.icon;
-                return (
-                  <div key={f.key} className={`
-                    flex items-center gap-3 px-[18px] py-[10px]
-                    ${flashField === f.key ? 'accept-flash' : ''}
-                    ${fi % 2 === 0 ? 'border-r border-[var(--color-border)]' : ''}
-                    ${fi < activeFields.length - 2 ? 'border-b border-[var(--color-border)]' : ''}
-                    ${accepted ? 'bg-[rgba(16,185,129,0.04)]' : isEdited ? 'bg-[rgba(245,158,11,0.04)]' : ''}
-                  `}>
-                    <div ref={el => { cropRefs.current[f.key] = el; }} className="shrink-0 leading-none"
-                      onMouseEnter={e => handleCropEnter(e, f.key)}
-                      onMouseMove={e => handleCropMove(e, f.key)}
-                      onMouseLeave={handleCropLeave}>
-                      {v2Trust[f.key]?.polygon ? (
-                        <CanvasCrop
-                          pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
-                          polygon={v2Trust[f.key]!.polygon as number[] | undefined}
-                          className="w-[220px] h-[54px] object-contain bg-black/30 rounded block cursor-zoom-in"
-                          onDataUrl={url => { cropDataUrls.current[f.key] = url; }}
-                        />
-                      ) : (
-                        <div className="w-[220px] h-[54px] bg-[rgba(0,0,0,0.3)] rounded" />
-                      )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
+          {activeFields.map((f, fi) => {
+            const val = getFieldVal(f.key);
+            const accepted = fieldAccepted[f.key];
+            const confidence = fieldConf(f.key);
+            const isClass = f.key === 'class';
+            const isGender = f.key === 'gender';
+            const isPct = f.key === 'math_pct' || f.key === 'science_pct' || f.key === 'language_pct';
+            const isDob = f.key === 'dob';
+            const isRoll = f.key === 'roll_number';
+            const isRank = f.key === 'rank';
+            const isEdited = val !== '' && origValuesRef.current[f.key] !== undefined && val !== origValuesRef.current[f.key];
+            const Icon = f.icon;
+
+            return (
+              <div key={f.key} className={cn(
+                "glass-card rounded-xl overflow-hidden transition-all duration-200",
+                flashField === f.key && 'accept-flash',
+                accepted ? 'ring-1 ring-[var(--accent-emerald)]/20' : isEdited ? 'ring-1 ring-[var(--accent-amber)]/20' : ''
+              )}>
+                <div
+                  ref={el => { cropRefs.current[f.key] = el; }}
+                  className="relative bg-black/20 overflow-hidden cursor-zoom-in"
+                  onMouseEnter={e => handleCropEnter(e, f.key)}
+                  onMouseMove={e => handleCropMove(e, f.key)}
+                  onMouseLeave={handleCropLeave}
+                >
+                  {v2Trust[f.key]?.polygon ? (
+                    <CanvasCrop
+                      pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
+                      polygon={v2Trust[f.key]!.polygon as number[] | undefined}
+                      className="w-full h-[64px] object-contain block"
+                      onDataUrl={url => { cropDataUrls.current[f.key] = url; }}
+                    />
+                  ) : (
+                    <div className="w-full h-[64px] flex items-center justify-center text-[var(--text-muted)] text-[10px]">
+                      No crop data
                     </div>
-                    <span className="text-[15px] whitespace-nowrap text-[var(--text-secondary)] font-medium flex items-center gap-1.5">
-                      <Icon size={14} className="text-[var(--text-muted)]" />
-                      {f.label}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      {isClass ? (
-                        <Input type="number" min="1" max="12"
-                          className={`text-[15px] text-center font-semibold ${isEdited ? 'field-edited-input' : ''}`}
-                          value={val} onChange={e => setFieldVal(f.key, e.target.value)}
-                          onFocus={e => handleInputFocus(e, f.key)}
-                          onBlur={handleInputBlur}
-                          onKeyDown={e => handleFieldKeyDown(e, fi)}
-                          ref={el => { fieldRefs.current[f.key] = el; }}
-                          placeholder="1-12" />
-                      ) : isGender ? (
-                        <div className="flex gap-1.5"
-                          onKeyDown={e => {
-                            if (e.key.toLowerCase() === 'm') { setFieldVal(f.key, 'M'); e.preventDefault(); handleAccept(f.key); focusNextField(fi); }
-                            else if (e.key.toLowerCase() === 'f') { setFieldVal(f.key, 'F'); e.preventDefault(); handleAccept(f.key); focusNextField(fi); }
-                            else handleFieldKeyDown(e, fi);
-                          }}>
-                          {['M', 'F'].map(g => (
-                            <button key={g} onClick={() => { setFieldVal(f.key, g); handleAccept(f.key); focusNextField(fi); }}
-                              aria-pressed={val === g}
-                              tabIndex={fi === 0 ? 0 : -1}
-                              className={`
-                                px-4 py-[5px] rounded text-sm font-semibold cursor-pointer border
-                                ${val === g
-                                  ? 'bg-violet-500/20 border-[var(--accent-violet)] text-[var(--accent-cyan)]'
-                                  : 'bg-black/15 border-[var(--color-border)] text-[var(--text-secondary)]'
-                                }
-                                ${isEdited ? 'border-[var(--accent-amber)]' : ''}
-                              `}
-                            >{g}</button>
-                          ))}
-                        </div>
-                      ) : isPct ? (
-                        <Input type="number" min="0" max="100"
-                          className={`text-[15px] text-center font-semibold ${isEdited ? 'field-edited-input' : ''}`}
-                          value={val} onChange={e => setFieldVal(f.key, e.target.value)}
-                          onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
-                          onKeyDown={e => handleFieldKeyDown(e, fi)}
-                          ref={el => { fieldRefs.current[f.key] = el; }} />
-                      ) : isRank ? (
-                        <Input type="number" min="1"
-                          className={`text-[15px] font-semibold ${isEdited ? 'field-edited-input' : ''}`}
-                          value={val} onChange={e => setFieldVal(f.key, e.target.value)}
-                          onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
-                          onKeyDown={e => handleFieldKeyDown(e, fi)}
-                          ref={el => { fieldRefs.current[f.key] = el; }} />
-                      ) : isDob ? (
-                        <Input type="text" placeholder="DD/MM/YYYY"
-                          className={`text-[15px] font-mono font-semibold tracking-[1px] ${isEdited ? 'field-edited-input' : ''}`}
-                          value={val}
-                          onChange={e => {
-                            const digits = e.target.value.replace(/\D/g, '').slice(0, 8);
-                            let formatted = '';
-                            if (digits.length > 0) formatted = digits.slice(0, 2);
-                            if (digits.length > 2) formatted += '/' + digits.slice(2, 4);
-                            if (digits.length > 4) formatted += '/' + digits.slice(4, 8);
-                            setFieldVal(f.key, formatted);
-                          }}
-                          onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
-                          onKeyDown={e => { if (e.key === 'Backspace' && val.endsWith('/')) setFieldVal(f.key, val.slice(0, -1)); handleFieldKeyDown(e, fi); }}
-                          ref={el => { fieldRefs.current[f.key] = el; }} />
-                      ) : isRoll ? (
-                        <Input ref={el => { rollRef.current = el; fieldRefs.current[f.key] = el; }}
-                          className={`text-[16px] font-mono font-bold ${isEdited ? 'field-edited-input' : ''}`}
-                          value={val} onChange={e => setFieldVal(f.key, e.target.value)} placeholder="Roll #"
-                          onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
-                          onKeyDown={e => handleFieldKeyDown(e, fi)} />
-                      ) : (
-                        <Input className={`text-[15px] ${isEdited ? 'field-edited-input' : ''}`}
-                          value={val} onChange={e => setFieldVal(f.key, e.target.value)}
-                          onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
-                          onKeyDown={e => handleFieldKeyDown(e, fi)}
-                          ref={el => { fieldRefs.current[f.key] = el; }} />
-                      )}
-                      {isEdited && !accepted && <span className="text-[10px] text-[var(--accent-amber)] mt-0.5 block">✎ edited</span>}
-                    </div>
-                    <div className="ml-auto flex items-center gap-2 shrink-0">
-                      <span className={`text-[14px] font-bold min-w-[36px] text-right ${confidence >= 0.9 ? 'text-emerald-500' : confidence >= 0.7 ? 'text-amber-500' : 'text-rose-500'}`}>{Math.round(confidence * 100)}%</span>
-                      {reprocessingField === f.key ? (
-                        <Loader2 size={16} className="animate-spin text-[var(--accent-cyan)]" />
-                      ) : (
-                        <Button variant="outline" size="xs"
-                          onClick={() => handleReprocessField(f.key)}
-                          aria-label="Re-run OCR on this field"
-                          className="min-w-[24px] opacity-60">⟳</Button>
-                      )}
-                      {accepted ? (
-                        <Check size={20} className="text-[var(--accent-emerald)]" />
-                      ) : (
-                        <Button variant="outline" size="xs"
-                          onClick={() => handleAccept(f.key)}
-                          aria-label="Accept field value"
-                          className="min-w-[24px]">✓</Button>
-                      )}
-                    </div>
+                  )}
+                  <div className={cn(
+                    "absolute top-2 right-2 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md",
+                    getConfColor(confidence), getConfBg(confidence)
+                  )}>
+                    {Math.round(confidence * 100)}%
                   </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+                </div>
+
+                <div className="p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--text-secondary)]">
+                      <Icon size={13} className="text-[var(--text-muted)]" />
+                      {f.label}
+                    </div>
+                    {accepted && (
+                      <Check size={14} className="text-[var(--accent-emerald)] shrink-0" />
+                    )}
+                  </div>
+
+                  <div>
+                    {isClass ? (
+                      <Input type="number" min="1" max="12"
+                        className={`text-[14px] text-center font-semibold premium-input ${isEdited ? 'field-edited-input' : ''}`}
+                        value={val} onChange={e => setFieldVal(f.key, e.target.value)}
+                        onFocus={e => handleInputFocus(e, f.key)}
+                        onBlur={handleInputBlur}
+                        onKeyDown={e => handleFieldKeyDown(e, fi)}
+                        ref={el => { fieldRefs.current[f.key] = el; }}
+                        placeholder="1-12" />
+                    ) : isGender ? (
+                      <div className="flex gap-1.5"
+                        onKeyDown={e => {
+                          if (e.key.toLowerCase() === 'm') { setFieldVal(f.key, 'M'); e.preventDefault(); handleAccept(f.key); focusNextField(fi); }
+                          else if (e.key.toLowerCase() === 'f') { setFieldVal(f.key, 'F'); e.preventDefault(); handleAccept(f.key); focusNextField(fi); }
+                          else handleFieldKeyDown(e, fi);
+                        }}>
+                        {['M', 'F'].map(g => (
+                          <button key={g} onClick={() => { setFieldVal(f.key, g); handleAccept(f.key); focusNextField(fi); }}
+                            aria-pressed={val === g}
+                            tabIndex={fi === 0 ? 0 : -1}
+                            className={`
+                              flex-1 py-[5px] rounded text-sm font-semibold cursor-pointer border transition-colors
+                              ${val === g
+                                ? 'bg-[var(--accent-violet)]/20 border-[var(--accent-violet)] text-[var(--accent-cyan)]'
+                                : 'bg-transparent border-[var(--color-border)] text-[var(--text-secondary)] hover:border-[var(--accent-violet)]/40'
+                              }
+                              ${isEdited ? 'border-[var(--accent-amber)]' : ''}
+                            `}
+                          >{g}</button>
+                        ))}
+                      </div>
+                    ) : isPct ? (
+                      <Input type="number" min="0" max="100"
+                        className={`text-[14px] text-center font-semibold premium-input ${isEdited ? 'field-edited-input' : ''}`}
+                        value={val} onChange={e => setFieldVal(f.key, e.target.value)}
+                        onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                        onKeyDown={e => handleFieldKeyDown(e, fi)}
+                        ref={el => { fieldRefs.current[f.key] = el; }} />
+                    ) : isRank ? (
+                      <Input type="number" min="1"
+                        className={`text-[14px] font-semibold premium-input ${isEdited ? 'field-edited-input' : ''}`}
+                        value={val} onChange={e => setFieldVal(f.key, e.target.value)}
+                        onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                        onKeyDown={e => handleFieldKeyDown(e, fi)}
+                        ref={el => { fieldRefs.current[f.key] = el; }} />
+                    ) : isDob ? (
+                      <Input type="text" placeholder="DD/MM/YYYY"
+                        className={`text-[14px] font-mono font-semibold tracking-[1px] premium-input ${isEdited ? 'field-edited-input' : ''}`}
+                        value={val}
+                        onChange={e => {
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 8);
+                          let formatted = '';
+                          if (digits.length > 0) formatted = digits.slice(0, 2);
+                          if (digits.length > 2) formatted += '/' + digits.slice(2, 4);
+                          if (digits.length > 4) formatted += '/' + digits.slice(4, 8);
+                          setFieldVal(f.key, formatted);
+                        }}
+                        onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                        onKeyDown={e => { if (e.key === 'Backspace' && val.endsWith('/')) setFieldVal(f.key, val.slice(0, -1)); handleFieldKeyDown(e, fi); }}
+                        ref={el => { fieldRefs.current[f.key] = el; }} />
+                    ) : isRoll ? (
+                      <Input ref={el => { rollRef.current = el; fieldRefs.current[f.key] = el; }}
+                        className={`text-[15px] font-mono font-bold premium-input ${isEdited ? 'field-edited-input' : ''}`}
+                        value={val} onChange={e => setFieldVal(f.key, e.target.value)} placeholder="Roll #"
+                        onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                        onKeyDown={e => handleFieldKeyDown(e, fi)} />
+                    ) : (
+                      <Input className={`text-[14px] premium-input ${isEdited ? 'field-edited-input' : ''}`}
+                        value={val} onChange={e => setFieldVal(f.key, e.target.value)}
+                        onFocus={e => handleInputFocus(e, f.key)} onBlur={handleInputBlur}
+                        onKeyDown={e => handleFieldKeyDown(e, fi)}
+                        ref={el => { fieldRefs.current[f.key] = el; }} />
+                    )}
+                    {isEdited && !accepted && (
+                      <span className="text-[10px] text-[var(--accent-amber)] mt-1 block font-medium">✎ edited</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pt-1">
+                    {reprocessingField === f.key ? (
+                      <Loader2 size={14} className="animate-spin text-[var(--accent-cyan)]" />
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => handleReprocessField(f.key)}
+                        aria-label="Re-run OCR on this field"
+                        className="h-6 w-6 p-0 text-[var(--text-muted)] hover:text-[var(--accent-cyan)]"
+                        title="Re-run OCR"
+                      >
+                        ⟳
+                      </Button>
+                    )}
+                    {!accepted && (
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={() => handleAccept(f.key)}
+                        aria-label="Accept field value"
+                        className="h-7 text-[10px] font-semibold border-[var(--accent-emerald)]/30 text-[var(--accent-emerald)] hover:bg-[var(--accent-emerald)]/10 transition-all"
+                      >
+                        <Check size={11} className="mr-1" /> Accept
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
         <SdqGrid docId={doc.id} responses={details.responses || {}} checkboxConf={checkboxConf} multiTicks={multiTicks}
           v2Trust={v2Trust}

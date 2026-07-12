@@ -7,6 +7,7 @@ Always stores the complete raw response for future re-processing.
 import json
 from datetime import datetime
 from typing import Optional, Any
+from app.geometry.polygon import polygon_bounds
 from app.core.types import (
     NormalizedAzureResponse,
     NormalizedPage,
@@ -263,14 +264,6 @@ def _normalize_from_dict(doc_id: str, raw: dict) -> NormalizedAzureResponse:
         raw_response=raw,
         model_id=model_id,
     )
-
-def polygon_bounds(polygon: list[float]) -> list[float]:
-    if len(polygon) < 8:
-        return [0.0, 0.0, 0.0, 0.0]
-    xs = polygon[0::2]
-    ys = polygon[1::2]
-    return [min(xs), min(ys), max(xs), max(ys)]
-
 
 def _sdk_to_dict(result: Any) -> dict:
     """Convert an Azure SDK result to a serializable dict."""

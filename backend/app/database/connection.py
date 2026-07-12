@@ -89,6 +89,13 @@ def init_db():
                 )
             """)
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    email TEXT PRIMARY KEY,
+                    token TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS documents (
                     id TEXT PRIMARY KEY,
                     filename TEXT NOT NULL,
@@ -222,6 +229,13 @@ def init_db():
                     role TEXT NOT NULL DEFAULT 'user',
                     must_change_password INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    email TEXT PRIMARY KEY,
+                    token TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
                 )
             """)
             cur.execute("""
@@ -665,13 +679,15 @@ def get_corrections_log() -> list:
 
 def delete_document(doc_id: str, user_id: str | None = None):
     from app.image.storage import delete_document_files
+    from app.auth import get_current_role
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        if user_id:
+        is_admin = get_current_role() == "admin"
+        if user_id and not is_admin:
             cur.execute(
-                "DELETE FROM documents WHERE id = %s AND user_id = %s" if USE_POSTGRES else
-                "DELETE FROM documents WHERE id = ? AND user_id = ?", (doc_id, user_id)
+                "DELETE FROM documents WHERE id = %s AND (user_id = %s OR user_id IS NULL OR user_id = '')" if USE_POSTGRES else
+                "DELETE FROM documents WHERE id = ? AND (user_id = ? OR user_id IS NULL OR user_id = '')", (doc_id, user_id)
             )
         else:
             cur.execute(
@@ -685,15 +701,19 @@ def delete_document(doc_id: str, user_id: str | None = None):
 
 
 def bulk_delete_documents(doc_ids: list) -> int:
-    from app.auth import get_current_user_id
+    from app.auth import get_current_user_id, get_current_role
     from app.image.storage import delete_document_files
     uid = get_current_user_id()
+    is_admin = get_current_role() == "admin"
     conn = get_db_connection()
     try:
         cur = conn.cursor()
         placeholders = ",".join("%s" if USE_POSTGRES else "?" for _ in doc_ids)
-        if uid:
-            cur.execute(f"DELETE FROM documents WHERE id IN ({placeholders}) AND user_id = {'%s' if USE_POSTGRES else '?'}", [*doc_ids, uid])
+        if uid and not is_admin:
+            cur.execute(
+                f"DELETE FROM documents WHERE id IN ({placeholders}) AND (user_id = {'%s' if USE_POSTGRES else '?'} OR user_id IS NULL OR user_id = '')",
+                [*doc_ids, uid]
+            )
         else:
             cur.execute(f"DELETE FROM documents WHERE id IN ({placeholders})", doc_ids)
         conn.commit()

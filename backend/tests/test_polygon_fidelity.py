@@ -10,7 +10,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.processing.azure_processor import normalize_azure_response, polygon_bounds
+from app.processing.azure_processor import normalize_azure_response
+from app.geometry.polygon import polygon_bounds
 from app.core.types import NormalizedElement
 
 
