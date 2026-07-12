@@ -44,7 +44,7 @@ const MAIN_FIELDS = [
 ];
 
 const KBD = ({ children }: { children: React.ReactNode }) => (
-  <kbd style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: '3px', fontSize: '10px', fontFamily: 'inherit', border: '1px solid var(--color-border)' }}>{children}</kbd>
+  <kbd className="bg-white/[0.06] px-1.5 py-0.5 rounded-[3px] text-[10px] border border-[var(--color-border)]">{children}</kbd>
 );
 
 export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onDirtyChange, reviewIndex, totalReview, onClose, onVerify, onReprocess, onNext, onPrev, saving }) => {
@@ -79,8 +79,8 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
           : k === 'class' ? { class: result.value }
           : k === 'dob' ? { dob: result.value }
           : k === 'gender' ? { gender: result.value }
-          : { academic_scores: { ...academic, [k]: result.value } };
-        onDetailsChange({ ...details, ...updatedField(key), confidence_scores: newConfScores });
+          : { academic_scores: { ...academic, [k]: result.value } as typeof details.academic_scores };
+        onDetailsChange({ ...details, ...updatedField(key), confidence_scores: newConfScores } as DocumentDetails);
         show(result.message || `Updated to "${result.value}"`, 'success');
       } else {
         show(result.message || 'Kept existing value (higher confidence)', 'success');
@@ -95,7 +95,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
   const conf = details.confidence_scores?.ocr || {};
   const checkboxConf = details.confidence_scores?.checkbox || {};
   const multiTicks: Record<string, number[]> = details.confidence_scores?.multi_ticks || {};
-  const academic = details.academic_scores || {} as any;
+  const academic: Record<string, string> = details.academic_scores || {};
   const v2Trust = details.confidence_scores?.v2_trust || {};
 
   const fieldConf = (key: string): number => {
@@ -126,7 +126,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
     else if (key === 'class') onDetailsChange({ ...details, class: val });
     else if (key === 'dob') onDetailsChange({ ...details, dob: val });
     else if (key === 'gender') onDetailsChange({ ...details, gender: val });
-    else onDetailsChange({ ...details, academic_scores: { ...academic, [key]: val } });
+    else onDetailsChange({ ...details, academic_scores: { ...academic, [key]: val } as typeof details.academic_scores });
   };
 
   const handleAccept = useCallback((key: string) => {
@@ -211,6 +211,14 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         onVerify();
+      }
+      if (e.altKey && e.key === '1') {
+        e.preventDefault();
+        setPageViewer(1);
+      }
+      if (e.altKey && e.key === '2') {
+        e.preventDefault();
+        setPageViewer(2);
       }
     };
     window.addEventListener('keydown', handler);
@@ -300,7 +308,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 {saving ? ' Saving...' : ' Save & Next'}
               </Button>
-              <Button variant="outline" size="sm" style={{ color: 'var(--accent-amber)' }} onClick={onReprocess}>
+              <Button variant="outline" size="sm" className="text-[var(--accent-amber)]" onClick={onReprocess}>
                 <RotateCcw size={14} /> Reprocess
               </Button>
               <Button variant="outline" size="sm" onClick={onPrev} disabled={reviewIndex === 0}>
@@ -309,7 +317,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
               <Button variant="outline" size="sm" onClick={onNext}>
                 {reviewIndex + 1 < totalReview ? 'Next' : 'Close'} <ArrowRight size={14} />
               </Button>
-              <Button variant="ghost" size="sm" onClick={onNext} style={{ color: 'var(--text-muted)' }}>
+              <Button variant="ghost" size="sm" onClick={onNext} className="text-[var(--text-muted)]">
                 Skip <ArrowRight size={14} />
               </Button>
             </div>
@@ -330,7 +338,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
 
         <Card className="mb-5 !py-0">
           <CardContent className="!p-0">
-            <div className="grid grid-cols-2">
+            <div className="grid grid-cols-1 lg:grid-cols-2">
               {activeFields.map((f, fi) => {
                 const val = getFieldVal(f.key);
                 const accepted = fieldAccepted[f.key];
@@ -341,7 +349,6 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
                 const isDob = f.key === 'dob';
                 const isRoll = f.key === 'roll_number';
                 const isRank = f.key === 'rank';
-                const confColor = confidence >= 0.9 ? 'var(--accent-emerald)' : confidence >= 0.7 ? 'var(--accent-amber)' : '#f43f5e';
                 const isEdited = val !== '' && origValuesRef.current[f.key] !== undefined && val !== origValuesRef.current[f.key];
                 const Icon = f.icon;
                 return (
@@ -359,10 +366,9 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
                       {v2Trust[f.key]?.bbox ? (
                         <CanvasCrop
                           pageUrl={api.getPageUrl(doc.id, v2Trust[f.key]?.page || 1)}
-                          bbox={v2Trust[f.key].bbox}
-                          polygon={v2Trust[f.key].polygon}
-                          style={{ width: '220px', height: '54px', objectFit: 'contain', background: 'rgba(0,0,0,0.3)' }}
-                          className="rounded block cursor-zoom-in"
+                          bbox={v2Trust[f.key]!.bbox as number[]}
+                          polygon={v2Trust[f.key]!.polygon as number[] | undefined}
+                          className="w-[220px] h-[54px] object-contain bg-black/30 rounded block cursor-zoom-in"
                           onDataUrl={url => { cropDataUrls.current[f.key] = url; }}
                         />
                       ) : (
@@ -394,13 +400,15 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
                             <button key={g} onClick={() => { setFieldVal(f.key, g); handleAccept(f.key); focusNextField(fi); }}
                               aria-pressed={val === g}
                               tabIndex={fi === 0 ? 0 : -1}
-                              style={{
-                                padding: '5px 16px', borderRadius: '4px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
-                                border: '1px solid',
-                                background: val === g ? 'rgba(139,92,246,0.2)' : 'rgba(0,0,0,0.15)',
-                                borderColor: val === g ? 'var(--accent-violet)' : (isEdited ? 'var(--accent-amber)' : 'var(--color-border)'),
-                                color: val === g ? 'var(--accent-cyan)' : 'var(--text-secondary)',
-                              }}>{g}</button>
+                              className={`
+                                px-4 py-[5px] rounded text-sm font-semibold cursor-pointer border
+                                ${val === g
+                                  ? 'bg-violet-500/20 border-[var(--accent-violet)] text-[var(--accent-cyan)]'
+                                  : 'bg-black/15 border-[var(--color-border)] text-[var(--text-secondary)]'
+                                }
+                                ${isEdited ? 'border-[var(--accent-amber)]' : ''}
+                              `}
+                            >{g}</button>
                           ))}
                         </div>
                       ) : isPct ? (
@@ -448,15 +456,14 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
                       {isEdited && !accepted && <span className="text-[10px] text-[var(--accent-amber)] mt-0.5 block">✎ edited</span>}
                     </div>
                     <div className="ml-auto flex items-center gap-2 shrink-0">
-                      <span className="text-[14px] font-bold min-w-[36px] text-right" style={{ color: confColor }}>{Math.round(confidence * 100)}%</span>
+                      <span className={`text-[14px] font-bold min-w-[36px] text-right ${confidence >= 0.9 ? 'text-emerald-500' : confidence >= 0.7 ? 'text-amber-500' : 'text-rose-500'}`}>{Math.round(confidence * 100)}%</span>
                       {reprocessingField === f.key ? (
                         <Loader2 size={16} className="animate-spin text-[var(--accent-cyan)]" />
                       ) : (
                         <Button variant="outline" size="xs"
                           onClick={() => handleReprocessField(f.key)}
                           aria-label="Re-run OCR on this field"
-                          style={{ opacity: 0.6 }}
-                          className="min-w-[24px]">⟳</Button>
+                          className="min-w-[24px] opacity-60">⟳</Button>
                       )}
                       {accepted ? (
                         <Check size={20} className="text-[var(--accent-emerald)]" />
@@ -487,7 +494,7 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
       </div>
 
       <ZoomPopup zoom={zoomImg} />
-      {pageViewer && <PageViewer docId={doc.id} pageNum={pageViewer} onClose={() => setPageViewer(null)} />}
+      {pageViewer && <PageViewer docId={doc.id} pageNum={pageViewer} onClose={() => setPageViewer(null)} onChangePage={setPageViewer} />}
     </div>
   );
 };

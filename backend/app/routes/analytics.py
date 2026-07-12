@@ -334,7 +334,7 @@ def get_summary_stats(
         return {
             "total_forms": total_forms,
             "verified_forms": verified_count,
-            "needs_review": pending_count,
+            "pending_review": pending_count,
             "processed_today": processed_today,
             "average_confidence": round(avg_confidence * 100, 1),
             "data_completeness": round(completeness, 1),
@@ -378,14 +378,14 @@ def get_demographics_analytics(
         
         # Age x Gender Heatmap
         heatmap = []
-        genders = ["M", "F", "O"]
+        gender_map = {"M": "Male", "F": "Female", "O": "Other"}
         ages = sorted(df["age"].dropna().unique())
         for age in ages:
             age_str = f"{int(age)} Years"
-            row_data = {"age": age_str}
-            for g in genders:
+            row_data: dict = {"age": age_str}
+            for g, label in gender_map.items():
                 count = len(df[(df["age"] == age) & (df["gender"] == g)])
-                row_data[g] = count
+                row_data[label] = count
             heatmap.append(row_data)
             
         return {
@@ -709,44 +709,68 @@ def get_processing_analytics(
 
         uid = get_current_user_id()
 
-        # Processed today — per-hour breakdown
+        # Build extra WHERE clauses for class/gender/date filters
+        extra_joins = ""
+        extra_wheres = []
+        extra_params = []
+        if class_filter or gender or date_from or date_to:
+            extra_joins = " LEFT JOIN form_data fd ON d.id = fd.document_id"
+        if class_filter:
+            extra_wheres.append("fd.class = ?")
+            extra_params.append(class_filter)
+        if gender:
+            extra_wheres.append("fd.gender = ?")
+            extra_params.append(gender)
+        if date_from:
+            extra_wheres.append("d.created_at >= ?")
+            extra_params.append(date_from + "T00:00:00")
+        if date_to:
+            extra_wheres.append("d.created_at <= ?")
+            extra_params.append(date_to + "T23:59:59")
+        extra_where_sql = " AND " + " AND ".join(extra_wheres) if extra_wheres else ""
+
         today_str = date.today().isoformat()
+        base_today_params = [f"{today_str}%"]
         if uid:
-            cursor.execute("""
-                SELECT substr(created_at, 12, 2) as hour, COUNT(*) as count
-                FROM documents
-                WHERE created_at LIKE ? AND user_id = ?
+            base_today_params.append(uid)
+
+        # Processed today — per-hour breakdown
+        if uid:
+            cursor.execute(f"""
+                SELECT substr(d.created_at, 12, 2) as hour, COUNT(*) as count
+                FROM documents d{extra_joins}
+                WHERE d.created_at LIKE ? AND d.user_id = ?{extra_where_sql}
                 GROUP BY hour
                 ORDER BY hour
-            """, (f"{today_str}%", uid))
+            """, base_today_params + extra_params)
         else:
-            cursor.execute("""
-                SELECT substr(created_at, 12, 2) as hour, COUNT(*) as count
-                FROM documents
-                WHERE created_at LIKE ?
+            cursor.execute(f"""
+                SELECT substr(d.created_at, 12, 2) as hour, COUNT(*) as count
+                FROM documents d{extra_joins}
+                WHERE d.created_at LIKE ?{extra_where_sql}
                 GROUP BY hour
                 ORDER BY hour
-            """, (f"{today_str}%",))
+            """, [f"{today_str}%"] + extra_params)
 
         hourly = cursor.fetchall()
         hourly_breakdown = [{"hour": f"{r[0]}:00", "count": r[1]} for r in hourly]
 
-        # Escalation level distribution across ALL documents (escalation_level lives on documents, NOT form_data)
+        # Escalation level distribution
         if uid:
-            cursor.execute("""
-                SELECT escalation_level, COUNT(*) as count
-                FROM documents
-                WHERE user_id = ?
-                GROUP BY escalation_level
-            """, (uid,))
+            cursor.execute(f"""
+                SELECT d.escalation_level, COUNT(*) as count
+                FROM documents d{extra_joins}
+                WHERE d.user_id = ?{extra_where_sql}
+                GROUP BY d.escalation_level
+            """, [uid] + extra_params)
         else:
-            cursor.execute("""
-                SELECT escalation_level, COUNT(*) as count
-                FROM documents
-                GROUP BY escalation_level
-            """)
+            cursor.execute(f"""
+                SELECT d.escalation_level, COUNT(*) as count
+                FROM documents d{extra_joins}
+                WHERE 1=1{extra_where_sql}
+                GROUP BY d.escalation_level
+            """, extra_params)
         escalation_rows = cursor.fetchall()
-        # Ensure all four levels are present even if zero
         level_counts = {"level_1": 0, "level_2": 0, "level_3": 0, "level_4": 0}
         for r in escalation_rows:
             lev = r[0] or "level_1"
@@ -754,20 +778,21 @@ def get_processing_analytics(
                 level_counts[lev] = r[1]
         escalation_dist = [{"level": k, "count": v} for k, v in level_counts.items()]
 
-        # Status distribution for context (so frontend can show scope)
+        # Status distribution for context
         if uid:
-            cursor.execute("""
-                SELECT status, COUNT(*) as count
-                FROM documents
-                WHERE user_id = ?
-                GROUP BY status
-            """, (uid,))
+            cursor.execute(f"""
+                SELECT d.status, COUNT(*) as count
+                FROM documents d{extra_joins}
+                WHERE d.user_id = ?{extra_where_sql}
+                GROUP BY d.status
+            """, [uid] + extra_params)
         else:
-            cursor.execute("""
-                SELECT status, COUNT(*) as count
-                FROM documents
-                GROUP BY status
-            """)
+            cursor.execute(f"""
+                SELECT d.status, COUNT(*) as count
+                FROM documents d{extra_joins}
+                WHERE 1=1{extra_where_sql}
+                GROUP BY d.status
+            """, extra_params)
         status_rows = cursor.fetchall()
         status_counts = {r[0]: r[1] for r in status_rows}
 
@@ -939,20 +964,30 @@ def get_per_field_confidence(
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        extra_wheres = ["d.status IN ('verified', 'needs_review')"]
+        extra_params = []
         if uid:
-            cursor.execute("""
-                SELECT fd.confidence_scores
-                FROM form_data fd
-                JOIN documents d ON fd.document_id = d.id
-                WHERE d.status IN ('verified', 'needs_review') AND d.user_id = ?
-            """, (uid,))
-        else:
-            cursor.execute("""
-                SELECT fd.confidence_scores
-                FROM form_data fd
-                JOIN documents d ON fd.document_id = d.id
-                WHERE d.status IN ('verified', 'needs_review')
-            """)
+            extra_wheres.append("d.user_id = ?")
+            extra_params.append(uid)
+        if class_filter:
+            extra_wheres.append("fd.class = ?")
+            extra_params.append(class_filter)
+        if gender:
+            extra_wheres.append("fd.gender = ?")
+            extra_params.append(gender)
+        if date_from:
+            extra_wheres.append("d.created_at >= ?")
+            extra_params.append(date_from + "T00:00:00")
+        if date_to:
+            extra_wheres.append("d.created_at <= ?")
+            extra_params.append(date_to + "T23:59:59")
+
+        cursor.execute(f"""
+            SELECT fd.confidence_scores
+            FROM form_data fd
+            JOIN documents d ON fd.document_id = d.id
+            WHERE {" AND ".join(extra_wheres)}
+        """, extra_params)
         rows = cursor.fetchall()
 
         field_confs: Dict[str, list] = {}

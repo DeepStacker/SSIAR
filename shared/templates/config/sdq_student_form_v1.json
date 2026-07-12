@@ -150,7 +150,7 @@
       "anchor": "टिप्पणी",
       "relationship": "below",
       "offset_x": 0,
-      "offset_y": -20,
+      "offset_y": 0,
       "width": 600,
       "height": 150,
       "required": false,

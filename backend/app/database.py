@@ -176,9 +176,26 @@ def init_db():
                     status TEXT NOT NULL DEFAULT 'pending',
                     reviewer_id TEXT,
                     reviewed_at TEXT,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    page_number INTEGER,
+                    confidence_score REAL,
+                    error_details TEXT
                 )
             """)
+            # PostgreSQL migrations
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'review_tasks'
+            """)
+            pg_cols = [col[0] for col in cur.fetchall()]
+            if pg_cols:
+                if "page_number" not in pg_cols:
+                    cur.execute("ALTER TABLE review_tasks ADD COLUMN page_number INTEGER")
+                if "confidence_score" not in pg_cols:
+                    cur.execute("ALTER TABLE review_tasks ADD COLUMN confidence_score REAL")
+                if "error_details" not in pg_cols:
+                    cur.execute("ALTER TABLE review_tasks ADD COLUMN error_details TEXT")
         else:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -287,6 +304,9 @@ def init_db():
                     reviewer_id TEXT,
                     reviewed_at TEXT,
                     created_at TEXT NOT NULL,
+                    page_number INTEGER,
+                    confidence_score REAL,
+                    error_details TEXT,
                     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
                 )
             """)
@@ -313,6 +333,25 @@ def _run_migrations(cursor):
     if "user_id" not in columns:
         try:
             cursor.execute("ALTER TABLE documents ADD COLUMN user_id TEXT REFERENCES users(id)")
+        except Exception:
+            pass
+
+    # Migrate review_tasks in SQLite
+    cursor.execute("PRAGMA table_info(review_tasks)")
+    rt_columns = [col[1] for col in cursor.fetchall()]
+    if "page_number" not in rt_columns:
+        try:
+            cursor.execute("ALTER TABLE review_tasks ADD COLUMN page_number INTEGER")
+        except Exception:
+            pass
+    if "confidence_score" not in rt_columns:
+        try:
+            cursor.execute("ALTER TABLE review_tasks ADD COLUMN confidence_score REAL")
+        except Exception:
+            pass
+    if "error_details" not in rt_columns:
+        try:
+            cursor.execute("ALTER TABLE review_tasks ADD COLUMN error_details TEXT")
         except Exception:
             pass
 
@@ -595,23 +634,14 @@ def get_corrections_log() -> list:
 
 
 def delete_document(doc_id: str):
-    from app.auth import get_current_user_id
     from app.image.storage import delete_document_files
-    uid = get_current_user_id()
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        if uid:
-            cur.execute(
-                "DELETE FROM documents WHERE id = %s AND user_id = %s" if USE_POSTGRES else
-                "DELETE FROM documents WHERE id = ? AND user_id = ?",
-                (doc_id, uid)
-            )
-        else:
-            cur.execute(
-                "DELETE FROM documents WHERE id = %s" if USE_POSTGRES else
-                "DELETE FROM documents WHERE id = ?", (doc_id,)
-            )
+        cur.execute(
+            "DELETE FROM documents WHERE id = %s" if USE_POSTGRES else
+            "DELETE FROM documents WHERE id = ?", (doc_id,)
+        )
         conn.commit()
     finally:
         put_conn(conn)

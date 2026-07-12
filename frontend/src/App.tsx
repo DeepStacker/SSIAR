@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Loader2, FileText, Clock, AlertTriangle, Check, X } from 'lucide-react';
 import type { Document, DocumentDetails, QueueStatus, TabType, SortKey, ReportFormat, ViewMode } from './api';
+import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from './api';
 import { api, clearApiCache, isTokenExpired, clearAuth, scheduleTokenRefresh } from './api';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { LoginPage } from './components/LoginPage';
 import { StatCards } from './components/StatCards';
 import { UploadZone } from './components/UploadZone';
@@ -16,9 +18,12 @@ import { VerifiedView } from './components/VerifiedView';
 import { ProcessingView } from './components/ProcessingView';
 import { FailedView } from './components/FailedView';
 import { AnalyticsView } from './components/AnalyticsView';
+import { DlqView } from './components/DlqView';
 import { Toast } from './components/Toast';
-import { Button } from '@/components/ui/button';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { Card } from '@/components/ui/card';
+
 
 
 function AppInner() {
@@ -31,6 +36,7 @@ function AppInner() {
     } else {
       scheduleTokenRefresh();
     }
+    api.recoverStuckDocuments().catch(() => {});
   }, []);
 
   // Data
@@ -45,6 +51,9 @@ function AppInner() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reviewIndex, setReviewIndex] = useState(0);
+
+  // Sidebar
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Upload
   const [uploading, setUploading] = useState(false);
@@ -68,6 +77,7 @@ function AppInner() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
+    url.searchParams.delete('doc_id');
     if (view === 'dashboard') {
       url.searchParams.delete('view');
     } else {
@@ -91,17 +101,23 @@ function AppInner() {
   const [analyticsClassFilter, setAnalyticsClassFilter] = useState<string>('all');
   const [analyticsGenderFilter, setAnalyticsGenderFilter] = useState<string>('all');
 
-  const initialLoadDone = useRef(false);
+  // Confirm dialog
+  const [confirmState, setConfirmState] = useState<{ title: string; description: string; confirmLabel?: string; confirmVariant?: 'default' | 'destructive'; onConfirm: () => void } | null>(null);
 
-  const needsReview = documents.filter(d => d.status === 'needs_review');
-  const verified = documents.filter(d => d.status === 'verified');
-  const processing = documents.filter(d => d.status === 'processing');
-  const failed = documents.filter(d => d.status === 'failed');
+  const initialLoadDone = useRef(false);
+  const loadingRef = useRef(false);
+
+  const needsReview = documents.filter(d => STATUS_REVIEW.has(d.status));
+  const verified = documents.filter(d => STATUS_VERIFIED.has(d.status));
+  const processing = documents.filter(d => STATUS_PROCESSING.has(d.status));
+  const failed = documents.filter(d => STATUS_FAILED.has(d.status));
   const escBreakdown = queueStatus?.by_escalation || null;
 
   // ---- Data loading ----
   const loadAll = useCallback(async () => {
-    clearApiCache()
+    if (loadingRef.current) return;
+    clearApiCache();
+    loadingRef.current = true;
     setLoading(true);
     try {
       const [docs, qs] = await Promise.all([
@@ -115,6 +131,7 @@ function AppInner() {
       show("Failed to load documents from backend", 'error');
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   }, [show]);
 
@@ -134,16 +151,15 @@ function AppInner() {
             const { event: eventType, data } = parsed;
             if (eventType === 'document_updated' && data?.doc_id) {
               clearApiCache();
-              api.getDocumentDetails(data.doc_id)
-                .then(updated => {
-                  setDocuments(prev => prev.map(d => d.id === data.doc_id ? { ...d, ...updated } : d));
-                  setSelectedDoc(prev => prev?.id === data.doc_id ? { ...prev, ...updated } as Document : prev);
-                })
-                .catch(() => {});
-              api.getQueueStatus().then(qs => setQueueStatus(qs)).catch(() => {});
+              if (selectedDoc?.id === data.doc_id) {
+                api.getDocumentDetails(data.doc_id)
+                  .then(updated => setSelectedDoc(prev => prev?.id === data.doc_id ? { ...prev, ...updated } as Document : prev))
+                  .catch(() => {});
+              }
+              loadAll();
             } else if (eventType === 'document_deleted' && data?.doc_id) {
               setDocuments(prev => prev.filter(d => d.id !== data.doc_id));
-              api.getQueueStatus().then(qs => setQueueStatus(qs)).catch(() => {});
+              loadAll();
             } else if (eventType !== 'connected') {
               loadAll();
             }
@@ -186,8 +202,17 @@ function AppInner() {
     window.history.replaceState({}, '', url.toString());
   }, [selectedDoc?.id]);
 
+  // Sync selectedDoc with latest documents list so processing view transitions correctly
+  useEffect(() => {
+    if (!selectedDoc) return;
+    const match = documents.find(d => d.id === selectedDoc.id);
+    if (match && match.status !== selectedDoc.status) {
+      setSelectedDoc(match);
+    }
+  }, [documents, selectedDoc?.id]);
+
   // ---- Document helpers ----
-  const loadDocDetails = async (doc: Document) => {
+  const loadDocDetails = useCallback(async (doc: Document) => {
     setSelectedDoc(doc);
     setDirty(false);
     setDetailsLoading(true);
@@ -202,10 +227,10 @@ function AppInner() {
     } finally {
       setDetailsLoading(false);
     }
-  };
+  }, [show]);
 
-  const handleOpenDoc = (doc: Document) => {
-    if (doc.status === 'processing') {
+  const handleOpenDoc = useCallback((doc: Document) => {
+    if (STATUS_PROCESSING.has(doc.status)) {
       setDirty(false);
       setSelectedDoc(doc);
       setDocDetails(null);
@@ -214,42 +239,92 @@ function AppInner() {
     const idx = needsReview.findIndex(d => d.id === doc.id);
     setReviewIndex(Math.max(0, idx));
     loadDocDetails(doc);
-  };
+  }, [needsReview, loadDocDetails]);
 
-  const closeDoc = useCallback(() => {
+  const closeDoc = useCallback((force = false) => {
+    if (dirty && !force) {
+      setConfirmState({
+        title: 'Unsaved changes',
+        description: 'You have unsaved changes. Discard them?',
+        confirmLabel: 'Discard',
+        confirmVariant: 'destructive',
+        onConfirm: () => closeDoc(true),
+      });
+      return;
+    }
     setDirty(false);
     setSelectedDoc(null);
     setDocDetails(null);
     const url = new URL(window.location.href);
     url.searchParams.delete('doc_id');
     window.history.replaceState({}, '', url.toString());
-  }, []);
+  }, [dirty]);
 
-  const nextDoc = () => {
-    const list = needsReview;
-    const next = reviewIndex + 1;
-    if (next < list.length) {
-      setReviewIndex(next);
-      loadDocDetails(list[next]);
+  const closeDocForce = useCallback(() => closeDoc(true), [closeDoc]);
+
+  const nextDoc = useCallback(() => {
+    const doNav = () => {
+      const list = needsReview;
+      const next = reviewIndex + 1;
+      setDirty(false);
+      if (next < list.length) {
+        setReviewIndex(next);
+        loadDocDetails(list[next]);
+      } else {
+        closeDocForce();
+        setReviewIndex(0);
+      }
+    };
+    if (dirty) {
+      setConfirmState({
+        title: 'Unsaved changes',
+        description: 'You have unsaved changes. Discard them and continue?',
+        confirmLabel: 'Discard',
+        confirmVariant: 'destructive',
+        onConfirm: doNav,
+      });
     } else {
-      closeDoc();
-      setReviewIndex(0);
+      doNav();
     }
-  };
+  }, [needsReview, reviewIndex, closeDocForce, loadDocDetails, dirty]);
 
-  const prevDoc = () => {
-    const list = needsReview;
-    const prev = reviewIndex - 1;
-    if (prev >= 0) {
-      setReviewIndex(prev);
-      loadDocDetails(list[prev]);
+  const prevDoc = useCallback(() => {
+    const doNav = () => {
+      const list = needsReview;
+      const prev = reviewIndex - 1;
+      setDirty(false);
+      if (prev >= 0) {
+        setReviewIndex(prev);
+        loadDocDetails(list[prev]);
+      }
+    };
+    if (dirty) {
+      setConfirmState({
+        title: 'Unsaved changes',
+        description: 'You have unsaved changes. Discard them and continue?',
+        confirmLabel: 'Discard',
+        confirmVariant: 'destructive',
+        onConfirm: doNav,
+      });
+    } else {
+      doNav();
     }
-  };
+  }, [needsReview, reviewIndex, loadDocDetails, dirty]);
 
-  const handleSkip = () => {
-    closeDoc();
-    setReviewIndex(0);
-  };
+  const handleSkip = useCallback(() => {
+    const doSkip = () => { closeDocForce(); setReviewIndex(0); };
+    if (dirty) {
+      setConfirmState({
+        title: 'Unsaved changes',
+        description: 'You have unsaved changes. Discard them and skip?',
+        confirmLabel: 'Discard',
+        confirmVariant: 'destructive',
+        onConfirm: doSkip,
+      });
+    } else {
+      doSkip();
+    }
+  }, [closeDocForce, dirty]);
 
   // ---- Actions ----
   const handleVerify = async () => {
@@ -288,26 +363,40 @@ function AppInner() {
 
   const handleReprocess = async () => {
     if (!selectedDoc) return;
-    if (!confirm(`Reprocess ${selectedDoc.filename}?`)) return;
-    try {
-      await api.reprocessDocument(selectedDoc.id);
-      setDocDetails(null);
-      setSelectedDoc(prev => prev ? { ...prev, status: 'processing' } : null);
-      setDirty(false);
-      await loadAll();
-    } catch (err) {
-      console.error(err);
-      show("Reprocess failed", 'error');
-    }
+    setConfirmState({
+      title: 'Reprocess document?',
+      description: `Reprocess "${selectedDoc.filename}"?`,
+      confirmVariant: 'default',
+      confirmLabel: 'Reprocess',
+      onConfirm: async () => {
+        try {
+          await api.reprocessDocument(selectedDoc.id);
+          setDocDetails(null);
+          setSelectedDoc(prev => prev ? { ...prev, status: 'processing' } : null);
+          setDirty(false);
+          await loadAll();
+        } catch (err) {
+          console.error(err);
+          show("Reprocess failed", 'error');
+        }
+      },
+    });
   };
 
   const handleDeleteDoc = async (doc: Document) => {
-    if (!confirm(`Delete "${doc.filename}"? This cannot be undone.`)) return;
-    try {
-      await api.deleteDocument(doc.id);
-      if (selectedDoc?.id === doc.id) closeDoc();
-      await loadAll();
-    } catch { show("Delete failed", 'error'); }
+    setConfirmState({
+      title: 'Delete document?',
+      description: `Delete "${doc.filename}"? This cannot be undone.`,
+      confirmVariant: 'destructive',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        try {
+          await api.deleteDocument(doc.id);
+          if (selectedDoc?.id === doc.id) closeDoc();
+          await loadAll();
+        } catch { show("Delete failed", 'error'); }
+      },
+    });
   };
 
   const downloadIndividualReport = (doc: Document) => {
@@ -318,51 +407,81 @@ function AppInner() {
   };
 
   const handleReprocessDoc = async (doc: Document) => {
-    if (!confirm(`Reprocess "${doc.filename}"?`)) return;
-    try {
-      await api.reprocessDocument(doc.id);
-      await loadAll();
-    } catch { show("Reprocess failed", 'error'); }
+    setConfirmState({
+      title: 'Reprocess document?',
+      description: `Reprocess "${doc.filename}"?`,
+      confirmLabel: 'Reprocess',
+      onConfirm: async () => {
+        try {
+          await api.reprocessDocument(doc.id);
+          await loadAll();
+        } catch { show("Reprocess failed", 'error'); }
+      },
+    });
   };
 
   const handleReprocessAllFailed = async () => {
-    const failedDocs = documents.filter(d => d.status === 'failed');
+    const failedDocs = documents.filter(d => STATUS_FAILED.has(d.status));
     if (!failedDocs.length) return;
-    if (!confirm(`Reprocess all ${failedDocs.length} failed documents?`)) return;
-    try {
-      await Promise.all(failedDocs.map(d => api.reprocessDocument(d.id)));
-      await loadAll();
-    } catch { show("Batch reprocess failed", 'error'); }
+    setConfirmState({
+      title: 'Reprocess all failed?',
+      description: `Reprocess all ${failedDocs.length} failed documents?`,
+      confirmLabel: 'Reprocess All',
+      onConfirm: async () => {
+        try {
+          await Promise.all(failedDocs.map(d => api.reprocessDocument(d.id)));
+          await loadAll();
+        } catch { show("Batch reprocess failed", 'error'); }
+      },
+    });
   };
 
   const handleBulkVerify = async (docIds: string[]) => {
-    if (!confirm(`Verify ${docIds.length} selected documents?`)) return;
-    try {
-      await api.bulkVerify(docIds);
-      show(`Verified ${docIds.length} documents`);
-      setSelectedDashDocs(new Set());
-      await loadAll();
-    } catch { show("Bulk verify failed", 'error'); }
+    setConfirmState({
+      title: 'Verify documents?',
+      description: `Verify ${docIds.length} selected documents?`,
+      confirmLabel: 'Verify',
+      confirmVariant: 'default',
+      onConfirm: async () => {
+        try {
+          await api.bulkVerify(docIds);
+          show(`Verified ${docIds.length} documents`);
+          setSelectedDashDocs(new Set());
+          await loadAll();
+        } catch { show("Bulk verify failed", 'error'); }
+      },
+    });
   };
 
   const handleBulkReprocess = async (docIds: string[]) => {
-    if (!confirm(`Reprocess ${docIds.length} selected documents?`)) return;
-    try {
-      await Promise.all(docIds.map(id => api.reprocessDocument(id)));
-      show(`Reprocessing ${docIds.length} documents`);
-      setSelectedDashDocs(new Set());
-      await loadAll();
-    } catch { show("Bulk reprocess failed", 'error'); }
+    setConfirmState({
+      title: 'Reprocess documents?',
+      description: `Reprocess ${docIds.length} selected documents?`,
+      confirmLabel: 'Reprocess',
+      onConfirm: async () => {
+        try {
+          await Promise.all(docIds.map(id => api.reprocessDocument(id)));
+          show(`Reprocessing ${docIds.length} documents`);
+          setSelectedDashDocs(new Set());
+        } catch { show("Bulk reprocess failed", 'error'); }
+      },
+    });
   };
 
   const handleBulkDelete = async (docIds: string[]) => {
-    if (!confirm(`Delete ${docIds.length} selected documents? This cannot be undone.`)) return;
-    try {
-      await api.bulkDelete(docIds);
-      show(`Deleted ${docIds.length} documents`);
-      setSelectedDashDocs(new Set());
-      await loadAll();
-    } catch { show("Bulk delete failed", 'error'); }
+    setConfirmState({
+      title: 'Delete documents?',
+      description: `Delete ${docIds.length} selected documents? This cannot be undone.`,
+      confirmVariant: 'destructive',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        try {
+          await api.bulkDelete(docIds);
+          show(`Deleted ${docIds.length} documents`);
+          setSelectedDashDocs(new Set());
+        } catch { show("Bulk delete failed", 'error'); }
+      },
+    });
   };
 
   // Upload/batch
@@ -404,7 +523,7 @@ function AppInner() {
   // Keyboard
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (selectedDoc && selectedDoc.status === 'needs_review' && docDetails) {
+      if (selectedDoc && STATUS_REVIEW.has(selectedDoc.status) && docDetails) {
         if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); prevDoc(); return; }
         if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); nextDoc(); return; }
         if (e.key === 's' && !e.ctrlKey && !e.metaKey && !(e.target as HTMLElement)?.closest('input,textarea,select')) {
@@ -434,7 +553,7 @@ function AppInner() {
   };
 
   // Filtered list
-  const filtered = useMemo(() => {
+  const filtered = (() => {
     const list = activeTab === 'all' ? documents :
       activeTab === 'needs_review' ? needsReview :
       activeTab === 'verified' ? verified :
@@ -452,7 +571,7 @@ function AppInner() {
       const bv = (b[sortKey] || '').toLowerCase();
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
-  }, [documents, activeTab, searchQuery, sortKey, sortDir]);
+  })();
 
   const reportResults = useMemo(() => documents.filter(d => {
     if (reportStatus && d.status !== reportStatus) return false;
@@ -463,127 +582,162 @@ function AppInner() {
   }), [documents, reportStatus, reportClass, reportDateFrom, reportDateTo]);
 
   // ---- Render ----
-  // Selected doc views
-  if (selectedDoc) {
-    if (selectedDoc.status === 'processing' || detailsLoading) {
-      return <ProcessingView doc={selectedDoc} onClose={closeDoc} />;
-    }
+  const renderContent = () => {
+    if (selectedDoc) {
+      if (STATUS_PROCESSING.has(selectedDoc.status) || detailsLoading) {
+        return <ProcessingView doc={selectedDoc} />;
+      }
 
-    if (selectedDoc.status === 'verified' && docDetails) {
-      return <VerifiedView doc={selectedDoc} details={docDetails} onClose={closeDoc} onDetailsChange={setDocDetails} />;
-    }
+      if (STATUS_VERIFIED.has(selectedDoc.status) && docDetails) {
+        return <VerifiedView doc={selectedDoc} details={docDetails} onClose={closeDoc} onDetailsChange={setDocDetails} />;
+      }
 
-    if (selectedDoc.status === 'failed') {
-      return <FailedView doc={selectedDoc} onClose={closeDoc} />;
-    }
+      if (STATUS_FAILED.has(selectedDoc.status)) {
+        return <FailedView doc={selectedDoc} onClose={closeDoc} />;
+      }
 
-    if (docDetails && selectedDoc.status === 'needs_review') {
+      if (docDetails && STATUS_REVIEW.has(selectedDoc.status)) {
+        return (
+          <ReviewView
+            doc={selectedDoc} details={docDetails}
+            onDetailsChange={setDocDetails} onDirtyChange={setDirty}
+            reviewIndex={reviewIndex} totalReview={needsReview.length}
+            onClose={closeDoc} onVerify={handleVerify}
+            onReprocess={handleReprocess} onNext={nextDoc} onPrev={prevDoc} saving={saving}
+          />
+        );
+      }
+
       return (
-        <ReviewView
-          doc={selectedDoc} details={docDetails}
-          onDetailsChange={setDocDetails} onDirtyChange={setDirty}
-          reviewIndex={reviewIndex} totalReview={needsReview.length}
-          onClose={closeDoc} onVerify={handleVerify}
-          onReprocess={handleReprocess} onNext={nextDoc} onPrev={prevDoc} saving={saving}
+        <div className="flex items-center justify-center h-full">
+          <Card className="flex flex-col items-center justify-center p-8 min-h-[200px]">
+            <Loader2 size={32} className="animate-spin text-[var(--accent-violet)]" />
+          </Card>
+        </div>
+      );
+    }
+
+    if (view === 'reporting') {
+      return (
+        <ReportingView
+          documents={documents}
+          dateFrom={reportDateFrom} dateTo={reportDateTo}
+          reportStatus={reportStatus} reportClass={reportClass} reportFormat={reportFormat}
+          selectedReportDocs={selectedReportDocs}
+          onDateFromChange={setReportDateFrom} onDateToChange={setReportDateTo}
+          onStatusChange={setReportStatus} onClassChange={setReportClass}
+          onFormatChange={setReportFormat}
+          onToggleSelect={toggleReportDoc} onToggleSelectAll={toggleAllReportDocs}
+          onOpenDoc={handleOpenDoc}
         />
       );
     }
 
-    // Fallback loading
+    if (view === 'analytics') {
+      return (
+        <AnalyticsView 
+          onBack={() => setView('dashboard')}
+          classFilter={analyticsClassFilter}
+          genderFilter={analyticsGenderFilter}
+          onClassFilterChange={setAnalyticsClassFilter}
+          onGenderFilterChange={setAnalyticsGenderFilter}
+        />
+      );
+    }
+
+    if (view === 'dlq') {
+      return           <DlqView />;
+    }
+
     return (
-      <div className="app-container">
-        <header className="main-header">
-          <div className="logo"><img src="/logo.png" alt="SSIAR" className="h-8 w-auto" /></div>
-          <Button variant="outline" size="sm" onClick={closeDoc}>
-            Back
-          </Button>
-        </header>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
-          <Card className="flex flex-col items-center justify-center p-8 min-h-[200px]">
-            <Loader2 size={32} className="animate-spin" style={{ color: 'var(--accent-violet)' }} />
-          </Card>
-        </div>
-      </div>
+      <>
+        <StatCards
+          statCards={[
+            { label: 'Total', value: queueStatus?.total ?? documents.length, color: 'var(--accent-cyan)', icon: FileText },
+            { label: 'Processing', value: queueStatus?.processing ?? processing.length, color: 'var(--accent-violet)', icon: Clock, pulse: (queueStatus?.processing ?? processing.length) > 0 },
+            { label: 'Needs Review', value: queueStatus?.needs_review ?? needsReview.length, color: 'var(--accent-amber)', icon: AlertTriangle },
+            { label: 'Verified', value: queueStatus?.verified ?? verified.length, color: 'var(--accent-emerald)', icon: Check },
+            { label: 'Failed', value: queueStatus?.failed ?? failed.length, color: 'var(--accent-rose)', icon: X },
+          ]}
+          escBreakdown={escBreakdown}
+          onTabClick={setActiveTab}
+        />
+
+        <UploadZone
+          uploading={uploading} autoVerify={autoVerify} onAutoVerifyChange={setAutoVerify}
+          splitPages={splitPages} onSplitPagesChange={setSplitPages}
+          onUpload={handleUpload}
+          failedCount={failed.length} onRetryAllFailed={handleReprocessAllFailed}
+          isDragOver={isDragOver} onDragOver={setIsDragOver}
+        />
+
+        <DocumentTable
+          documents={documents} activeTab={activeTab} onTabChange={setActiveTab}
+          searchQuery={searchQuery} onSearchChange={setSearchQuery}
+          sortKey={sortKey} sortDir={sortDir} onSortChange={toggleSort}
+          selectedIds={selectedDashDocs}
+          onToggleSelect={toggleDashDoc} onToggleSelectAll={toggleAllDashDocs}
+          onOpenDoc={handleOpenDoc} onDownloadReport={downloadIndividualReport}
+          onReprocess={handleReprocessDoc} onDelete={handleDeleteDoc}
+          onBulkDone={() => { setSelectedDashDocs(new Set()); loadAll(); }}
+          onBulkVerify={handleBulkVerify}
+          onBulkReprocess={handleBulkReprocess}
+          onBulkDelete={handleBulkDelete}
+        />
+
+        {loading && (
+          <div className="sticky bottom-0 left-0 right-0 z-20">
+            <div className="h-0.5 bg-violet-500/20">
+              <div className="h-full bg-violet-500 rounded-full animate-pulse w-2/3" />
+            </div>
+          </div>
+        )}
+      </>
     );
-  }
+  };
 
-  // Main dashboard / reporting
+  const pageTitle = selectedDoc
+    ? null
+    : view === 'reporting' ? 'Reporting'
+    : view === 'analytics' ? 'Analytics'
+    : view === 'dlq' ? 'DLQ Resolution'
+    : 'Dashboard';
+
   return (
-    <div className="app-container" onDragOver={e => e.preventDefault()} onDrop={e => e.preventDefault()}>
-      <Header view={view} onViewChange={setView} />
-
-      <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-        {view === 'reporting' ? (
-          <ReportingView
-            documents={documents}
-            dateFrom={reportDateFrom} dateTo={reportDateTo}
-            reportStatus={reportStatus} reportClass={reportClass} reportFormat={reportFormat}
-            selectedReportDocs={selectedReportDocs}
-            onDateFromChange={setReportDateFrom} onDateToChange={setReportDateTo}
-            onStatusChange={setReportStatus} onClassChange={setReportClass}
-            onFormatChange={setReportFormat}
-            onToggleSelect={toggleReportDoc} onToggleSelectAll={toggleAllReportDocs}
-            onOpenDoc={handleOpenDoc}
-          />
-        ) : view === 'analytics' ? (
-          <AnalyticsView 
-            onBack={() => setView('dashboard')}
-            classFilter={analyticsClassFilter}
-            genderFilter={analyticsGenderFilter}
-            onClassFilterChange={setAnalyticsClassFilter}
-            onGenderFilterChange={setAnalyticsGenderFilter}
-          />
-        ) : (
-          <>
-            <StatCards
-              statCards={[
-                { label: 'Total', value: queueStatus?.total ?? documents.length, color: 'var(--accent-cyan)', icon: FileText },
-                { label: 'Processing', value: queueStatus?.processing ?? processing.length, color: 'var(--accent-violet)', icon: Clock, pulse: (queueStatus?.processing ?? processing.length) > 0 },
-                { label: 'Needs Review', value: queueStatus?.needs_review ?? needsReview.length, color: 'var(--accent-amber)', icon: AlertTriangle },
-                { label: 'Verified', value: queueStatus?.verified ?? verified.length, color: 'var(--accent-emerald)', icon: Check },
-                { label: 'Failed', value: queueStatus?.failed ?? failed.length, color: 'var(--accent-rose)', icon: X },
-              ]}
-              escBreakdown={escBreakdown}
-              onTabClick={setActiveTab}
-            />
-
-            <UploadZone
-              uploading={uploading} autoVerify={autoVerify} onAutoVerifyChange={setAutoVerify}
-              splitPages={splitPages} onSplitPagesChange={setSplitPages}
-              onUpload={handleUpload}
-              failedCount={failed.length} onRetryAllFailed={handleReprocessAllFailed}
-              isDragOver={isDragOver} onDragOver={setIsDragOver}
-            />
-
-            <DocumentTable
-              documents={documents} activeTab={activeTab} onTabChange={setActiveTab}
-              searchQuery={searchQuery} onSearchChange={setSearchQuery}
-              sortKey={sortKey} sortDir={sortDir} onSortChange={toggleSort}
-              selectedIds={selectedDashDocs}
-              onToggleSelect={toggleDashDoc} onToggleSelectAll={toggleAllDashDocs}
-              onOpenDoc={handleOpenDoc} onDownloadReport={downloadIndividualReport}
-              onReprocess={handleReprocessDoc} onDelete={handleDeleteDoc}
-              onBulkDone={() => { setSelectedDashDocs(new Set()); loadAll(); }}
-              onBulkVerify={handleBulkVerify}
-              onBulkReprocess={handleBulkReprocess}
-              onBulkDelete={handleBulkDelete}
-            />
-
-            {loading && (
-              <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '12px' }}>
-                <Loader2 size={14} className="animate-spin" style={{ display: 'inline', marginRight: '6px' }} /> Refreshing...
+    <div className="flex h-screen overflow-hidden bg-background">
+      <Sidebar view={view} onViewChange={(v) => { closeDocForce(); setView(v); }} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(c => !c)} />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Header view={view} onViewChange={setView} />
+        <main className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-[1400px] mx-auto" onDragOver={e => e.preventDefault()} onDrop={e => e.preventDefault()}>
+            {pageTitle && (
+              <div className="mb-6">
+                <h1 className="text-lg font-bold tracking-tight">{pageTitle}</h1>
               </div>
             )}
-          </>
-
-        )}
-      </div>
-
-      <div className="flex justify-end px-5 pb-4">
-        <img src="/logo2.png" alt="Parent company" className="h-6 w-auto opacity-40" />
+            {renderContent()}
+          </div>
+          {!selectedDoc && (
+            <div className="flex justify-end mt-8">
+              <img src="/logo2.png" alt="Parent company" className="h-6 w-auto opacity-40" />
+            </div>
+          )}
+        </main>
       </div>
 
       <Toast />
+
+      {confirmState && (
+        <ConfirmDialog
+          open={!!confirmState}
+          onOpenChange={(open) => { if (!open) setConfirmState(null); }}
+          title={confirmState.title}
+          description={confirmState.description}
+          confirmLabel={confirmState.confirmLabel}
+          confirmVariant={confirmState.confirmVariant}
+          onConfirm={confirmState.onConfirm}
+        />
+      )}
     </div>
   );
 }
@@ -598,12 +752,14 @@ function AppAuthGate() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <ToastProvider>
-          <AppAuthGate />
-        </ToastProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <AppAuthGate />
+          </ToastProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

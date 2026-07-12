@@ -64,7 +64,15 @@ def resolve_field_from_tables(
                 val_cell = cols[1]
                 
                 label_content = label_cell.get("content", "")
-                if anchor_text.lower() in label_content.lower():
+                
+                # Check for match (either substring or split part match)
+                is_match = False
+                if "/" in anchor_text:
+                    is_match = any(part.strip().lower() in label_content.lower() for part in anchor_text.split("/") if part.strip())
+                else:
+                    is_match = anchor_text.lower() in label_content.lower()
+                    
+                if is_match:
                     # Match found! Extract value content and coordinates
                     val_text = val_cell.get("content", "").strip()
                     
@@ -91,6 +99,31 @@ def resolve_field_from_tables(
                             
                     # Get average confidence of words inside cell or default
                     conf = 1.0
+                    spans = val_cell.get("spans", [])
+                    word_confidences = []
+                    # Locate word elements within the spans in the parent page raw data
+                    pages_list = page_raw.get("pages", [])
+                    target_page_raw = None
+                    for p in pages_list:
+                        p_num = p.get("pageNumber", p.get("page", 1))
+                        if p_num == page_num:
+                            target_page_raw = p
+                            break
+                    if not target_page_raw and pages_list:
+                        target_page_raw = pages_list[0]
+                        
+                    if target_page_raw and spans:
+                        words = target_page_raw.get("words", [])
+                        for span in spans:
+                            offset = span.get("offset", 0)
+                            length = span.get("length", 0)
+                            for word in words:
+                                w_span = word.get("span", {})
+                                w_offset = w_span.get("offset", 0)
+                                if w_offset >= offset and w_offset < offset + length:
+                                    word_confidences.append(word.get("confidence", 1.0))
+                    if word_confidences:
+                        conf = sum(word_confidences) / len(word_confidences)
                     
                     return val_text, conf, bbox, poly
                     
@@ -287,21 +320,24 @@ def resolve_field(
     # For right/left: cross-axis (dy) should be strictly constrained to same row (max 150 pixels)
     # For above/below: cross-axis (dx) should be constrained to same column (max 150 pixels)
     if direction in ("right", "left"):
-        tolerance = 150.0
+        tolerance = 45.0 if field_def.name == "rank" else 150.0
     else:
         tolerance = 150.0
     candidates = find_text_near(page, anchor_text, direction, tolerance)
     
     if not candidates:
         # Fallback: try a broader search (max 250 pixels)
-        candidates = find_text_near(page, anchor_text, direction, 250.0)
+        # Avoid huge vertical jumps for the rank field to prevent mixing with subject rows
+        candidates = find_text_near(page, anchor_text, direction, 60.0 if field_def.name == "rank" else 250.0)
         
     # If the field is remarks, we only want candidates that are reasonably close (within 150px vertically)
     # to avoid jumping over empty answer space into the next section/table.
     if field_def.name == "remarks" and candidates:
         anchor_bottom = anchor_el.bbox[3] if anchor_el else 3640.0
-        # If the closest candidate is further than 200px down, discard candidates to force template fallback bbox
-        if candidates[0].bbox[1] - anchor_bottom > 200.0:
+        # If the candidate is a printed form label, discard candidates to force template fallback bbox
+        if candidates[0].text in ("प्रतिशत", "भाषा", "गणित", "विज्ञान", "हिंदी"):
+            candidates = []
+        elif candidates[0].bbox[1] - anchor_bottom > 200.0:
             candidates = []
     
     if not candidates:
@@ -323,39 +359,58 @@ def resolve_field(
     # Merge consecutive words on the same row (e.g. "40" and "%")
     # Crucial: Ensure we do not merge words across distinct column/table boundaries.
     if value_el.element_type == "word":
-        curr_el = value_el
-        merged_elements = [value_el]
-        while True:
-            next_el = None
-            for el in page.elements:
-                if el.element_type == "word" and el not in merged_elements and el is not anchor_el:
-                    # Check vertical alignment (same row) and immediate horizontal proximity
-                    dy = abs((el.bbox[1] + el.bbox[3]) / 2.0 - (curr_el.bbox[1] + curr_el.bbox[3]) / 2.0)
-                    dx = el.bbox[0] - curr_el.bbox[2]
-                    # Ensure they are vertically aligned, close horizontally, and not jumping columns
-                    if dy < 20.0 and 0.0 <= dx < 80.0:
-                        next_el = el
-                        break
-            if next_el:
-                text += " " + next_el.text.strip()
-                merged_elements.append(next_el)
-                curr_el = next_el
-            else:
-                break
+        row_words = []
+        v_center = (value_el.bbox[1] + value_el.bbox[3]) / 2.0
+        for el in page.elements:
+            if el.element_type == "word" and el is not anchor_el:
+                el_v_center = (el.bbox[1] + el.bbox[3]) / 2.0
+                if abs(el_v_center - v_center) < 25.0:
+                    if direction == "right" and anchor_el and el.bbox[0] < anchor_el.bbox[2] - 15.0:
+                        continue
+                    row_words.append(el)
+                    
+        row_words.sort(key=lambda x: x.bbox[0])
         
-        # If we merged multiple words, compute the bounding box/polygon of the merged group
-        if len(merged_elements) > 1:
-            mx0 = min(el.bbox[0] for el in merged_elements)
-            my0 = min(el.bbox[1] for el in merged_elements)
-            mx1 = max(el.bbox[2] for el in merged_elements)
-            my1 = max(el.bbox[3] for el in merged_elements)
-            bbox = [mx0, my0, mx1, my1]
-            polygon = [
-                mx0, my0,
-                mx1, my0,
-                mx1, my1,
-                mx0, my1
-            ]
+        segments = []
+        current_segment = []
+        for el in row_words:
+            if not current_segment:
+                current_segment.append(el)
+            else:
+                prev_el = current_segment[-1]
+                gap = el.bbox[0] - prev_el.bbox[2]
+                if gap < 80.0:
+                    current_segment.append(el)
+                else:
+                    segments.append(current_segment)
+                    current_segment = [el]
+        if current_segment:
+            segments.append(current_segment)
+            
+        target_segment = []
+        for seg in segments:
+            if value_el in seg:
+                target_segment = seg
+                break
+                
+        if target_segment:
+            merged_elements = target_segment
+            text = " ".join(el.text.strip() for el in merged_elements)
+            confidence = sum(el.confidence for el in merged_elements) / len(merged_elements)
+            
+            # If we merged multiple words, compute the bounding box/polygon of the merged group
+            if len(merged_elements) > 1:
+                mx0 = min(el.bbox[0] for el in merged_elements)
+                my0 = min(el.bbox[1] for el in merged_elements)
+                mx1 = max(el.bbox[2] for el in merged_elements)
+                my1 = max(el.bbox[3] for el in merged_elements)
+                bbox = [mx0, my0, mx1, my1]
+                polygon = [
+                    mx0, my0,
+                    mx1, my0,
+                    mx1, my1,
+                    mx0, my1
+                ]
     
     # For selection marks, return the state
     if value_el.element_type == "selection_mark":

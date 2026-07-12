@@ -19,7 +19,7 @@ ROIS_P2_POINTS = {
 }
 
 ROIS_REMARKS_POINTS = {
-    'remarks': (28.0, 548.0, 552.0, 588.0)
+    'remarks': (48.0, 560.0, 552.0, 715.0)
 }
 
 def detect_table_lines(img: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:

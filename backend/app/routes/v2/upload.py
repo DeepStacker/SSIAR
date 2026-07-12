@@ -85,7 +85,7 @@ async def upload_files(
 
 
 @router.post("/api/batch/process-folder")
-def batch_process_folder(payload: dict):
+async def batch_process_folder(payload: dict):
     uid = get_current_user_id()
     folder = payload.get("folder_path", "")
     auto_verify = payload.get("auto_verify", False)
@@ -94,23 +94,29 @@ def batch_process_folder(payload: dict):
     pdfs = sorted(f for f in os.listdir(folder) if f.lower().endswith(".pdf"))
     if not pdfs:
         raise HTTPException(status_code=400, detail="No PDFs found")
-    queued = []
-    for fn in pdfs:
-        with open(os.path.join(folder, fn), "rb") as f:
-            data = f.read()
-        doc_id = str(uuid.uuid4())
-        insert_document(doc_id, fn, "processing", classification=DEFAULT_CLASSIFICATION, user_id=uid)
-        store_pdf(doc_id, data)
-        SSE("document_upload", {"doc_id": doc_id, "status": "processing"}, user_id=uid)
-        get_job_queue().enqueue(
-            "document_processing",
-            doc_id,
-            process_document_background,
-            doc_id,
-            data,
-            fn,
-            auto_verify=auto_verify,
-            user_id=uid
-        )
-        queued.append(doc_id)
+        
+    loop = asyncio.get_running_loop()
+    def _read_and_queue_all():
+        queued = []
+        for fn in pdfs:
+            with open(os.path.join(folder, fn), "rb") as f:
+                data = f.read()
+            doc_id = str(uuid.uuid4())
+            insert_document(doc_id, fn, "processing", classification=DEFAULT_CLASSIFICATION, user_id=uid)
+            store_pdf(doc_id, data)
+            SSE("document_upload", {"doc_id": doc_id, "status": "processing"}, user_id=uid)
+            get_job_queue().enqueue(
+                "document_processing",
+                doc_id,
+                process_document_background,
+                doc_id,
+                data,
+                fn,
+                auto_verify=auto_verify,
+                user_id=uid
+            )
+            queued.append(doc_id)
+        return queued
+
+    queued = await loop.run_in_executor(None, _read_and_queue_all)
     return {"message": f"Queued {len(queued)} files", "document_ids": queued}

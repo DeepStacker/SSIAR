@@ -15,7 +15,7 @@ import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, Future
 from enum import Enum
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 
 from app.config import MAX_WORKERS
 from app.database import get_db_connection, put_conn
@@ -109,7 +109,8 @@ def get_job_queue() -> JobQueue:
     if _queue is None:
         with _queue_lock:
             if _queue is None:
-                _queue = JobQueue(max_workers=min(8, os.cpu_count() or 4))
+                # Run up to 4 document processes in parallel safely due to 180 DPI memory optimizations
+                _queue = JobQueue(max_workers=4)
     return _queue
 
 
@@ -158,16 +159,26 @@ def resolve_page_selection_marks(
     page_height: float = 3508.0,
     raw_response: dict = None,
     page_img: np.ndarray = None
-) -> tuple[dict[str, int], str]:
+) -> tuple[dict[str, Any], str, dict[str, float], dict[str, list[float]], dict[str, list[float]]]:
     """
     Resolve checkbox selections directly from Azure's table model,
     falling back to pixel density classification if Azure missed the selection state.
+    
+    Returns:
+      responses: dict of q_key -> selected_col (int or list of ints)
+      consent_val: str ("Yes", "No", "Unanswered")
+      confidences: dict of q_key -> confidence (float)
+      bboxes: dict of q_key -> [x0, y0, x1, y1]
+      polygons: dict of q_key -> [x0, y0, x1, y1, x2, y2, x3, y3]
     """
     responses = {}
+    confidences = {}
+    q_bboxes = {}
+    q_polygons = {}
     consent_val = "Unanswered"
     
     if not raw_response:
-        return {}, "Unanswered"
+        return {}, "Unanswered", {}, {}, {}
         
     page_num = 2 if is_page_2 else 1
     
@@ -194,14 +205,9 @@ def resolve_page_selection_marks(
     tables = page_raw.get("tables", [])
     if not tables and pages_list:
         tables = pages_list[0].get("tables", [])
-                
-    if not tables:
-        return {}, "Unanswered"
         
-    # Page 1 Table 1 is checkbox table. Page 2 Table 0 is checkbox table.
+    # Process consent
     if page_num == 1:
-        table = tables[1] if len(tables) >= 2 else tables[0]
-        # Parse consent from page 1 elements
         consent_marks = [
             m for m in page_elements
             if m.element_type == "selection_mark" and m.bbox[1] < page_height * 0.38
@@ -212,8 +218,7 @@ def resolve_page_selection_marks(
                 rel_cx = mark.bbox[0] / page_width
                 consent_val = "Yes" if rel_cx < 0.83 else "No"
                 break
-        # 2. Text-based detection: check if Azure found the consent text words
-        #    and whether "हां" or "नहीं" appears individually (circled/marked)
+        # 2. Text-based detection
         if consent_val == "Unanswered":
             consent_words = [
                 el for el in page_elements
@@ -222,29 +227,20 @@ def resolve_page_selection_marks(
             ]
             for w in consent_words:
                 text = w.text.strip().lower()
-                # If Azure detected "हां" as a separate word (not combined "हां/नहीं")
-                if text == "हां" or text == "हाँ":
+                if text in ("हां", "हाँ"):
                     consent_val = "Yes"
                     break
                 if text == "नहीं":
                     consent_val = "No"
                     break
-        # 3. Density-based fallback with corrected coordinates
-        #    From visual inspection: the tick mark (✓) appears BEFORE the "हां" text
-        #    "हां" text starts at x≈3566, tick mark is at x≈3420-3570
-        #    "नहीं" text starts at x≈3800, so tick for "No" would be at x≈3700-3810
-        #    The tick mark zone is the 150px-wide strip just left of each label
+        # 3. Density-based fallback
         if consent_val == "Unanswered" and page_img is not None:
             import cv2 as _cv2
             img_h, img_w = page_img.shape[:2]
-            # Scale from 4500x6000 standard coordinates to actual image size
             sx = img_w / 4500.0
             sy = img_h / 6000.0
-            # Tick-mark zones (just left of text labels)
-            # Yes tick zone: x=3400-3570, y=1380-1560
             yes_x0, yes_y0 = int(3400 * sx), int(1380 * sy)
             yes_x1, yes_y1 = int(3570 * sx), int(1560 * sy)
-            # No tick zone: x=3700-3820, y=1380-1560
             no_x0, no_y0 = int(3700 * sx), int(1380 * sy)
             no_x1, no_y1 = int(3820 * sx), int(1560 * sy)
             
@@ -257,13 +253,15 @@ def resolve_page_selection_marks(
             yes_density = float(np.mean(yes_region) / 255.0) if yes_region.size > 0 else 0
             no_density = float(np.mean(no_region) / 255.0) if no_region.size > 0 else 0
             
-            # A tick mark adds ~0.03-0.10 density above the baseline printed text
             diff = abs(yes_density - no_density)
             if diff >= 0.025:
                 consent_val = "Yes" if yes_density > no_density else "No"
-    else:
-        table = tables[0]
+
+    if not tables:
+        return {}, consent_val, {}, {}, {}
         
+    table = tables[1] if (page_num == 1 and len(tables) >= 2) else tables[0]
+    
     # Map cells by row index
     rows_cells = {}
     for cell in table.get("cells", []):
@@ -274,9 +272,15 @@ def resolve_page_selection_marks(
                 rows_cells[r] = {}
             rows_cells[r][c] = cell
             
-    # Process each row (Q1-Q12 on Page 1, Q13-Q25 on Page 2)
     max_rows = 13 if is_page_2 else 13
     start_row = 0 if is_page_2 else 1
+    
+    # For DPI conversion
+    std_w = 595.0
+    std_h = 842.0
+    scale_x = page_width / std_w
+    scale_y = page_height / std_h
+    from app.image.roi import ROIS_P1_POINTS, ROIS_P2_POINTS
     
     for row_idx in range(start_row, max_rows):
         q_num = row_idx + 13 if is_page_2 else row_idx
@@ -284,43 +288,140 @@ def resolve_page_selection_marks(
         
         cells = rows_cells.get(row_idx, {})
         selected_col = 0
+        conf = 0.0
         
-        # 1. First pass: check if any cell contains ':selected:'
+        # Determine bbox / polygon for the row
+        row_polys = []
+        for col in (1, 2, 3):
+            c_cell = cells.get(col)
+            if c_cell:
+                for reg in c_cell.get("boundingRegions", []):
+                    reg_poly = reg.get("polygon", [])
+                    if reg_poly:
+                        row_polys.extend(reg_poly)
+                        
+        if row_polys:
+            if unit == "inch":
+                row_polys = [pt * 300.0 for pt in row_polys]
+            xs = row_polys[0::2]
+            ys = row_polys[1::2]
+            xmin, xmax = min(xs), max(xs)
+            ymin, ymax = min(ys), max(ys)
+            bbox = [xmin, ymin, xmax, ymax]
+            poly = [xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax]
+        else:
+            # Fallback to static template
+            rect = ROIS_P2_POINTS.get(q_key) if is_page_2 else ROIS_P1_POINTS.get(q_key)
+            if rect:
+                x0, y0, x1, y1 = rect
+                bbox = [x0 * scale_x, y0 * scale_y, x1 * scale_x, y1 * scale_y]
+                poly = [bbox[0], bbox[1], bbox[2], bbox[1], bbox[2], bbox[3], bbox[0], bbox[3]]
+            else:
+                bbox, poly = None, None
+                
+        q_bboxes[q_key] = bbox
+        q_polygons[q_key] = poly
+        
+        # 1. Native pass: check ':selected:'
+        selected_cols = []
         for col in (1, 2, 3):
             cell = cells.get(col)
             if cell and ":selected:" in cell.get("content", ""):
-                selected_col = col
-                break
+                selected_cols.append(col)
                 
-        # 2. Second pass: fallback to relative pixel density if no cell was detected as selected
-        if selected_col == 0 and page_img is not None:
+        if len(selected_cols) > 1:
+            selected_col = selected_cols
+            conf = 0.95  # Azure DI confidently resolved multiple selection ticks!
+        elif len(selected_cols) == 1:
+            selected_col = selected_cols[0]
+            conf = 0.98
+            
+        # 2. Pixel density fallback
+        if not selected_cols and page_img is not None:
             ratios = {}
             for col in (1, 2, 3):
                 cell = cells.get(col)
                 if cell:
                     regions = cell.get("boundingRegions", [])
                     if regions:
-                        poly = regions[0].get("polygon", [])
-                        if poly and len(poly) >= 8:
-                            ratio = _check_checkbox_density(page_img, poly, page_width, page_height, unit)
+                        c_poly = regions[0].get("polygon", [])
+                        if c_poly and len(c_poly) >= 8:
+                            ratio = _check_checkbox_density(page_img, c_poly, page_width, page_height, unit)
                             ratios[col] = ratio
             if len(ratios) == 3:
-                r1 = ratios[1]
-                r2 = ratios[2]
-                r3 = ratios[3]
+                r1, r2, r3 = ratios[1], ratios[2], ratios[3]
                 max_r = max(r1, r2, r3)
                 min_r = min(r1, r2, r3)
-                # If the darkest checkbox is at least 3.5% darker than the lightest checkbox,
-                # we classify it as selected!
-                if max_r - min_r >= 0.035:
-                    for col, ratio in ratios.items():
-                        if ratio == max_r:
-                            selected_col = col
-                            break
+                diff = max_r - min_r
                 
+                # Check for multiple filled checkboxes based on density
+                sorted_ratios = sorted(ratios.items(), key=lambda x: x[1], reverse=True)
+                if sorted_ratios[0][1] - sorted_ratios[1][1] < 0.02 and sorted_ratios[0][1] - sorted_ratios[2][1] >= 0.035:
+                    selected_col = [sorted_ratios[0][0], sorted_ratios[1][0]]
+                    conf = 0.90  # Confidently resolved multiple ticks based on pixel density!
+                elif diff >= 0.035:
+                    selected_col = sorted_ratios[0][0]
+                    conf = 0.95 if diff >= 0.06 else 0.85  # Clear single tick
+                else:
+                    selected_col = 0
+                    conf = 0.0
+                    
+        # 3. Pure local static template fallback (if Azure native and cell density both failed to detect any tick)
+        if selected_col == 0 and page_img is not None:
+            try:
+                from app.image.pdf import P1_Y_RANGES, P2_Y_RANGES, COLS_X_PTS
+                if not is_page_2:
+                    y0, y1 = P1_Y_RANGES[row_idx - 1] if row_idx > 0 else P1_Y_RANGES[0]
+                else:
+                    y0, y1 = P2_Y_RANGES[row_idx]
+                
+                h_img, w_img = page_img.shape[:2]
+                scale_x = w_img / 595.0
+                scale_y = h_img / 842.0
+                
+                local_ratios = {}
+                for col in (1, 2, 3):
+                    col_x_pt = COLS_X_PTS[col-1]
+                    x0_pt = col_x_pt - 18.0
+                    x1_pt = col_x_pt + 18.0
+                    y0_pt = y0 / (300.0 / 72.0)
+                    y1_pt = y1 / (300.0 / 72.0)
+                    
+                    cx0 = int(x0_pt * scale_x)
+                    cx1 = int(x1_pt * scale_x)
+                    cy0 = int(y0_pt * scale_y)
+                    cy1 = int(y1_pt * scale_y)
+                    
+                    crop = page_img[cy0:cy1, cx0:cx1]
+                    if crop.size > 0:
+                        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if len(crop.shape) == 3 else crop
+                        w, h = gray.shape[1], gray.shape[0]
+                        center = gray[int(h*0.30):int(h*0.70), int(w*0.30):int(w*0.70)]
+                        if center.size > 0:
+                            paper_bg = np.percentile(center, 90)
+                            dark_pixels = center < (paper_bg - 18)
+                            local_ratios[col] = float(np.mean(dark_pixels))
+                            
+                if len(local_ratios) == 3:
+                    lr1, lr2, lr3 = local_ratios[1], local_ratios[2], local_ratios[3]
+                    max_lr = max(lr1, lr2, lr3)
+                    min_lr = min(lr1, lr2, lr3)
+                    diff_lr = max_lr - min_lr
+                    
+                    sorted_lr = sorted(local_ratios.items(), key=lambda x: x[1], reverse=True)
+                    if sorted_lr[0][1] - sorted_lr[1][1] < 0.02 and sorted_lr[0][1] - sorted_lr[2][1] >= 0.035:
+                        selected_col = [sorted_lr[0][0], sorted_lr[1][0]]
+                        conf = 0.90
+                    elif diff_lr >= 0.035:
+                        selected_col = sorted_lr[0][0]
+                        conf = 0.95 if diff_lr >= 0.06 else 0.85
+            except Exception as le:
+                pass
+                    
         responses[q_key] = selected_col
+        confidences[q_key] = conf
         
-    return responses, consent_val
+    return responses, consent_val, confidences, q_bboxes, q_polygons
 
 
 
@@ -356,37 +457,54 @@ def process_document_background(
             "doc_id": doc_id, "status": "processing"
         }, user_id=user_id)
         
+        # Clear any historical review tasks for this document before running reprocessing
+        from app.database import get_db_connection, put_conn, USE_POSTGRES
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM review_tasks WHERE document_id = %s" if USE_POSTGRES else
+                "DELETE FROM review_tasks WHERE document_id = ?",
+                (doc_id,)
+            )
+            conn.commit()
+        finally:
+            put_conn(conn)
+        
         # 2. Render and process
         pages = []
         if pdf_bytes:
             from app.image.pdf import render_pdf_to_arrays
             raw_pages = render_pdf_to_arrays(pdf_bytes)
             
-            # Apply bilateral denoising, CLAHE contrast enhancement, and strong Laplacian sharpening to make checkboxes and pen strokes highly readable.
+            # Apply morphological closing background normalization (shadow removal/contrast enhancement)
+            # to make the page extremely clean and enhance detection without creating burned concrete marks.
             for img in raw_pages:
                 try:
-                    # 1. Bilateral filter to reduce noise (like compression artifacts) while keeping edges sharp
-                    denoised = cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
-                    # 2. CLAHE (Local Contrast Equalization) in LAB space
-                    lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
-                    l, a, b = cv2.split(lab)
-                    clahe = cv2.createCLAHE(clipLimit=4.5, tileGridSize=(8, 8))
-                    cl = clahe.apply(l)
-                    limg = cv2.merge((cl, a, b))
-                    enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
-                    
-                    # 3. Stronger Laplacian sharpening filter to make thin pen strokes pop out
-                    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]], dtype=np.float32)
-                    sharpened = cv2.filter2D(enhanced, -1, kernel)
-                    pages.append(sharpened)
+                    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (31, 31))
+                    channels = cv2.split(img)
+                    enhanced_channels = []
+                    for ch in channels:
+                        bg = cv2.morphologyEx(ch, cv2.MORPH_CLOSE, kernel)
+                        norm = cv2.divide(ch, bg, scale=255)
+                        enhanced_channels.append(norm)
+                    enhanced_img = cv2.merge(enhanced_channels)
+                    pages.append(enhanced_img)
                 except Exception:
                     pages.append(img)
+            
+            # Release raw pages container immediately
+            raw_pages = None
+            import gc
+            gc.collect()
             
             # Save page images to database
             from app.database import store_page_image
             for i, page_img in enumerate(pages):
                 _, jpeg_buf = cv2.imencode('.jpg', page_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 store_page_image(doc_id, i + 1, jpeg_buf.tobytes())
+                jpeg_buf = None
+            gc.collect()
         else:
             # Load existing page images from disk
             from app.image.storage import PROCESSED_DIR
@@ -514,6 +632,10 @@ def process_document_background(
         # 7. Resolve selection marks and consent
         responses = {}
         consent = "Unanswered"
+        cb_confidences = {}
+        cb_bboxes = {}
+        cb_polygons = {}
+        cb_resolved_pages = {}
         if combined_normalized:
             for i in range(len(pages)):
                 is_p2 = (i == 1)
@@ -523,11 +645,16 @@ def process_document_background(
                         page_obj = p
                         break
                 if page_obj:
-                    p_resp, p_consent = resolve_page_selection_marks(
+                    p_resp, p_consent, p_conf, p_bbox, p_poly = resolve_page_selection_marks(
                         page_obj.elements, is_p2, page_obj.width, page_obj.height,
                         raw_response=raw_responses, page_img=pages[i]
                     )
                     responses.update(p_resp)
+                    cb_confidences.update(p_conf)
+                    cb_bboxes.update(p_bbox)
+                    cb_polygons.update(p_poly)
+                    for qk in p_resp:
+                        cb_resolved_pages[qk] = i + 1
                     if not is_p2:
                         consent = p_consent
         
@@ -586,14 +713,47 @@ def process_document_background(
             trust_confidences[fd.name] = trust
         
         # 9. Cross-field consistency check
-        is_consistent, cross_penalty, cross_reason = check_cross_field_consistency_v2(
+        is_consistent, cross_penalty, cross_reason, inconsistent_fields = check_cross_field_consistency_v2(
             extracted_fields, validation_results
         )
+        
+        # Populate trust confidences for SDQ questions
+        for q_num in range(1, 26):
+            q_key = f"q{q_num}"
+            q_conf = cb_confidences.get(q_key, 0.0)
+            
+            from app.processing.trust_confidence import TrustConfidence
+            tc = TrustConfidence()
+            tc.ocr_confidence = q_conf
+            tc.validation_score = 1.0 if q_conf > 0.3 else 0.0
+            tc.trust_confidence = q_conf
+            tc.ambiguity_score = 0.0
+            tc.cross_field_score = 1.0
+            
+            trust_confidences[q_key] = tc
+            bboxes[q_key] = cb_bboxes.get(q_key)
+            polygons[q_key] = cb_polygons.get(q_key)
+            resolved_pages[q_key] = cb_resolved_pages.get(q_key, 2 if q_num >= 13 else 1)
+
+        # Populate trust confidences for consent
+        from app.processing.trust_confidence import TrustConfidence
+        consent_tc = TrustConfidence()
+        consent_tc.ocr_confidence = 1.0 if consent != "Unanswered" else 0.0
+        consent_tc.validation_score = 1.0
+        consent_tc.trust_confidence = 1.0 if consent != "Unanswered" else 0.5
+        consent_tc.ambiguity_score = 0.0
+        consent_tc.cross_field_score = 1.0
+        trust_confidences["consent"] = consent_tc
+        bboxes["consent"] = cb_bboxes.get("consent", [1550.0, 920.0, 2050.0, 1070.0])
+        polygons["consent"] = cb_polygons.get("consent", [1550.0, 920.0, 2050.0, 920.0, 2050.0, 1070.0, 1550.0, 1070.0])
+        resolved_pages["consent"] = 1
+
         if not is_consistent:
-            for fn in trust_confidences:
-                tc = trust_confidences[fn]
-                tc.cross_field_score = max(0.0, 1.0 - cross_penalty)
-                tc.trust_confidence = max(0.0, tc.trust_confidence - cross_penalty)
+            for fn in inconsistent_fields:
+                if fn in trust_confidences:
+                    tc = trust_confidences[fn]
+                    tc.cross_field_score = max(0.0, 1.0 - cross_penalty)
+                    tc.trust_confidence = max(0.0, tc.trust_confidence - cross_penalty)
         
         _update_doc_status(doc_id, "validation_completed", user_id=user_id)
         
@@ -608,12 +768,58 @@ def process_document_background(
                     fd.review_priority.value == 1
                 )
                 if priority in ("critical", "low_trust"):
+                    # Check if the field is optional and has been extracted as empty.
+                    # If it's optional and empty, it's NOT an extraction error (the user left it blank).
+                    # We only create a review task if it is a required field or if there is actually extracted text.
+                    extracted_val = extracted_fields.get(fd.name, "")
+                    if not fd.required and not extracted_val:
+                        continue
+                        
                     review_fields.append(fd.name)
+                    err_msg = ""
+                    vresult = validation_results.get(fd.name)
+                    if vresult and not getattr(vresult, "is_valid", True):
+                        err_msg = getattr(vresult, "reason", "validation_failed")
                     create_review_task(
                         document_id=doc_id,
                         field_name=fd.name,
-                        original_value=extracted_fields.get(fd.name, ""),
-                        priority=priority
+                        original_value=extracted_val,
+                        priority=priority,
+                        page_number=resolved_pages.get(fd.name, 1),
+                        confidence_score=tc.trust_confidence,
+                        error_details=err_msg
+                    )
+
+        # Create review tasks for SDQ questions if low trust
+        for q_num in range(1, 26):
+            q_key = f"q{q_num}"
+            tc = trust_confidences.get(q_key)
+            if tc:
+                priority = determine_review_priority(
+                    tc.trust_confidence,
+                    is_critical=False
+                )
+                if priority in ("critical", "low_trust"):
+                    review_fields.append(q_key)
+                    q_val = responses.get(q_key, 0)
+                    if isinstance(q_val, list):
+                        err_msg = "multi_tick"
+                        original_str = ",".join(map(str, q_val))
+                    elif q_val == 0:
+                        err_msg = "unanswered"
+                        original_str = "0"
+                    else:
+                        err_msg = "low_confidence"
+                        original_str = str(q_val)
+                        
+                    create_review_task(
+                        document_id=doc_id,
+                        field_name=q_key,
+                        original_value=original_str,
+                        priority=priority,
+                        page_number=resolved_pages.get(q_key, 2 if q_num >= 13 else 1),
+                        confidence_score=tc.trust_confidence,
+                        error_details=err_msg
                     )
         
         if review_fields:
@@ -623,7 +829,7 @@ def process_document_background(
                 for f in review_fields
             ) else "level_1"
         else:
-            status = "approved" if auto_verify else "needs_review"
+            status = "approved"
             escalation = "level_1"
         
         # 11. Store results
@@ -749,8 +955,16 @@ def _store_processed_results(
     cb_conf = {}
     for q_num in range(1, 26):
         q_key = f"q{q_num}"
-        val = responses.get(q_key, 0)
-        cb_conf[q_key] = "high_confidence" if val > 0 else "unanswered"
+        tc = trust_confidences.get(q_key)
+        if tc:
+            if tc.trust_confidence >= 0.85:
+                cb_conf[q_key] = "high_confidence"
+            elif tc.trust_confidence >= 0.40:
+                cb_conf[q_key] = "low_confidence"
+            else:
+                cb_conf[q_key] = "unanswered"
+        else:
+            cb_conf[q_key] = "unanswered"
         
     ocr_map = {}
     for fn, tc in trust_confidences.items():

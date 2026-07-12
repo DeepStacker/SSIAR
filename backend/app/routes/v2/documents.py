@@ -57,13 +57,15 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 
 
 @router.get("/api/documents")
-def list_documents():
-    return get_all_documents()
+async def list_documents():
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, get_all_documents)
 
 
 @router.get("/api/documents/{doc_id}")
-def get_document_details(doc_id: str):
-    doc = get_document(doc_id)
+async def get_document_details(doc_id: str):
+    loop = asyncio.get_running_loop()
+    doc = await loop.run_in_executor(None, get_document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
         
@@ -156,24 +158,24 @@ def get_document_details(doc_id: str):
                         }
                             
             # 2. Enrich consent coordinates (page 1, standard relative region)
-            #    Tick mark appears ~100px left of "हां" text (x≈3566), so start at 3400
+            #    "हां/नहीं" label is at y ≈ 965, x ≈ 1743 on 300 DPI page, tick is inside/adjacent
             if "consent" not in v2 or not v2["consent"].get("bbox"):
                 v2["consent"] = {
                     "page": 1,
-                    "bbox": [3400, 1380, 3960, 1560],
-                    "polygon": [3400, 1380, 3960, 1380, 3960, 1560, 3400, 1560]
+                    "bbox": [1550, 920, 2050, 1070],
+                    "polygon": [1550, 920, 2050, 920, 2050, 1070, 1550, 1070]
                 }
             else:
                 v2["consent"]["page"] = 1
             
             # 3. Enrich remarks coordinates (page 2)
-            #    Question "क्या आपकी कोई अन्य टिप्पणी..." at y≈3631
-            #    Answer lines extend from y≈3700 to y≈4200
+            #    Question "क्या आपकी कोई अन्य टिप्पणी..." starts around y ≈ 2258
+            #    Write-in lines area sits below the question from y ≈ 2330 to y ≈ 2980
             if "remarks" not in v2 or not v2["remarks"].get("bbox"):
                 v2["remarks"] = {
                     "page": 2,
-                    "bbox": [100, 3550, 4400, 4200],
-                    "polygon": [100, 3550, 4400, 3550, 4400, 4200, 100, 4200]
+                    "bbox": [200, 2300, 2400, 2980],
+                    "polygon": [200, 2300, 2400, 2300, 2400, 2980, 200, 2980]
                 }
             else:
                 v2["remarks"]["page"] = 2
@@ -232,7 +234,11 @@ def serve_page(doc_id: str, page_num: int):
         
     if page_path.exists():
         return FileResponse(str(page_path), media_type="image/jpeg",
-                            headers={"Cache-Control": "public, max-age=86400"})
+                            headers={
+                                "Cache-Control": "public, max-age=86400",
+                                "Access-Control-Allow-Origin": "*",
+                                "Access-Control-Allow-Methods": "GET"
+                            })
 
     # 2. Try database files
     img_bytes = get_page_image_file(doc_id, page_num)
@@ -240,7 +246,11 @@ def serve_page(doc_id: str, page_num: int):
         img_bytes = get_page_image_file(doc_id, 1)
     if img_bytes:
         return Response(content=img_bytes, media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=86400"})
+                        headers={
+                            "Cache-Control": "public, max-age=86400",
+                            "Access-Control-Allow-Origin": "*",
+                            "Access-Control-Allow-Methods": "GET"
+                        })
 
     # 3. Try database page_images
     img = get_page_image(doc_id, page_num)
@@ -248,7 +258,11 @@ def serve_page(doc_id: str, page_num: int):
         img = get_page_image(doc_id, 1)
     if img:
         return Response(content=img, media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=86400"})
+                        headers={
+                            "Cache-Control": "public, max-age=86400",
+                            "Access-Control-Allow-Origin": "*",
+                            "Access-Control-Allow-Methods": "GET"
+                        })
 
     raise HTTPException(status_code=404, detail="Page not found")
 
@@ -413,48 +427,99 @@ def serve_crop(doc_id: str, filename: str):
         return Response(content=roi_bytes, media_type="image/jpeg",
                         headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
-    # Check if a dynamic V2 bounding box/polygon and page exist in form_data
-    doc = get_document(doc_id)
-    if doc:
-        confidence_scores = doc.get("confidence_scores", {})
-        v2_trust = confidence_scores.get("v2_trust", {}) if isinstance(confidence_scores, dict) else {}
-        field_info = v2_trust.get(crop_name, {}) if isinstance(v2_trust, dict) else {}
-        polygon = field_info.get("polygon")
-        bbox = field_info.get("bbox")
-        res_page = field_info.get("page")
+    polygon = None
+    res_page = None
+    is_fallback = False
+    
+    # 1. Primary: Try to dynamically resolve coordinates using raw Azure DI response & latest resolver code
+    from app.database import get_db_connection, put_conn
+    import json
+    conn = get_db_connection()
+    raw_responses_str = None
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT raw_response FROM azure_responses WHERE document_id = ?", (doc_id,))
+        row = cur.fetchone()
+        if row:
+            raw_responses_str = row[0]
+    finally:
+        put_conn(conn)
         
-        # For checkbox questions, dynamically compute row bbox from Azure selection marks / tables
-        if not bbox and not polygon and crop_name.startswith("q"):
-            from app.database import get_db_connection, put_conn
-            conn = get_db_connection()
-            raw_responses_str = None
-            try:
-                cur = conn.cursor()
-                cur.execute("SELECT raw_response FROM azure_responses WHERE document_id = ?", (doc_id,))
-                row = cur.fetchone()
-                if row:
-                    raw_responses_str = row[0]
-            finally:
-                put_conn(conn)
-                
-            if raw_responses_str:
+    if raw_responses_str:
+        try:
+            raw_dict = json.loads(raw_responses_str)
+            if crop_name.startswith("q"):
                 try:
-                    import json
-                    raw_dict = json.loads(raw_responses_str)
                     q_num = int(crop_name[1:])
                     tbl_res = get_sdq_row_bbox_from_table(raw_dict, q_num)
                     if tbl_res:
-                        polygon, bbox, res_page = tbl_res
+                        polygon, _, res_page = tbl_res
                 except Exception:
                     pass
+            else:
+                from app.processing.field_resolver import resolve_field
+                from app.processing.types import NormalizedAzureResponse
+                from app.processing.templates import get_template, init_templates_v2
+                
+                normalized = NormalizedAzureResponse(raw_dict)
+                init_templates_v2()
+                template = get_template("sdq_student_form_v1")
+                
+                field_def = None
+                for fd in template.fields:
+                    if fd.name == crop_name:
+                        field_def = fd
+                        break
+                        
+                if field_def:
+                    _, _, found, _, poly, page_num = resolve_field(field_def, normalized)
+                    if found and poly:
+                        polygon = poly
+                        res_page = page_num
+        except Exception as e:
+            print(f"Dynamic crop resolution error for {crop_name}: {e}")
+            
+    # 2. Secondary: If dynamic resolution was not successful, fall back to stored database coordinates
+    if not polygon:
+        doc = get_document(doc_id)
+        if doc:
+            confidence_scores = doc.get("confidence_scores", {})
+            v2_trust = confidence_scores.get("v2_trust", {}) if isinstance(confidence_scores, dict) else {}
+            field_info = v2_trust.get(crop_name, {}) if isinstance(v2_trust, dict) else {}
+            polygon = field_info.get("polygon")
+            res_page = field_info.get("page")
+            
+            # Backward compatibility fallback
+            if not polygon:
+                bbox = field_info.get("bbox")
+                if bbox and len(bbox) >= 4:
+                    polygon = [
+                        bbox[0], bbox[1],
+                        bbox[2], bbox[1],
+                        bbox[2], bbox[3],
+                        bbox[0], bbox[3]
+                    ]
                     
-        if (polygon or bbox) and res_page:
+    # 3. Tertiary: Fall back to static template coordinates
+    if not polygon or len(polygon) < 8:
+        res_page = res_page or get_crop_page(crop_name) or 1
+        aligned_img = _get_page(doc_id, res_page)
+        if aligned_img is not None:
+            h_img, w_img = aligned_img.shape[:2]
+            from app.image.crops import get_field_coordinates
+            polygon, res_page = get_field_coordinates(crop_name, w_img, h_img)
+            is_fallback = True
+
+        if polygon and res_page:
             aligned_img = _get_page(doc_id, res_page)
             if aligned_img is not None:
                 h_img, w_img = aligned_img.shape[:2]
                 
                 # Compute scale factors from Azure coordinate space to actual image pixels
-                scale_x, scale_y = _get_azure_scale(doc_id, res_page, w_img, h_img)
+                if not is_fallback:
+                    scale_x, scale_y = _get_azure_scale(doc_id, res_page, w_img, h_img)
+                else:
+                    scale_x, scale_y = 1.0, 1.0
                 
                 crop = None
                 
@@ -487,28 +552,28 @@ def serve_crop(doc_id: str, filename: str):
                             # 2. Determine shaving/padding based on the field type
                             if crop_name in {"math_pct", "science_pct", "language_pct"}:
                                 # Pad outward horizontally and vertically to keep starting handwriting and digits fully visible
-                                shave_l = -int(out_w * 0.05)
-                                shave_r = -int(out_w * 0.05)
-                                shave_t = -int(out_h * 0.05)
-                                shave_b = -int(out_h * 0.05)
+                                shave_l = -int(out_w * 0.15) - 10
+                                shave_r = -int(out_w * 0.15) - 10
+                                shave_t = -int(out_h * 0.15) - 5
+                                shave_b = -int(out_h * 0.15) - 5
                             elif crop_name in {"roll_number", "class", "dob", "gender"}:
-                                # Metadata fields: pad outward to prevent any clipping on start/end
-                                shave_l = -int(out_w * 0.05)
-                                shave_r = -int(out_w * 0.05)
-                                shave_t = -int(out_h * 0.05)
-                                shave_b = -int(out_h * 0.05)
+                                # Metadata fields: pad outward generously to prevent any clipping
+                                shave_l = -int(out_w * 0.15) - 15
+                                shave_r = -int(out_w * 0.15) - 15
+                                shave_t = -int(out_h * 0.15) - 8
+                                shave_b = -int(out_h * 0.15) - 8
                             elif crop_name.startswith("q"):
-                                # Checkbox questions
-                                shave_l = int(out_w * 0.01)
-                                shave_r = int(out_w * 0.01)
-                                shave_t = int(out_h * 0.05)
-                                shave_b = int(out_h * 0.05)
+                                # Checkbox questions: pad outward to ensure checkboxes and checkmarks are not clipped
+                                shave_l = -int(out_w * 0.10) - 10
+                                shave_r = -int(out_w * 0.10) - 10
+                                shave_t = -int(out_h * 0.10) - 5
+                                shave_b = -int(out_h * 0.10) - 5
                             else:
-                                # Non-table fields: use negative shave (i.e. expand/pad outward)
-                                shave_l = -int(out_w * 0.05)
-                                shave_r = -int(out_w * 0.05)
-                                shave_t = -int(out_h * 0.08)
-                                shave_b = -int(out_h * 0.08)
+                                # Non-table fields (consent, remarks, rank): use generous outward padding
+                                shave_l = -int(out_w * 0.15) - 15
+                                shave_r = -int(out_w * 0.15) - 15
+                                shave_t = -int(out_h * 0.15) - 10
+                                shave_b = -int(out_h * 0.15) - 10
                                 
                             # 3. Apply shaving/padding to relocate the 4 corners inward/outward
                             padded_pts = pts.copy()
@@ -537,29 +602,7 @@ def serve_crop(doc_id: str, filename: str):
                                                        flags=cv2.INTER_CUBIC,
                                                        borderMode=cv2.BORDER_REPLICATE)
                     except Exception:
-                        crop = None  # Fall through to bbox fallback
-                
-                # === FALLBACK: Axis-aligned bbox crop ===
-                if crop is None and bbox:
-                    x0, y0, x1, y1 = [int(val) for val in bbox]
-                    x0 = int(x0 * scale_x)
-                    y0 = int(y0 * scale_y)
-                    x1 = int(x1 * scale_x)
-                    y1 = int(y1 * scale_y)
-                    
-                    is_tight = crop_name.startswith("q") or crop_name in {"roll_number", "class", "dob", "gender", "math_pct", "science_pct", "language_pct", "rank"}
-                    if is_tight:
-                        pad_x = int(5 * scale_x)
-                        pad_y = int(4 * scale_y)
-                    else:
-                        pad_x = int(35 * scale_x)
-                        pad_y = int(20 * scale_y)
-                        
-                    x0 = max(0, x0 - pad_x)
-                    y0 = max(0, y0 - pad_y)
-                    x1 = min(w_img, x1 + pad_x)
-                    y1 = min(h_img, y1 + pad_y)
-                    crop = aligned_img[y0:y1, x0:x1]
+                        crop = None
                 
                 if crop is not None and crop.size > 0:
                     _, buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
@@ -622,6 +665,54 @@ def verify_document(doc_id: str, payload: VerifyDataRequest):
         remarks=payload.remarks, confidence_scores=cs, verified=1,
     )
     update_document_status(doc_id, "verified", doc.get("escalation_level", "level_1"))
+    
+    # Automatically complete any pending review tasks for this document
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, field_name FROM review_tasks WHERE document_id = ? AND status = 'pending'", (doc_id,))
+        pending_tasks = cur.fetchall()
+        now_str = datetime.now().isoformat()
+        reviewer_id = get_current_user_id() or "system"
+        
+        for task in pending_tasks:
+            task_id = task["id"]
+            field_name = task["field_name"]
+            
+            # Map corrected value from the verification payload
+            val = None
+            if field_name == "roll_number":
+                val = payload.roll_number
+            elif field_name == "class":
+                val = payload.class_val
+            elif field_name == "dob":
+                val = payload.dob
+            elif field_name == "gender":
+                val = payload.gender
+            elif field_name == "consent":
+                val = payload.consent
+            elif field_name == "remarks":
+                val = payload.remarks
+            elif field_name in ("math_pct", "science_pct", "language_pct", "rank"):
+                val = payload.academic_scores.get(field_name, "")
+            elif field_name.startswith("q") and field_name[1:].isdigit():
+                q_val = payload.responses.get(field_name, 0)
+                if isinstance(q_val, list):
+                    val = ",".join(map(str, q_val))
+                else:
+                    val = str(q_val)
+                    
+            if val is not None:
+                cur.execute(
+                    "UPDATE review_tasks SET corrected_value = ?, status = 'completed', reviewer_id = ?, reviewed_at = ? WHERE id = ?",
+                    (val, reviewer_id, now_str, task_id)
+                )
+        conn.commit()
+    except Exception as e:
+        print(f"Failed to auto-resolve review tasks for {doc_id}: {e}")
+    finally:
+        put_conn(conn)
+
     SSE("document_updated", {"doc_id": doc_id, "status": "verified"}, user_id=get_current_user_id())
     return {"message": "Form successfully verified"}
 
@@ -657,6 +748,39 @@ def bulk_verify(payload: BulkRequest):
             count += 1
     SSE("documents_bulk_verified", {"count": count}, user_id=get_current_user_id())
     return {"message": f"Verified {count} document(s)"}
+
+
+@router.post("/api/documents/recover-stuck")
+def recover_stuck_documents():
+    from datetime import datetime, timedelta
+    from app.database import get_db_connection, put_conn, USE_POSTGRES
+    cutoff = (datetime.now() - timedelta(minutes=10)).isoformat()
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, filename FROM documents WHERE status = 'processing' AND created_at < ?",
+            (cutoff,)
+        )
+        stuck = cur.fetchall()
+        if not stuck:
+            return {"recovered": 0, "message": "No stuck documents found"}
+        cur.execute(
+            "UPDATE documents SET status = 'failed', escalation_level = 'level_4' WHERE status = 'processing' AND created_at < ?",
+            (cutoff,)
+        )
+        conn.commit()
+        for row in stuck:
+            doc_id = row[0]
+            SSE("document_updated", {
+                "doc_id": doc_id, "status": "failed", "escalation_level": "level_4"
+            })
+        return {
+            "recovered": len(stuck),
+            "message": f"Marked {len(stuck)} stuck document(s) as failed"
+        }
+    finally:
+        put_conn(conn)
 
 
 @router.post("/api/documents/{doc_id}/reprocess")
@@ -957,7 +1081,15 @@ def get_field_bbox_from_table(raw_dict: dict, field_name: str) -> Optional[tuple
                 val_cell = cols[1]
                 
                 label_content = label_cell.get("content", "")
-                if anchor.lower() in label_content.lower():
+                
+                # Check for match (either substring or split part match)
+                is_match = False
+                if "/" in anchor:
+                    is_match = any(part.strip().lower() in label_content.lower() for part in anchor.split("/") if part.strip())
+                else:
+                    is_match = anchor.lower() in label_content.lower()
+                    
+                if is_match:
                     # Found it! Extract polygon from val_cell
                     regions = val_cell.get("boundingRegions", [])
                     if regions:

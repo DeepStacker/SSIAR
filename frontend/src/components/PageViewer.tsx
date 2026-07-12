@@ -6,9 +6,10 @@ interface Props {
   docId: string;
   pageNum: 1 | 2;
   onClose: () => void;
+  onChangePage?: (num: 1 | 2) => void;
 }
 
-export const PageViewer: React.FC<Props> = ({ docId, pageNum, onClose }) => {
+export const PageViewer: React.FC<Props> = ({ docId, pageNum, onClose, onChangePage }) => {
   const [loaded, setLoaded] = useState(false);
   const [scale, setScale] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -56,10 +57,24 @@ export const PageViewer: React.FC<Props> = ({ docId, pageNum, onClose }) => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
       if (e.key === 'r' || e.key === 'R') reset();
+      if (onChangePage) {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Tab') {
+          e.preventDefault();
+          onChangePage(pageNum === 1 ? 2 : 1);
+        }
+        if (e.key === '1') {
+          e.preventDefault();
+          onChangePage(1);
+        }
+        if (e.key === '2') {
+          e.preventDefault();
+          onChangePage(2);
+        }
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [onClose, reset]);
+  }, [onClose, reset, pageNum, onChangePage]);
 
   const zoomIn = useCallback(() => zoomAt(scale * 1.4, 0, 0), [scale, zoomAt]);
   const zoomOut = useCallback(() => zoomAt(scale / 1.4, 0, 0), [scale, zoomAt]);
@@ -78,7 +93,7 @@ export const PageViewer: React.FC<Props> = ({ docId, pageNum, onClose }) => {
         <div className="flex justify-between items-center py-2 shrink-0">
           <div className="flex items-center gap-3">
             <span style={{ color: '#94a3b8', fontSize: '13px' }}>
-              Page {pageNum}
+              Page {pageNum} <span style={{ color: '#64748b', fontSize: '11px', marginLeft: '8px' }}>(Press 1 or 2, Tab, or Arrow keys to switch)</span>
             </span>
             <span style={{ color: '#64748b', fontSize: '12px' }} className="font-mono">
               {Math.round(scale * 100)}%

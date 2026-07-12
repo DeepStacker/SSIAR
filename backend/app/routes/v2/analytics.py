@@ -17,45 +17,55 @@ from app.processing.analytics import (
 router = APIRouter(dependencies=[Depends(require_auth)])
 
 
+import asyncio
+
 @router.get("/api/v2/analytics/processing")
-def system_processing_analytics(
+async def system_processing_analytics(
     days: int = Query(7),
     class_filter: Optional[str] = Query(None, alias="class"),
 ):
     """Get processing pipeline analytics."""
     uid = get_current_user_id()
-    return get_processing_summary(days=days, class_filter=class_filter, user_id=uid)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: get_processing_summary(days=days, class_filter=class_filter, user_id=uid)
+    )
 
 
 @router.get("/api/v2/analytics/accuracy")
-def system_accuracy_analytics(
+async def system_accuracy_analytics(
     days: int = Query(7),
 ):
     """Get accuracy metrics from corrections data."""
-    return get_accuracy_summary(days=days)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: get_accuracy_summary(days=days))
 
 
 @router.get("/api/v2/analytics/cost")
-def system_cost_analytics():
+async def system_cost_analytics():
     """Get Azure cost consumption metrics."""
-    return get_cost_metrics()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, get_cost_metrics)
 
 
 @router.get("/api/v2/analytics/review")
-def system_review_analytics():
+async def system_review_analytics():
     """Get human review metrics."""
-    return get_review_metrics()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, get_review_metrics)
 
 
 @router.get("/api/v2/analytics/escalation")
-def system_escalation_analytics():
+async def system_escalation_analytics():
     """Get escalation level distribution."""
     uid = get_current_user_id()
-    return get_escalation_distribution(user_id=uid)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: get_escalation_distribution(user_id=uid))
 
 
 @router.post("/api/v2/metrics")
-def record_processing_metric(
+async def record_processing_metric(
     document_id: str,
     metric_name: str,
     metric_value: float,
@@ -65,17 +75,22 @@ def record_processing_metric(
     from app.database import get_db_connection, put_conn
     from datetime import datetime
     
-    conn = get_db_connection()
-    try:
-        cur = conn.cursor()
-        now_str = datetime.now().isoformat()
-        cur.execute(
-            """INSERT INTO processing_metrics 
-               (document_id, metric_name, metric_value, metric_unit, recorded_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (document_id, metric_name, metric_value, metric_unit, now_str)
-        )
-        conn.commit()
-    finally:
-        put_conn(conn)
+    def _write_metric():
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            now_str = datetime.now().isoformat()
+            cur.execute(
+                """INSERT INTO processing_metrics 
+                   (document_id, metric_name, metric_value, metric_unit, recorded_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (document_id, metric_name, metric_value, metric_unit, now_str)
+            )
+            conn.commit()
+        finally:
+            put_conn(conn)
+            
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _write_metric)
+    return {"message": "Metric recorded successfully"}
     return {"message": "Metric recorded"}
