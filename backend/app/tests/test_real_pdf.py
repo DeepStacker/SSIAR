@@ -14,8 +14,27 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import init_db, insert_document, store_pdf, get_document
-from app.services.processing import process_pdf_background
-from app.routes.upload import _classify_pdf
+from app.processing.jobs.document_jobs import process_document_background
+
+def _classify_pdf(pdf_bytes: bytes) -> dict:
+    from app.config import TEMP_DIR
+    from app.image.pdf import classify_document
+    did = str(uuid.uuid4())
+    temp_pdf = os.path.join(TEMP_DIR, f"{did}_classify.pdf")
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    with open(temp_pdf, "wb") as f:
+        f.write(pdf_bytes)
+    try:
+        classification = classify_document(temp_pdf)
+    except Exception:
+        classification = {"type": "scanned", "dpi": 300, "pages": 1, "is_color": False}
+    finally:
+        if os.path.exists(temp_pdf):
+            try:
+                os.remove(temp_pdf)
+            except Exception:
+                pass
+    return classification
 
 PDF_PATH = "/Users/deepstacker/WorkSpace/dupcq/SSIAR/Dabohara CF_00Pre.pdf"
 
@@ -49,7 +68,7 @@ def main():
 
     # 4. Process PDF Synchronously (auto_verify=True to test the auto-verification logic)
     print("Processing document (Alignment -> Preprocessing -> OCR -> Consensus -> Validation)...")
-    process_pdf_background(doc_id, auto_verify=True)
+    process_document_background(doc_id, pdf_bytes, "Dabohara CF_00Pre.pdf", auto_verify=True)
 
     # 5. Fetch and Print Results
     doc = get_document(doc_id)

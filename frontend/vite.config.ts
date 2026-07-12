@@ -11,12 +11,25 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('node_modules/lucide-react')) return 'vendor-lucide';
+          if (id.includes('node_modules/@base-ui')) return 'vendor-base-ui';
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: process.env.VITE_API_TARGET || 'http://localhost:8000',
         changeOrigin: true,
       },
+    },
+    watch: {
+      usePolling: true,
     },
   },
 })

@@ -69,6 +69,17 @@ def get_pdf_file(doc_id: str) -> bytes:
             return b""
     return _read_file(UPLOADS_DIR / f"{doc_id}.pdf")
 
+def delete_pdf_file(doc_id: str):
+    s3 = _get_s3()
+    if s3:
+        try:
+            s3.delete_object(Bucket=R2_BUCKET, Key=_key(doc_id, "pdfs", f"{doc_id}.pdf"))
+        except Exception:
+            pass
+    else:
+        dest = UPLOADS_DIR / f"{doc_id}.pdf"
+        _delete_file(dest)
+
 def store_page_image_file(doc_id: str, page_num: int, image_bytes: bytes):
     s3 = _get_s3()
     if s3:

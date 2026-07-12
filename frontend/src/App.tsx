@@ -1,609 +1,257 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Loader2, FileText, Clock, AlertTriangle, Check, X } from 'lucide-react';
-import type { Document, DocumentDetails, QueueStatus, TabType, SortKey, ReportFormat, ViewMode } from './api';
-import { api, clearApiCache, isTokenExpired, clearAuth, scheduleTokenRefresh } from './api';
-import { ThemeProvider } from './context/ThemeContext';
-import { ToastProvider, useToast } from './context/ToastContext';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { Header } from './components/Header';
-import { LoginPage } from './components/LoginPage';
-import { StatCards } from './components/StatCards';
-import { UploadZone } from './components/UploadZone';
-import { DocumentTable } from './components/DocumentTable';
-import { ReportingView } from './components/ReportingView';
-import { ReviewView } from './components/ReviewView';
-import { VerifiedView } from './components/VerifiedView';
-import { ProcessingView } from './components/ProcessingView';
-import { FailedView } from './components/FailedView';
-import { AnalyticsView } from './components/AnalyticsView';
-import { Toast } from './components/Toast';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { useRef, useCallback, useEffect } from 'react';
+import { clearApiCache, invalidateCache, api } from '@/api';
+import { ThemeProvider } from '@/context/ThemeContext';
+import { ToastProvider, useToast } from '@/context/ToastContext';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { DocumentProvider, useDocument } from '@/context/DocumentContext';
+import { UIProvider, useUI } from '@/context/UIContext';
+import { ReviewProvider, useReview } from '@/context/ReviewContext';
+import { SelectionProvider, useSelection } from '@/context/SelectionContext';
+import { LoginPage } from '@/features/auth/LoginPage';
+import { LandingPage } from '@/features/marketing/LandingPage';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { Header } from '@/features/layout/Header';
+import { Sidebar } from '@/features/layout/Sidebar';
+import { Toast } from '@/components/Toast';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { AppContent } from '@/app/routes';
+import { useHandlers } from '@/app/actions';
+import { useInitAuth, useSSE, useKeyboardShortcuts, useUnsavedWarning, useUrlSync, useFilteredDocuments } from '@/app/hooks';
 
-
-function AppInner() {
+function AppInnerContents() {
   const { show } = useToast();
+  const doc = useDocument();
+  const ui = useUI();
+  const review = useReview();
+  const sel = useSelection();
 
-  useEffect(() => {
-    if (isTokenExpired()) {
-      clearAuth();
-      window.location.href = '/';
-    } else {
-      scheduleTokenRefresh();
+  useInitAuth();
+
+  const loadingRef = useRef(false);
+  const lastLoadRef = useRef(0);
+  const pendingRef = useRef(false);
+
+  const showRef = useRef(show);
+  showRef.current = show;
+  const setLoadingRef = useRef(doc.setLoading);
+  setLoadingRef.current = doc.setLoading;
+  const setDocumentsRef = useRef(doc.setDocuments);
+  setDocumentsRef.current = doc.setDocuments;
+  const setQueueStatusRef = useRef(doc.setQueueStatus);
+  setQueueStatusRef.current = doc.setQueueStatus;
+
+  const loadAll = useCallback(async () => {
+    if (loadingRef.current) { pendingRef.current = true; return; }
+    if (Date.now() - lastLoadRef.current < 5000) { pendingRef.current = true; return; }
+    pendingRef.current = false;
+    lastLoadRef.current = Date.now();
+    invalidateCache('/documents');
+    invalidateCache('/queue-status');
+    loadingRef.current = true;
+    setLoadingRef.current(true);
+    try {
+      const [docs, qs] = await Promise.all([
+        api.listDocuments(['id', 'status', 'filename', 'roll_number', 'class', 'created_at', 'error_message', 'verified_by_human', 'classification', 'escalation_level']),
+        api.getQueueStatus().catch(() => null),
+      ]);
+      setDocumentsRef.current(docs);
+      if (qs) setQueueStatusRef.current(qs);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingRef.current(false);
+      loadingRef.current = false;
+      if (pendingRef.current) {
+        pendingRef.current = false;
+    lastLoadRef.current = Date.now();
+        loadAll();
+      }
     }
   }, []);
 
-  // Data
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  // Selected doc / detail
-  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
-  const [docDetails, setDocDetails] = useState<DocumentDetails | null>(null);
-  const [detailsLoading, setDetailsLoading] = useState(false);
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [reviewIndex, setReviewIndex] = useState(0);
-
-  // Upload
-  const [uploading, setUploading] = useState(false);
-  const [autoVerify, setAutoVerify] = useState(true);
-  const [splitPages, setSplitPages] = useState(false);
-
-  const [isDragOver, setIsDragOver] = useState(false);
-
-  // Dashboard
-  const [activeTab, setActiveTab] = useState<TabType>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('created_at');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [selectedDashDocs, setSelectedDashDocs] = useState<Set<string>>(new Set());
-
-  // View
-  const [view, setView] = useState<ViewMode>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return (params.get('view') as ViewMode) || 'dashboard';
-  });
-
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (view === 'dashboard') {
-      url.searchParams.delete('view');
-    } else {
-      url.searchParams.set('view', view);
-    }
-    if (view !== 'analytics') {
-      url.searchParams.delete('tab');
-    }
-    window.history.replaceState({}, '', url.toString());
-  }, [view]);
-
-  // Reporting filters
-  const [reportDateFrom, setReportDateFrom] = useState('');
-  const [reportDateTo, setReportDateTo] = useState('');
-  const [reportStatus, setReportStatus] = useState('verified');
-  const [reportClass, setReportClass] = useState('');
-  const [reportFormat, setReportFormat] = useState<ReportFormat>('excel');
-  const [selectedReportDocs, setSelectedReportDocs] = useState<Set<string>>(new Set());
-
-  // Analytics filters
-  const [analyticsClassFilter, setAnalyticsClassFilter] = useState<string>('all');
-  const [analyticsGenderFilter, setAnalyticsGenderFilter] = useState<string>('all');
-
-  const initialLoadDone = useRef(false);
-
-  const needsReview = documents.filter(d => d.status === 'needs_review');
-  const verified = documents.filter(d => d.status === 'verified');
-  const processing = documents.filter(d => d.status === 'processing');
-  const failed = documents.filter(d => d.status === 'failed');
-  const escBreakdown = queueStatus?.by_escalation || null;
-
-  // ---- Data loading ----
-  const loadAll = useCallback(async () => {
-    clearApiCache()
-    setLoading(true);
-    try {
-      const [docs, qs] = await Promise.all([
-        api.listDocuments(),
-        api.getQueueStatus().catch(() => null),
-      ]);
-      setDocuments(docs);
-      if (qs) setQueueStatus(qs);
-    } catch (err) {
-      console.error(err);
-      show("Failed to load documents from backend", 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [show]);
-
-  // SSE + fallback
-  useEffect(() => {
+  const refreshDocuments = useCallback(() => {
+    clearApiCache();
     loadAll();
-    let es: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    const connect = () => {
-      if (isTokenExpired()) { clearAuth(); window.location.href = '/'; return; }
-      try {
-        es?.close();
-        es = new EventSource(api.getEventsUrl());
-        es.onmessage = (event) => {
-          try {
-            const parsed = JSON.parse(event.data);
-            const { event: eventType, data } = parsed;
-            if (eventType === 'document_updated' && data?.doc_id) {
-              clearApiCache();
-              api.getDocumentDetails(data.doc_id)
-                .then(updated => {
-                  setDocuments(prev => prev.map(d => d.id === data.doc_id ? { ...d, ...updated } : d));
-                  setSelectedDoc(prev => prev?.id === data.doc_id ? { ...prev, ...updated } as Document : prev);
-                })
-                .catch(() => {});
-              api.getQueueStatus().then(qs => setQueueStatus(qs)).catch(() => {});
-            } else if (eventType === 'document_deleted' && data?.doc_id) {
-              setDocuments(prev => prev.filter(d => d.id !== data.doc_id));
-              api.getQueueStatus().then(qs => setQueueStatus(qs)).catch(() => {});
-            } else if (eventType !== 'connected') {
-              loadAll();
-            }
-          } catch {
-            loadAll();
-          }
-        };
-        es.onerror = () => {
-          es?.close();
-          es = null;
-          reconnectTimer = setTimeout(connect, 3000);
-        };
-      } catch { es = null; }
-    };
-    connect();
-    const fallback = setInterval(() => {
-      if (isTokenExpired()) { clearAuth(); window.location.href = '/'; return; }
-      if (!es || es.readyState !== EventSource.OPEN) { clearApiCache(); loadAll(); }
-    }, 15000);
-    return () => { es?.close(); if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(fallback); };
   }, [loadAll]);
 
-  // ---- URL sync ----
+  useSSE(loadAll);
+
+  const closeDoc = useCallback((force = false) => {
+    if (review.dirty && !force) {
+      ui.setConfirmState({
+        title: 'Unsaved changes',
+        description: 'You have unsaved changes. Discard them?',
+        confirmLabel: 'Discard',
+        confirmVariant: 'destructive',
+        onConfirm: () => closeDoc(true),
+      });
+      return;
+    }
+    review.setDirty(false);
+    doc.setSelectedDoc(null);
+    doc.setDocDetails(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('doc_id');
+    window.history.replaceState({}, '', url.toString());
+  }, [review.dirty, doc.setSelectedDoc, doc.setDocDetails, review.setDirty, ui.setConfirmState]);
+
+  const closeDocForce = useCallback(() => closeDoc(true), [closeDoc]);
+
+  const handlers = useHandlers(closeDoc, closeDocForce, refreshDocuments);
+
+  useKeyboardShortcuts(doc.selectedDoc, doc.docDetails, handlers.prevDoc, handlers.nextDoc, handlers.handleSkip, handlers.handleVerify, closeDoc);
+  useUnsavedWarning(review.dirty);
+  const { initialLoadDone } = useUrlSync(doc.selectedDoc);
+
+  const filtered = useFilteredDocuments();
+
   useEffect(() => {
-    if (documents.length > 0 && !initialLoadDone.current) {
+    if (doc.documents.length > 0 && !initialLoadDone.current) {
       initialLoadDone.current = true;
       const params = new URLSearchParams(window.location.search);
       const docId = params.get('doc_id');
       if (docId) {
-        const doc = documents.find(d => d.id === docId);
-        if (doc) handleOpenDoc(doc);
+        const found = doc.documents.find(d => d.id === docId);
+        if (found) handlers.handleOpenDoc(found);
       }
     }
-  }, [documents]);
+  }, [doc.documents]);
 
   useEffect(() => {
-    if (!selectedDoc) return;
-    const url = new URL(window.location.href);
-    url.searchParams.set('doc_id', selectedDoc.id);
-    window.history.replaceState({}, '', url.toString());
-  }, [selectedDoc?.id]);
-
-  // ---- Document helpers ----
-  const loadDocDetails = async (doc: Document) => {
-    setSelectedDoc(doc);
-    setDirty(false);
-    setDetailsLoading(true);
-    try {
-      const data = await api.getDocumentDetails(doc.id);
-      if (!data.responses) data.responses = {};
-      if (!data.academic_scores) data.academic_scores = { math_pct: "", science_pct: "", language_pct: "", rank: "" };
-      setDocDetails(data);
-    } catch (err) {
-      console.error(err);
-      show("Failed to load details", 'error');
-    } finally {
-      setDetailsLoading(false);
+    const sel_ = doc.selectedDoc;
+    if (!sel_) return;
+    const match = doc.documents.find(d => d.id === sel_.id);
+    if (match && match.status !== sel_.status) {
+      doc.setSelectedDoc(match);
     }
-  };
+  }, [doc.documents, doc.selectedDoc?.id]);
 
-  const handleOpenDoc = (doc: Document) => {
-    if (doc.status === 'processing') {
-      setDirty(false);
-      setSelectedDoc(doc);
-      setDocDetails(null);
-      return;
-    }
-    const idx = needsReview.findIndex(d => d.id === doc.id);
-    setReviewIndex(Math.max(0, idx));
-    loadDocDetails(doc);
-  };
-
-  const closeDoc = useCallback(() => {
-    setDirty(false);
-    setSelectedDoc(null);
-    setDocDetails(null);
+  useEffect(() => {
     const url = new URL(window.location.href);
     url.searchParams.delete('doc_id');
-    window.history.replaceState({}, '', url.toString());
-  }, []);
-
-  const nextDoc = () => {
-    const list = needsReview;
-    const next = reviewIndex + 1;
-    if (next < list.length) {
-      setReviewIndex(next);
-      loadDocDetails(list[next]);
+    if (ui.view === 'dashboard') {
+      url.searchParams.delete('view');
     } else {
-      closeDoc();
-      setReviewIndex(0);
+      url.searchParams.set('view', ui.view);
     }
-  };
-
-  const prevDoc = () => {
-    const list = needsReview;
-    const prev = reviewIndex - 1;
-    if (prev >= 0) {
-      setReviewIndex(prev);
-      loadDocDetails(list[prev]);
+    if (ui.view !== 'analytics') {
+      url.searchParams.delete('tab');
     }
-  };
+    window.history.replaceState({}, '', url.toString());
+  }, [ui.view]);
 
-  const handleSkip = () => {
-    closeDoc();
-    setReviewIndex(0);
-  };
+  return (
+    <div className="flex h-screen overflow-hidden bg-background">
+      <Sidebar
+        view={ui.view}
+        onViewChange={(v) => { closeDocForce(); ui.setView(v); }}
+        collapsed={ui.sidebarCollapsed}
+        onToggle={() => ui.setSidebarCollapsed(c => !c)}
+        mobileOpen={ui.sidebarMobileOpen}
+        onMobileClose={() => ui.setSidebarMobileOpen(false)}
+      />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Header view={ui.view} onViewChange={ui.setView} />
+        <main className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-[1400px] mx-auto" onDragOver={e => e.preventDefault()} onDrop={e => e.preventDefault()}>
+            <AppContent
+              onClose={closeDoc}
+              onVerify={handlers.handleVerify}
+              onReprocess={handlers.handleReprocess}
+              onNext={handlers.nextDoc}
+              onPrev={handlers.prevDoc}
+              onOpenDoc={handlers.handleOpenDoc}
+              onDownloadReport={handlers.downloadIndividualReport}
+              onReprocessDoc={handlers.handleReprocessDoc}
+              onDeleteDoc={handlers.handleDeleteDoc}
+              onBulkDone={() => { sel.setSelectedDashDocs(new Set()); refreshDocuments(); }}
+              onBulkVerify={handlers.handleBulkVerify}
+              onBulkReprocess={handlers.handleBulkReprocess}
+              onBulkDelete={handlers.handleBulkDelete}
+              onUpload={handlers.handleUpload}
+              onRetryAllFailed={handlers.handleReprocessAllFailed}
+              onToggleSelect={sel.onToggleDashDoc}
+              onToggleSelectAll={() => sel.onToggleAllDashDocs(filtered.map(d => d.id))}
+              onReportToggleSelect={sel.onToggleReportDoc}
+              onReportToggleSelectAll={sel.onToggleAllReportDocs}
+              toggleSort={handlers.toggleSort}
+              onRetryDetails={handlers.loadDocDetails}
+            />
+          </div>
+          {!doc.selectedDoc && (
+            <div className="flex justify-end mt-8">
+              <img src="/logo2.png" alt="Parent company" className="h-6 w-auto opacity-40" />
+            </div>
+          )}
+        </main>
+      </div>
 
-  // ---- Actions ----
-  const handleVerify = async () => {
-    if (!selectedDoc || !docDetails) return;
-    setSaving(true);
-    try {
-      await api.verifyDocument(selectedDoc.id, {
-        roll_number: docDetails.roll_number || '',
-        class_val: docDetails.class || '',
-        dob: docDetails.dob || '',
-        gender: docDetails.gender || '',
-        consent: docDetails.consent || 'Unanswered',
-        responses: docDetails.responses,
-        academic_scores: docDetails.academic_scores,
-        remarks: docDetails.remarks || ''
-      });
-      setDirty(false);
-      show(`Saved ${selectedDoc.filename}`);
-      // In-place update — no full list refresh
-      setDocuments(prev => prev.map(d =>
-        d.id === selectedDoc.id ? { ...d, status: 'verified' as const, verified_by_human: 1 } : d
-      ));
-      setQueueStatus(prev => prev ? {
-        ...prev,
-        needs_review: Math.max(0, prev.needs_review - 1),
-        verified: prev.verified + 1,
-      } : prev);
-      nextDoc();
-    } catch (err) {
-      console.error(err);
-      show("Save failed", 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
+      <Toast />
 
-  const handleReprocess = async () => {
-    if (!selectedDoc) return;
-    if (!confirm(`Reprocess ${selectedDoc.filename}?`)) return;
-    try {
-      await api.reprocessDocument(selectedDoc.id);
-      setDocDetails(null);
-      setSelectedDoc(prev => prev ? { ...prev, status: 'processing' } : null);
-      setDirty(false);
-      await loadAll();
-    } catch (err) {
-      console.error(err);
-      show("Reprocess failed", 'error');
-    }
-  };
-
-  const handleDeleteDoc = async (doc: Document) => {
-    if (!confirm(`Delete "${doc.filename}"? This cannot be undone.`)) return;
-    try {
-      await api.deleteDocument(doc.id);
-      if (selectedDoc?.id === doc.id) closeDoc();
-      await loadAll();
-    } catch { show("Delete failed", 'error'); }
-  };
-
-  const downloadIndividualReport = (doc: Document) => {
-    window.open(api.getExportUrl({
-      format: 'csv',
-      doc_ids: doc.id,
-    }), '_blank');
-  };
-
-  const handleReprocessDoc = async (doc: Document) => {
-    if (!confirm(`Reprocess "${doc.filename}"?`)) return;
-    try {
-      await api.reprocessDocument(doc.id);
-      await loadAll();
-    } catch { show("Reprocess failed", 'error'); }
-  };
-
-  const handleReprocessAllFailed = async () => {
-    const failedDocs = documents.filter(d => d.status === 'failed');
-    if (!failedDocs.length) return;
-    if (!confirm(`Reprocess all ${failedDocs.length} failed documents?`)) return;
-    try {
-      await Promise.all(failedDocs.map(d => api.reprocessDocument(d.id)));
-      await loadAll();
-    } catch { show("Batch reprocess failed", 'error'); }
-  };
-
-  const handleBulkVerify = async (docIds: string[]) => {
-    if (!confirm(`Verify ${docIds.length} selected documents?`)) return;
-    try {
-      await api.bulkVerify(docIds);
-      show(`Verified ${docIds.length} documents`);
-      setSelectedDashDocs(new Set());
-      await loadAll();
-    } catch { show("Bulk verify failed", 'error'); }
-  };
-
-  const handleBulkReprocess = async (docIds: string[]) => {
-    if (!confirm(`Reprocess ${docIds.length} selected documents?`)) return;
-    try {
-      await Promise.all(docIds.map(id => api.reprocessDocument(id)));
-      show(`Reprocessing ${docIds.length} documents`);
-      setSelectedDashDocs(new Set());
-      await loadAll();
-    } catch { show("Bulk reprocess failed", 'error'); }
-  };
-
-  const handleBulkDelete = async (docIds: string[]) => {
-    if (!confirm(`Delete ${docIds.length} selected documents? This cannot be undone.`)) return;
-    try {
-      await api.bulkDelete(docIds);
-      show(`Deleted ${docIds.length} documents`);
-      setSelectedDashDocs(new Set());
-      await loadAll();
-    } catch { show("Bulk delete failed", 'error'); }
-  };
-
-  // Upload/batch
-  const handleUpload = async (files: File[]) => {
-    if (!files.length) return;
-    setUploading(true);
-    try { await api.uploadFiles(files, autoVerify, splitPages); await loadAll(); }
-    catch { show("Upload failed", 'error'); }
-    finally { setUploading(false); }
-  };
-  // Bulk selection
-  const toggleDashDoc = (id: string) => {
-    setSelectedDashDocs(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAllDashDocs = () => {
-    if (selectedDashDocs.size === filtered.length) setSelectedDashDocs(new Set());
-    else setSelectedDashDocs(new Set(filtered.map(d => d.id)));
-  };
-
-  // Reporting
-  const toggleReportDoc = (id: string) => {
-    setSelectedReportDocs(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAllReportDocs = () => {
-    if (selectedReportDocs.size === reportResults.length) setSelectedReportDocs(new Set());
-    else setSelectedReportDocs(new Set(reportResults.map(d => d.id)));
-  };
-
-  // Keyboard
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (selectedDoc && selectedDoc.status === 'needs_review' && docDetails) {
-        if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); prevDoc(); return; }
-        if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); nextDoc(); return; }
-        if (e.key === 's' && !e.ctrlKey && !e.metaKey && !(e.target as HTMLElement)?.closest('input,textarea,select')) {
-          e.preventDefault(); handleSkip(); return;
-        }
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleVerify(); return; }
-        return;
-      }
-      if (e.key === 'Escape') { closeDoc(); }
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [selectedDoc, docDetails, prevDoc, nextDoc, handleSkip, handleVerify, closeDoc]);
-
-  // Unsaved warning
-  useEffect(() => {
-    if (!dirty) return;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [dirty]);
-
-  // Sort
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('asc'); }
-  };
-
-  // Filtered list
-  const filtered = useMemo(() => {
-    const list = activeTab === 'all' ? documents :
-      activeTab === 'needs_review' ? needsReview :
-      activeTab === 'verified' ? verified :
-      activeTab === 'processing' ? processing : failed;
-    let result = list;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = list.filter(d =>
-        d.filename.toLowerCase().includes(q) ||
-        (d.roll_number && d.roll_number.includes(q))
-      );
-    }
-    return [...result].sort((a, b) => {
-      const av = (a[sortKey] || '').toLowerCase();
-      const bv = (b[sortKey] || '').toLowerCase();
-      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-    });
-  }, [documents, activeTab, searchQuery, sortKey, sortDir]);
-
-  const reportResults = useMemo(() => documents.filter(d => {
-    if (reportStatus && d.status !== reportStatus) return false;
-    if (reportClass && d.class !== reportClass) return false;
-    if (reportDateFrom && d.created_at && d.created_at.slice(0, 10) < reportDateFrom) return false;
-    if (reportDateTo && d.created_at && d.created_at.slice(0, 10) > reportDateTo) return false;
-    return true;
-  }), [documents, reportStatus, reportClass, reportDateFrom, reportDateTo]);
-
-  // ---- Render ----
-  // Selected doc views
-  if (selectedDoc) {
-    if (selectedDoc.status === 'processing' || detailsLoading) {
-      return <ProcessingView doc={selectedDoc} onClose={closeDoc} />;
-    }
-
-    if (selectedDoc.status === 'verified' && docDetails) {
-      return <VerifiedView doc={selectedDoc} details={docDetails} onClose={closeDoc} onDetailsChange={setDocDetails} />;
-    }
-
-    if (selectedDoc.status === 'failed') {
-      return <FailedView doc={selectedDoc} onClose={closeDoc} />;
-    }
-
-    if (docDetails && selectedDoc.status === 'needs_review') {
-      return (
-        <ReviewView
-          doc={selectedDoc} details={docDetails}
-          onDetailsChange={setDocDetails} onDirtyChange={setDirty}
-          reviewIndex={reviewIndex} totalReview={needsReview.length}
-          onClose={closeDoc} onVerify={handleVerify}
-          onReprocess={handleReprocess} onNext={nextDoc} onPrev={prevDoc} saving={saving}
+      {ui.confirmState && (
+        <ConfirmDialog
+          open={!!ui.confirmState}
+          onOpenChange={(open) => { if (!open) ui.setConfirmState(null); }}
+          title={ui.confirmState.title}
+          description={ui.confirmState.description}
+          confirmLabel={ui.confirmState.confirmLabel}
+          confirmVariant={ui.confirmState.confirmVariant}
+          onConfirm={ui.confirmState.onConfirm}
         />
-      );
-    }
+      )}
+    </div>
+  );
+}
 
-    // Fallback loading
+function AppInner() {
+  return (
+    <DocumentProvider>
+      <UIProvider>
+        <SelectionProvider>
+          <ReviewProvider>
+            <AppInnerContents />
+          </ReviewProvider>
+        </SelectionProvider>
+      </UIProvider>
+    </DocumentProvider>
+  );
+}
+
+function AppAuthGate() {
+  const { token, loading: authLoading } = useAuth();
+
+  if (authLoading) {
     return (
-      <div className="app-container">
-        <header className="main-header">
-          <div className="logo"><img src="/logo.png" alt="SSIAR" className="h-8 w-auto" /></div>
-          <Button variant="outline" size="sm" onClick={closeDoc}>
-            Back
-          </Button>
-        </header>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
-          <Card className="flex flex-col items-center justify-center p-8 min-h-[200px]">
-            <Loader2 size={32} className="animate-spin" style={{ color: 'var(--accent-violet)' }} />
-          </Card>
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Authenticating...</p>
         </div>
       </div>
     );
   }
 
-  // Main dashboard / reporting
   return (
-    <div className="app-container" onDragOver={e => e.preventDefault()} onDrop={e => e.preventDefault()}>
-      <Header view={view} onViewChange={setView} />
-
-      <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-        {view === 'reporting' ? (
-          <ReportingView
-            documents={documents}
-            dateFrom={reportDateFrom} dateTo={reportDateTo}
-            reportStatus={reportStatus} reportClass={reportClass} reportFormat={reportFormat}
-            selectedReportDocs={selectedReportDocs}
-            onDateFromChange={setReportDateFrom} onDateToChange={setReportDateTo}
-            onStatusChange={setReportStatus} onClassChange={setReportClass}
-            onFormatChange={setReportFormat}
-            onToggleSelect={toggleReportDoc} onToggleSelectAll={toggleAllReportDocs}
-            onOpenDoc={handleOpenDoc}
-          />
-        ) : view === 'analytics' ? (
-          <AnalyticsView 
-            onBack={() => setView('dashboard')}
-            classFilter={analyticsClassFilter}
-            genderFilter={analyticsGenderFilter}
-            onClassFilterChange={setAnalyticsClassFilter}
-            onGenderFilterChange={setAnalyticsGenderFilter}
-          />
-        ) : (
-          <>
-            <StatCards
-              statCards={[
-                { label: 'Total', value: queueStatus?.total ?? documents.length, color: 'var(--accent-cyan)', icon: FileText },
-                { label: 'Processing', value: queueStatus?.processing ?? processing.length, color: 'var(--accent-violet)', icon: Clock, pulse: (queueStatus?.processing ?? processing.length) > 0 },
-                { label: 'Needs Review', value: queueStatus?.needs_review ?? needsReview.length, color: 'var(--accent-amber)', icon: AlertTriangle },
-                { label: 'Verified', value: queueStatus?.verified ?? verified.length, color: 'var(--accent-emerald)', icon: Check },
-                { label: 'Failed', value: queueStatus?.failed ?? failed.length, color: 'var(--accent-rose)', icon: X },
-              ]}
-              escBreakdown={escBreakdown}
-              onTabClick={setActiveTab}
-            />
-
-            <UploadZone
-              uploading={uploading} autoVerify={autoVerify} onAutoVerifyChange={setAutoVerify}
-              splitPages={splitPages} onSplitPagesChange={setSplitPages}
-              onUpload={handleUpload}
-              failedCount={failed.length} onRetryAllFailed={handleReprocessAllFailed}
-              isDragOver={isDragOver} onDragOver={setIsDragOver}
-            />
-
-            <DocumentTable
-              documents={documents} activeTab={activeTab} onTabChange={setActiveTab}
-              searchQuery={searchQuery} onSearchChange={setSearchQuery}
-              sortKey={sortKey} sortDir={sortDir} onSortChange={toggleSort}
-              selectedIds={selectedDashDocs}
-              onToggleSelect={toggleDashDoc} onToggleSelectAll={toggleAllDashDocs}
-              onOpenDoc={handleOpenDoc} onDownloadReport={downloadIndividualReport}
-              onReprocess={handleReprocessDoc} onDelete={handleDeleteDoc}
-              onBulkDone={() => { setSelectedDashDocs(new Set()); loadAll(); }}
-              onBulkVerify={handleBulkVerify}
-              onBulkReprocess={handleBulkReprocess}
-              onBulkDelete={handleBulkDelete}
-            />
-
-            {loading && (
-              <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '12px' }}>
-                <Loader2 size={14} className="animate-spin" style={{ display: 'inline', marginRight: '6px' }} /> Refreshing...
-              </div>
-            )}
-          </>
-
-        )}
-      </div>
-
-      <div className="flex justify-end px-5 pb-4">
-        <img src="/logo2.png" alt="Parent company" className="h-6 w-auto opacity-40" />
-      </div>
-
-      <Toast />
-    </div>
+    <Routes>
+      <Route path="/login" element={token ? <Navigate to="/app" replace /> : <LoginPage />} />
+      <Route path="/app/*" element={token ? <AppInner /> : <Navigate to="/login" replace />} />
+      <Route path="/" element={token ? <Navigate to="/app" replace /> : <LandingPage />} />
+      <Route path="*" element={<Navigate to={token ? "/app" : "/"} replace />} />
+    </Routes>
   );
-}
-
-function AppAuthGate() {
-  const { token } = useAuth();
-  if (!token) {
-    return <LoginPage />;
-  }
-  return <AppInner />;
 }
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <ToastProvider>
-          <AppAuthGate />
-        </ToastProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <AppAuthGate />
+          </ToastProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
