@@ -32,15 +32,17 @@ def create_review_task(
         cur.execute(
             """INSERT INTO review_tasks 
                (document_id, field_name, original_value, priority, status, created_at, page_number, confidence_score, error_details)
-               VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s)""" if USE_POSTGRES else
+               VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s) RETURNING id""" if USE_POSTGRES else
             """INSERT INTO review_tasks 
                (document_id, field_name, original_value, priority, status, created_at, page_number, confidence_score, error_details)
                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
             (document_id, field_name, original_value, priority, now_str, page_number, confidence_score, error_details)
         )
-        conn.commit()
-        task_id = cur.lastrowid
-        return str(task_id)
+        if USE_POSTGRES:
+            task_id = str(cur.fetchone()["id"])
+        else:
+            task_id = str(cur.lastrowid)
+        return task_id
     finally:
         put_conn(conn)
 
@@ -88,12 +90,12 @@ def get_pending_review_tasks(
         
         # Get total unpaginated count matching filters
         cur.execute(
-            f"SELECT COUNT(*) FROM review_tasks r "
+            f"SELECT COUNT(*) AS cnt FROM review_tasks r "
             f"LEFT JOIN documents d ON r.document_id = d.id "
             f"WHERE {where}",
             params
         )
-        total_count = cur.fetchone()[0]
+        total_count = cur.fetchone()["cnt"]
         
         # Determine sorting clause
         sort_dir_sql = "DESC" if sort_dir.lower() == "desc" else "ASC"
@@ -125,9 +127,10 @@ def get_pending_review_tasks(
             
             cur.execute("SELECT confidence_scores FROM form_data WHERE document_id = %s" if USE_POSTGRES else "SELECT confidence_scores FROM form_data WHERE document_id = ?", (doc_id,))
             fd_row = cur.fetchone()
-            if fd_row and fd_row[0]:
+            confidence_scores = fd_row["confidence_scores"] if fd_row else None
+            if fd_row and confidence_scores:
                 try:
-                    cs = json.loads(fd_row[0])
+                    cs = json.loads(confidence_scores)
                     v2_trust = cs.get("v2_trust", {})
                     field_data = v2_trust.get(field_name, {})
                     
@@ -338,11 +341,11 @@ def submit_review(
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
         cur.execute(
-            "SELECT COUNT(*) FROM review_tasks WHERE document_id = %s AND status = 'pending'" if USE_POSTGRES else
-            "SELECT COUNT(*) FROM review_tasks WHERE document_id = ? AND status = 'pending'",
+            "SELECT COUNT(*) AS cnt FROM review_tasks WHERE document_id = %s AND status = 'pending'" if USE_POSTGRES else
+            "SELECT COUNT(*) AS cnt FROM review_tasks WHERE document_id = ? AND status = 'pending'",
             (doc_id,)
         )
-        remaining = cur.fetchone()[0]
+        remaining = cur.fetchone()["cnt"]
         if remaining == 0:
             # Mark document as verified
             update_document_status(doc_id, "verified")
@@ -362,21 +365,21 @@ def get_review_statistics() -> dict:
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM review_tasks")
-        total = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) AS cnt FROM review_tasks")
+        total = cur.fetchone()["cnt"]
         
-        cur.execute("SELECT COUNT(*) FROM review_tasks WHERE status = 'pending'")
-        pending = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) AS cnt FROM review_tasks WHERE status = 'pending'")
+        pending = cur.fetchone()["cnt"]
         
-        cur.execute("SELECT COUNT(*) FROM review_tasks WHERE status = 'completed'")
-        completed = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) AS cnt FROM review_tasks WHERE status = 'completed'")
+        completed = cur.fetchone()["cnt"]
         
         cur.execute("""
             SELECT AVG(
                 CASE WHEN original_value != corrected_value THEN 1.0 ELSE 0.0 END
-            ) FROM review_tasks WHERE status = 'completed' AND corrected_value IS NOT NULL
+            ) AS rate FROM review_tasks WHERE status = 'completed' AND corrected_value IS NOT NULL
         """)
-        correction_rate = cur.fetchone()[0] or 0.0
+        correction_rate = cur.fetchone()["rate"] or 0.0
         
         return {
             "total_tasks": total,
