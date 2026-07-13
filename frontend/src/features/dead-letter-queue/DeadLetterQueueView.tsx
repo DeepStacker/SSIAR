@@ -54,10 +54,10 @@ const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, polygon }) =
         ctx.lineTo(polygon[4], polygon[5]);
         ctx.lineTo(polygon[6], polygon[7]);
         ctx.closePath();
-        ctx.strokeStyle = 'var(--color-destructive)';
-        ctx.lineWidth = 8;
+        ctx.strokeStyle = 'rgba(220, 38, 38, 0.9)';
+        ctx.lineWidth = 4;
         ctx.stroke();
-        ctx.fillStyle = 'var(--color-destructive-a20)';
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
         ctx.fill();
       }
 

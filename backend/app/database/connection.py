@@ -497,7 +497,7 @@ def insert_or_update_form_data(doc_id: str, roll_number: str, class_val: str,
                                verified: int = 0):
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
         now_str = datetime.now().isoformat()
         resp_json = json.dumps(responses)
         acad_json = json.dumps(academic_scores)
