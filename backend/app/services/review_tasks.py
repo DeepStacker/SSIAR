@@ -276,40 +276,66 @@ def submit_review(
         responses = doc.get("responses") or {}
         confidence_scores = doc.get("confidence_scores") or {}
         
+        # Guard: don't overwrite existing non-empty data with an empty correction
+        skip_field = (corrected_value is None or corrected_value.strip() == "")
+        
         # Map corrected value to the correct field
         if field_name == "roll_number":
-            roll_number = corrected_value
-        elif field_name == "class":
-            class_val = corrected_value
-        elif field_name == "dob":
-            dob = corrected_value
-        elif field_name == "gender":
-            gender = corrected_value
-        elif field_name == "consent":
-            consent = corrected_value
-        elif field_name == "remarks":
-            remarks = corrected_value
-        elif field_name in ("math_pct", "science_pct", "language_pct", "rank"):
-            academic_scores[field_name] = corrected_value
-        elif field_name.startswith("q") and field_name[1:].isdigit():
-            # Support multi-tick arrays e.g. '[1, 2]' or '1,2'
-            val_str = corrected_value.strip()
-            if val_str.startswith("[") and val_str.endswith("]"):
-                try:
-                    import json
-                    responses[field_name] = json.loads(val_str)
-                except Exception:
-                    responses[field_name] = val_str
-            elif "," in val_str:
-                try:
-                    responses[field_name] = [int(x.strip()) for x in val_str.split(",") if x.strip().isdigit()]
-                except Exception:
-                    responses[field_name] = val_str
+            if skip_field and roll_number:
+                pass
             else:
-                try:
-                    responses[field_name] = int(val_str)
-                except ValueError:
-                    responses[field_name] = val_str
+                roll_number = corrected_value
+        elif field_name == "class":
+            if skip_field and class_val:
+                pass
+            else:
+                class_val = corrected_value
+        elif field_name == "dob":
+            if skip_field and dob:
+                pass
+            else:
+                dob = corrected_value
+        elif field_name == "gender":
+            if skip_field and gender:
+                pass
+            else:
+                gender = corrected_value
+        elif field_name == "consent":
+            if skip_field and consent:
+                pass
+            else:
+                consent = corrected_value
+        elif field_name == "remarks":
+            if skip_field and remarks:
+                pass
+            else:
+                remarks = corrected_value
+        elif field_name in ("math_pct", "science_pct", "language_pct", "rank"):
+            if skip_field and academic_scores.get(field_name):
+                pass
+            else:
+                academic_scores[field_name] = corrected_value
+        elif field_name.startswith("q") and field_name[1:].isdigit():
+            if skip_field and responses.get(field_name):
+                pass
+            else:
+                val_str = corrected_value.strip()
+                if val_str.startswith("[") and val_str.endswith("]"):
+                    try:
+                        import json
+                        responses[field_name] = json.loads(val_str)
+                    except Exception:
+                        responses[field_name] = val_str
+                elif "," in val_str:
+                    try:
+                        responses[field_name] = [int(x.strip()) for x in val_str.split(",") if x.strip().isdigit()]
+                    except Exception:
+                        responses[field_name] = val_str
+                else:
+                    try:
+                        responses[field_name] = int(val_str)
+                    except ValueError:
+                        responses[field_name] = val_str
         # Update the confidence scores mapping to make the corrected field high confidence
         if isinstance(confidence_scores, dict):
             ocr_map = confidence_scores.setdefault("ocr", {})
