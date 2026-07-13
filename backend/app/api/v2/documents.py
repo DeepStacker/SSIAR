@@ -270,7 +270,12 @@ def verify_document(doc_id: str, payload: VerifyDataRequest):
     for fn, cv in fields_to_compare.items():
         orig = doc.get(fn) or doc.get("academic_scores", {}).get(fn, "")
         if orig != cv:
-            log_correction_data(doc_id, fn, f"db://{doc_id}/{fn}", orig, cv, ocr_conf.get(fn, 1.0), "human_review_v2")
+            raw_conf = ocr_conf.get(fn, 1.0)
+            try:
+                conf_val = float(raw_conf)
+            except (TypeError, ValueError):
+                conf_val = 1.0
+            log_correction_data(doc_id, fn, f"db://{doc_id}/{fn}", orig, cv, conf_val, "human_review_v2")
     
     insert_or_update_form_data(
         doc_id=doc_id, roll_number=payload.roll_number, class_val=payload.class_val,
