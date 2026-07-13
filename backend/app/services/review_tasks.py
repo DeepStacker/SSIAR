@@ -8,6 +8,8 @@ Stores all corrections for future learning.
 from datetime import datetime
 from typing import Optional
 from app.database import get_db_connection, put_conn, USE_POSTGRES
+if USE_POSTGRES:
+    from psycopg2.extras import RealDictCursor
 
 
 # ── Review Task Management ───────────────────────────────────────────────────
@@ -25,7 +27,7 @@ def create_review_task(
     """Create a review task for a specific field."""
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
         now_str = datetime.now().isoformat()
         cur.execute(
             """INSERT INTO review_tasks 
@@ -58,7 +60,7 @@ def get_pending_review_tasks(
     import json
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
         conditions = ["r.status = 'pending'"]
         params = []
         
@@ -199,7 +201,7 @@ def submit_review(
     """Submit a correction for a review task."""
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
         now_str = datetime.now().isoformat()
         
         # Get original task
@@ -334,7 +336,7 @@ def submit_review(
     # Check if there are any remaining pending review tasks for this document
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
         cur.execute(
             "SELECT COUNT(*) FROM review_tasks WHERE document_id = %s AND status = 'pending'" if USE_POSTGRES else
             "SELECT COUNT(*) FROM review_tasks WHERE document_id = ? AND status = 'pending'",
@@ -359,7 +361,7 @@ def get_review_statistics() -> dict:
     """Get review system statistics."""
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
         cur.execute("SELECT COUNT(*) FROM review_tasks")
         total = cur.fetchone()[0]
         
