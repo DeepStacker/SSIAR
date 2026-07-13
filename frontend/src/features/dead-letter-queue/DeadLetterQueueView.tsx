@@ -16,13 +16,15 @@ interface FullPagePreviewProps {
 
 const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, polygon }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
 
     const img = new window.Image();
     img.crossOrigin = 'anonymous';
@@ -39,20 +41,27 @@ const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, polygon }) =
       const imgW = img.naturalWidth;
       const imgH = img.naturalHeight;
 
-      canvas.width = imgW * dpr;
-      canvas.height = imgH * dpr;
-      canvas.style.width = `${imgW}px`;
-      canvas.style.height = `${imgH}px`;
+      const maxW = container.clientWidth - 4;
+      const maxH = window.innerHeight * 0.65;
+      const scale = Math.min(maxW / imgW, maxH / imgH, 1);
+
+      const displayW = imgW * scale;
+      const displayH = imgH * scale;
+
+      canvas.width = displayW * dpr;
+      canvas.height = displayH * dpr;
+      canvas.style.width = `${displayW}px`;
+      canvas.style.height = `${displayH}px`;
 
       ctx.scale(dpr, dpr);
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, displayW, displayH);
 
       if (polygon && polygon.length >= 8) {
         ctx.beginPath();
-        ctx.moveTo(polygon[0], polygon[1]);
-        ctx.lineTo(polygon[2], polygon[3]);
-        ctx.lineTo(polygon[4], polygon[5]);
-        ctx.lineTo(polygon[6], polygon[7]);
+        ctx.moveTo(polygon[0] * scale, polygon[1] * scale);
+        ctx.lineTo(polygon[2] * scale, polygon[3] * scale);
+        ctx.lineTo(polygon[4] * scale, polygon[5] * scale);
+        ctx.lineTo(polygon[6] * scale, polygon[7] * scale);
         ctx.closePath();
         ctx.strokeStyle = 'rgba(220, 38, 38, 0.9)';
         ctx.lineWidth = 4;
@@ -71,7 +80,7 @@ const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, polygon }) =
   }, [pageUrl, polygon]);
 
   return (
-    <div className="relative w-full flex items-center justify-center bg-muted/30 overflow-hidden rounded-lg border border-border min-h-[300px]">
+    <div ref={containerRef} className="relative w-full flex items-center justify-center bg-muted/30 overflow-hidden rounded-lg border border-border min-h-[200px] max-h-[65vh]">
       {loading && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background">
           <Loader2 className="animate-spin text-primary" size={20} />
@@ -83,8 +92,8 @@ const FullPagePreview: React.FC<FullPagePreviewProps> = ({ pageUrl, polygon }) =
           <AlertTriangle size={14} /> Failed to load full page image.
         </div>
       ) : (
-        <div className="overflow-auto max-h-[500px] w-full flex justify-center p-2">
-          <canvas ref={canvasRef} className="max-w-full h-auto" role="img" aria-label="Full page document preview" />
+        <div className="w-full flex justify-center p-2">
+          <canvas ref={canvasRef} role="img" aria-label="Full page document preview" />
         </div>
       )}
     </div>
