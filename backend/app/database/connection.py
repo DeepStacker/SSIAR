@@ -495,6 +495,27 @@ def insert_or_update_form_data(doc_id: str, roll_number: str, class_val: str,
                                remarks: str, confidence_scores: dict,
                                quality_report: Optional[dict] = None,
                                verified: int = 0):
+    from app.validation.fields import get_normalized_value
+
+    roll_number, _ = get_normalized_value("roll_number", roll_number)
+    class_val, _ = get_normalized_value("class", class_val)
+    dob, _ = get_normalized_value("dob", dob)
+    gender, _ = get_normalized_value("gender", gender)
+    consent, _ = get_normalized_value("consent", consent)
+
+    for key in ("math_pct", "science_pct", "language_pct"):
+        if key in academic_scores:
+            academic_scores[key], _ = get_normalized_value(key, academic_scores[key])
+    if "rank" in academic_scores:
+        academic_scores["rank"], _ = get_normalized_value("rank", academic_scores["rank"])
+
+    for qk, qv in list(responses.items()):
+        if isinstance(qv, str):
+            try:
+                responses[qk] = int(qv)
+            except (ValueError, TypeError):
+                responses[qk] = 0
+
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()

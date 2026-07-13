@@ -138,6 +138,33 @@ def map_hindi_to_score(val_str, is_reverse):
             scores.append(str(mapping[p]))
     return ", ".join(scores)
 
+def _normalize_doc(doc: dict) -> dict:
+    from app.validation.fields import get_normalized_value
+    if not doc:
+        return doc
+    doc["roll_number"], _ = get_normalized_value("roll_number", doc.get("roll_number", ""))
+    doc["class"], _ = get_normalized_value("class", doc.get("class", ""))
+    doc["dob"], _ = get_normalized_value("dob", doc.get("dob", ""))
+    doc["gender"], _ = get_normalized_value("gender", doc.get("gender", ""))
+    doc["consent"], _ = get_normalized_value("consent", doc.get("consent", ""))
+    acad = doc.get("academic_scores") or {}
+    for key in ("math_pct", "science_pct", "language_pct", "rank"):
+        if key in acad:
+            acad[key], _ = get_normalized_value(key, acad[key])
+    doc["academic_scores"] = acad
+    res = doc.get("responses") or {}
+    for qk in list(res.keys()):
+        qv = res[qk]
+        if isinstance(qv, str):
+            try:
+                res[qk] = int(qv)
+            except (ValueError, TypeError):
+                res[qk] = 0
+        elif isinstance(qv, list):
+            res[qk] = [int(v) if not isinstance(v, int) else v for v in qv]
+    doc["responses"] = res
+    return doc
+
 def build_export(
     filtered_docs: list,
     lang: str,
@@ -149,7 +176,7 @@ def build_export(
     if fmt == "csv":
         rows_data = []
         for d in filtered_docs:
-            full_doc = get_document(d["id"])
+            full_doc = _normalize_doc(get_document(d["id"]))
             if not full_doc:
                 continue
                 
@@ -216,7 +243,7 @@ def _build_excel(meta: list, filtered_docs: list, lang: str) -> StreamingRespons
     green_fill = PatternFill(start_color="D1E7DD", end_color="D1E7DD", fill_type="solid")
     
     for d in filtered_docs:
-        full_doc = get_document(d["id"])
+        full_doc = _normalize_doc(get_document(d["id"]))
         if not full_doc:
             continue
             
