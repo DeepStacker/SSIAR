@@ -117,6 +117,28 @@ const getFieldLabel = (name: string) => {
   return labelMap[name] || name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 };
 
+const sdqLabels: Record<number, string> = { 1: 'Unhappy', 2: 'Angry', 3: 'Calm', 0: 'Unanswered' };
+
+const formatSdqValue = (val: string): string => {
+  if (!val || val === '0') return '0 (Unanswered)';
+  try {
+    if (val.startsWith('[') && val.endsWith(']')) {
+      const arr: number[] = JSON.parse(val);
+      if (arr.length === 0) return '0 (Unanswered)';
+      return arr.map(v => `${v} (${sdqLabels[v] || '?'})`).join(', ');
+    }
+    if (val.includes(',')) {
+      return val.split(',').map(x => {
+        const n = parseInt(x.trim());
+        return isNaN(n) ? x.trim() : `${n} (${sdqLabels[n] || '?'})`;
+      }).join(', ');
+    }
+    const n = parseInt(val);
+    if (!isNaN(n)) return `${n} (${sdqLabels[n] || '?'})`;
+  } catch {}
+  return val;
+};
+
 const ErrorDetail: React.FC<{ error_details: string }> = ({ error_details }) => {
   const info = error_details === 'unanswered'
     ? { label: 'Blank / Not Detected', desc: 'Field was left blank, crossed out, or could not be read' }
@@ -135,8 +157,13 @@ const ErrorDetail: React.FC<{ error_details: string }> = ({ error_details }) => 
   );
 };
 
-const DiffRow: React.FC<{ original: string; corrected: string }> = ({ original, corrected }) => {
+const DiffRow: React.FC<{ original: string; corrected: string; fieldName?: string }> = ({ original, corrected, fieldName }) => {
+  const isSdq = fieldName?.startsWith('q') && /^\d+$/.test((fieldName ?? '').slice(1));
+  const displayOriginal = isSdq ? formatSdqValue(original) : original || '';
+  const displayCorrected = isSdq ? formatSdqValue(corrected) : corrected || '';
   const hasChanged = original !== corrected;
+  const origDisplay = displayOriginal || <span className="italic font-normal text-muted-foreground/50 text-xs">&mdash;</span>;
+  const corrDisplay = displayCorrected || <span className="italic font-normal text-muted-foreground/50 text-xs">Blank (marked)</span>;
 
   if (corrected === '' && !original) {
     return (
@@ -151,7 +178,7 @@ const DiffRow: React.FC<{ original: string; corrected: string }> = ({ original, 
       <div className={`p-3 rounded-lg border ${hasChanged ? 'bg-warning/5 border-warning/20' : 'bg-secondary/20 border-border'}`}>
         <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">OCR Extracted</div>
         <div className={`font-mono text-sm font-bold ${hasChanged ? 'text-warning line-through' : 'text-foreground'}`}>
-          {original || <span className="italic font-normal text-muted-foreground/50 text-xs">&mdash;</span>}
+          {origDisplay}
         </div>
       </div>
 
@@ -172,7 +199,7 @@ const DiffRow: React.FC<{ original: string; corrected: string }> = ({ original, 
       <div className={`p-3 rounded-lg border ${hasChanged ? 'bg-success/5 border-success/25' : 'bg-secondary/20 border-border'}`}>
         <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Corrected</div>
         <div className="font-mono text-sm font-bold text-success">
-          {corrected || <span className="italic font-normal text-muted-foreground/50 text-xs">Blank (marked)</span>}
+          {corrDisplay}
         </div>
       </div>
     </div>
@@ -262,9 +289,23 @@ export const DeadLetterQueueView: React.FC = () => {
 
   const activeTask = tasks.find(t => t.id === selectedTaskId) || null;
 
+  const formatDateStr = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '').slice(0, 8);
+    let s = '';
+    if (digits.length > 2) s = digits.slice(0, 2) + '/' + digits.slice(2);
+    else s = digits;
+    if (s.length > 5) s = s.slice(0, 5) + '/' + s.slice(5);
+    return s;
+  };
+
   useEffect(() => {
     if (activeTask) {
-      setInputValue(activeTask.original_value || '');
+      const raw = activeTask.original_value || '';
+      if (activeTask.field_name === 'dob') {
+        setInputValue(formatDateStr(raw));
+      } else {
+        setInputValue(raw);
+      }
       setIsValidDate(true);
       if (!activeTask.field_name.startsWith('q')) {
         setTimeout(() => inputRef.current?.focus(), 100);
@@ -275,11 +316,22 @@ export const DeadLetterQueueView: React.FC = () => {
   }, [selectedTaskId, activeTask]);
 
   const handleDateChange = (val: string) => {
-    let normalized = val.replace(/[-. ,\\]/g, '/');
-    setInputValue(normalized);
+    let digits = val.replace(/\D/g, '').slice(0, 8);
 
-    const parts = normalized.split('/');
-    if (parts.length === 3) {
+    let formatted = '';
+    if (digits.length > 2) {
+      formatted = digits.slice(0, 2) + '/' + digits.slice(2);
+    } else {
+      formatted = digits;
+    }
+    if (formatted.length > 5) {
+      formatted = formatted.slice(0, 5) + '/' + formatted.slice(5);
+    }
+
+    setInputValue(formatted);
+
+    const parts = formatted.split('/');
+    if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
       const d = parseInt(parts[0], 10);
       const m = parseInt(parts[1], 10);
       const y = parseInt(parts[2], 10);
@@ -290,7 +342,7 @@ export const DeadLetterQueueView: React.FC = () => {
         return;
       }
     }
-    setIsValidDate(false);
+    setIsValidDate(formatted === '' ? true : false);
   };
 
   const handleResolve = async (customVal?: string) => {
@@ -631,7 +683,7 @@ export const DeadLetterQueueView: React.FC = () => {
                   <div className="text-[10px] text-muted-foreground font-semibold mb-2 flex items-center gap-1.5">
                     <ArrowUpDown size={10} /> OCR vs Corrected
                   </div>
-                  <DiffRow original={activeTask.original_value || ''} corrected={inputValue} />
+                  <DiffRow original={activeTask.original_value || ''} corrected={inputValue} fieldName={activeTask.field_name} />
                 </div>
 
                 {/* ── Section 3: Issue Details ── */}
@@ -678,7 +730,12 @@ export const DeadLetterQueueView: React.FC = () => {
                           </div>
                           <Button variant="outline" onClick={handleMarkBlank} className="shrink-0 h-10 px-3 text-xs">Blank</Button>
                         </div>
-                        <p className="text-[10px] text-muted-foreground">Separators (-, ., space) normalized to slashes.</p>
+                        {inputValue && !isValidDate && (
+                          <p className="text-[10px] font-medium text-destructive flex items-center gap-1">
+                            <X size={10} /> Invalid date. Use DD/MM/YYYY format with a valid date between 1990-2030.
+                          </p>
+                        )}
+                        <p className="text-[10px] text-muted-foreground">Slash (/) is inserted automatically &mdash; just type the digits.</p>
                       </div>
                     )}
 
@@ -819,11 +876,19 @@ export const DeadLetterQueueView: React.FC = () => {
 
                 {/* ── Section 5: Actions ── */}
                 <div className="flex items-center justify-between pt-1">
-                  <Button variant="ghost" onClick={handleSkip} className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground">
-                    <ArrowLeft size={12} />
-                    <kbd className="text-[9px] px-1 py-0.5 rounded bg-secondary font-mono text-muted-foreground/80 border border-border">S</kbd>
-                    Skip
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" onClick={() => {
+                      const ci = tasks.findIndex(t => t.id === activeTask?.id);
+                      if (ci > 0) setSelectedTaskId(tasks[ci - 1].id);
+                    }} className="h-8 text-xs gap-1 text-muted-foreground hover:text-foreground px-2">
+                      <ArrowLeft size={12} />
+                      <kbd className="text-[9px] px-1 py-0.5 rounded bg-secondary font-mono text-muted-foreground/80 border border-border">Alt+↑</kbd>
+                    </Button>
+                    <Button variant="ghost" onClick={handleSkip} className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground">
+                      <ArrowRight size={12} />
+                      <kbd className="text-[9px] px-1 py-0.5 rounded bg-secondary font-mono text-muted-foreground/80 border border-border">S</kbd>
+                    </Button>
+                  </div>
                   <div className="flex items-center gap-2">
                     <Button variant="outline" onClick={handleMarkBlank} className="h-8 text-xs gap-1.5">
                       <kbd className="text-[9px] px-1 py-0.5 rounded bg-secondary font-mono border border-border">E</kbd>
