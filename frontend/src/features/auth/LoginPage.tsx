@@ -60,100 +60,102 @@ export const LoginPage: React.FC = () => {
   const isBusy = authLoading || loading;
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background px-4 overflow-hidden">
-      {/* Background glow effects */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] sm:w-[400px] md:w-[500px] h-[300px] sm:h-[400px] md:h-[500px] pointer-events-none bg-[radial-gradient(circle,rgba(99,102,241,0.05),transparent_70%)] dark:bg-[radial-gradient(circle,rgba(129,140,248,0.03),transparent_70%)]" />
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-3 sm:px-4 overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.06),transparent_50%)] dark:bg-[radial-gradient(ellipse_at_top,rgba(129,140,248,0.03),transparent_50%)]" />
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] sm:w-[800px] sm:h-[400px] pointer-events-none bg-[radial-gradient(ellipse_at_bottom,rgba(99,102,241,0.03),transparent_60%)] dark:bg-[radial-gradient(ellipse_at_bottom,rgba(129,140,248,0.02),transparent_60%)]" />
       
-      <div className="relative w-full max-w-[420px] animate-in fade-in slide-in-from-bottom-4 duration-300">
-        <Card className="border border-border/80 bg-card shadow-[var(--shadow-lg)]">
-          <CardHeader className="space-y-6 pt-8 pb-4 text-center">
+      <div className="relative w-full max-w-[400px] animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <Card className="border border-border/60 bg-card/95 backdrop-blur shadow-xl">
+          <CardHeader className="space-y-6 pt-8 sm:pt-10 pb-4 sm:pb-5 text-center">
             <div className="flex justify-center">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border bg-muted/40 shadow-sm">
-                <Shield className="h-5 w-5 text-primary" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/10 shadow-sm">
+                <Shield className="h-6 w-6 text-primary" />
               </div>
             </div>
             <div className="space-y-1.5">
-              <CardTitle className="text-xl font-bold tracking-tight">
-                {view === 'login' && 'Sign in to workspace'}
+              <CardTitle className="text-xl sm:text-2xl font-bold tracking-tight">
+                {view === 'login' && 'Welcome back'}
                 {view === 'register' && 'Create account'}
-                {view === 'forgot' && 'Forgot password'}
-                {view === 'reset' && 'Reset password'}
+                {view === 'forgot' && 'Reset password'}
+                {view === 'reset' && 'Set new password'}
               </CardTitle>
-              <CardDescription className="text-xs text-muted-foreground">
-                {view === 'login' && 'Enter your credentials to access the workspace.'}
-                {view === 'register' && 'Create an account for a new reviewer or operator.'}
-                {view === 'forgot' && 'Request a reset token for your account.'}
-                {view === 'reset' && 'Enter the token and set a new password.'}
+              <CardDescription className="text-xs sm:text-sm text-muted-foreground/80 max-w-[280px] mx-auto">
+                {view === 'login' && 'Sign in to access the SSIAR workspace.'}
+                {view === 'register' && 'Create an account for a new operator or reviewer.'}
+                {view === 'forgot' && 'Enter your email to receive a reset token.'}
+                {view === 'reset' && 'Enter the token from your email and choose a new password.'}
               </CardDescription>
             </div>
           </CardHeader>
 
-          <CardContent className="space-y-5 pb-8">
+          <CardContent className="space-y-5 pb-8 sm:pb-10 px-4 sm:px-6">
             {error && (
-              <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs font-semibold text-destructive">
+              <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs font-medium text-destructive flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-destructive shrink-0" />
                 {error}
               </div>
             )}
 
             {message && (
-              <div className="rounded-xl border border-green-500/20 bg-green-500/5 px-4 py-3 text-xs font-semibold text-green-600 dark:text-green-400">
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                 {message}
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {view !== 'reset' && (
-                <div className="space-y-2 text-left">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email Address</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground/80 ml-0.5">Email</label>
                   <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/40" />
                     <Input
                       type="email"
                       value={email}
                       onChange={e => setEmail(e.target.value)}
                       required
                       placeholder="you@example.com"
-                      className="pl-10 h-10 rounded-lg border-border/80 focus-visible:ring-primary"
+                      className="pl-9 h-10 text-sm rounded-xl border-border/70 bg-muted/20 focus-visible:bg-background transition-all"
                     />
                   </div>
                 </div>
               )}
 
               {view === 'reset' && (
-                <div className="space-y-2 text-left">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reset Token</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground/80 ml-0.5">Reset Token</label>
                   <div className="relative">
-                    <KeyRound className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/40" />
                     <Input
                       type="text"
                       value={token}
                       onChange={e => setToken(e.target.value)}
                       required
-                      placeholder="Paste token"
-                      className="pl-10 h-10 rounded-lg border-border/80 focus-visible:ring-primary"
+                      placeholder="Paste your reset token"
+                      className="pl-9 h-10 text-sm rounded-xl border-border/70 bg-muted/20 focus-visible:bg-background transition-all"
                     />
                   </div>
                 </div>
               )}
 
               {view !== 'forgot' && (
-                <div className="space-y-2 text-left">
+                <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <label className="text-xs font-semibold text-muted-foreground/80 ml-0.5">
                       {view === 'reset' ? 'New Password' : 'Password'}
                     </label>
                     {view === 'login' && (
                       <button
                         type="button"
                         onClick={() => { setView('forgot'); setError(''); setMessage(''); }}
-                        className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        className="text-[11px] font-medium text-primary/70 hover:text-primary transition-colors"
                       >
                         Forgot?
                       </button>
                     )}
                   </div>
                   <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/40" />
                     <Input
                       type="password"
                       value={password}
@@ -161,27 +163,24 @@ export const LoginPage: React.FC = () => {
                       required
                       minLength={8}
                       placeholder="••••••••"
-                      className="pl-10 h-10 rounded-lg border-border/80 focus-visible:ring-primary"
+                      className="pl-9 h-10 text-sm rounded-xl border-border/70 bg-muted/20 focus-visible:bg-background transition-all"
                     />
                   </div>
                 </div>
               )}
 
-              <Button type="submit" size="lg" disabled={isBusy} className="w-full h-10 rounded-lg font-semibold bg-primary text-primary-foreground hover:opacity-90 transition-opacity mt-2">
+              <Button type="submit" size="lg" disabled={isBusy} className="w-full h-10 rounded-xl font-semibold mt-1 shadow-sm hover:shadow-md transition-all">
                 {isBusy && <Loader2 size={16} className="animate-spin mr-2" />}
                 {view === 'login' && 'Sign in'}
-                {view === 'register' && 'Register'}
-                {view === 'forgot' && 'Send token'}
-                {view === 'reset' && 'Reset password'}
+                {view === 'register' && 'Create account'}
+                {view === 'forgot' && 'Send reset token'}
+                {view === 'reset' && 'Update password'}
               </Button>
             </form>
 
-            <div className="relative my-4">
+            <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border/60" />
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="bg-card px-3 text-muted-foreground">or</span>
+                <div className="w-full border-t border-border/40" />
               </div>
             </div>
 
@@ -189,27 +188,27 @@ export const LoginPage: React.FC = () => {
               {view === 'login' && (
                 <button
                   onClick={() => { setView('register'); setError(''); setMessage(''); }}
-                  className="font-semibold text-primary hover:opacity-85 transition-opacity"
+                  className="font-medium text-primary/80 hover:text-primary transition-colors"
                 >
-                  Create an operator account
+                  Don't have an account? <span className="underline underline-offset-2">Register</span>
                 </button>
               )}
 
               {view === 'register' && (
                 <button
                   onClick={() => { setView('login'); setError(''); setMessage(''); }}
-                  className="font-semibold text-primary hover:opacity-85 transition-opacity"
+                  className="font-medium text-primary/80 hover:text-primary transition-colors"
                 >
-                  Already have an account? Sign in
+                  Already registered? <span className="underline underline-offset-2">Sign in</span>
                 </button>
               )}
 
               {(view === 'forgot' || view === 'reset') && (
                 <button
                   onClick={() => { setView('login'); setError(''); setMessage(''); }}
-                  className="font-semibold text-primary hover:opacity-85 transition-opacity"
+                  className="font-medium text-primary/80 hover:text-primary transition-colors"
                 >
-                  Back to sign in
+                  <span className="underline underline-offset-2">Back to sign in</span>
                 </button>
               )}
             </div>

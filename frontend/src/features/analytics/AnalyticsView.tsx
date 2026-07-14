@@ -44,9 +44,10 @@ export function AnalyticsView({ onBack, classFilter, genderFilter }: AnalyticsVi
     <div className="flex flex-col gap-6 w-full">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-3 text-2xl font-extrabold">
-            <Brain className="w-7 h-7 text-primary" />
-            Research Analytics Platform
+          <CardTitle className="flex items-center gap-2 sm:gap-3 text-lg sm:text-2xl font-extrabold">
+            <Brain className="w-5 h-5 sm:w-7 sm:h-7 text-primary" />
+            <span className="hidden xs:inline">Research Analytics Platform</span>
+            <span className="xs:hidden">Analytics</span>
           </CardTitle>
           <CardDescription>
             Dynamic SDQ domain scoring, psychological-academic correlations, and reliability stats.
