@@ -6,6 +6,7 @@ from the API router module.
 """
 import cv2
 import json
+import threading
 import numpy as np
 from typing import Optional
 from app.database import get_page_image, get_db_connection, put_conn
@@ -15,22 +16,25 @@ from app.database import get_page_image, get_db_connection, put_conn
 
 _cache_page: dict[tuple[str, int], np.ndarray] = {}
 _page_order: list[tuple[str, int]] = []
+_cache_lock = threading.Lock()
 
 
 def get_page(doc_id: str, page_num: int) -> np.ndarray | None:
     """Load a page image with an LRU cache (shared across the process)."""
     key = (doc_id, page_num)
-    if key in _cache_page:
-        return _cache_page[key]
+    with _cache_lock:
+        if key in _cache_page:
+            return _cache_page[key]
     img_bytes = get_page_image(doc_id, page_num)
     if not img_bytes:
         return None
     img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
-    if len(_cache_page) >= 4:
-        oldest = _page_order.pop(0)
-        _cache_page.pop(oldest, None)
-    _cache_page[key] = img
-    _page_order.append(key)
+    with _cache_lock:
+        if len(_cache_page) >= 4:
+            oldest = _page_order.pop(0)
+            _cache_page.pop(oldest, None)
+        _cache_page[key] = img
+        _page_order.append(key)
     return img
 
 
@@ -41,11 +45,12 @@ _page_jpeg_order: list[tuple[str, int]] = []
 
 
 def cache_page_set(key: tuple[str, int], value: bytes):
-    if len(_cache_page_jpeg) >= 32:
-        oldest = _page_jpeg_order.pop(0)
-        _cache_page_jpeg.pop(oldest, None)
-    _cache_page_jpeg[key] = value
-    _page_jpeg_order.append(key)
+    with _cache_lock:
+        if len(_cache_page_jpeg) >= 32:
+            oldest = _page_jpeg_order.pop(0)
+            _cache_page_jpeg.pop(oldest, None)
+        _cache_page_jpeg[key] = value
+        _page_jpeg_order.append(key)
 
 
 # ── Crop image cache (LRU, max 256 crops) ────────────────────────────────
@@ -55,11 +60,12 @@ _crop_order: list[tuple[str, str]] = []
 
 
 def cache_crop_set(key: tuple[str, str], value: bytes):
-    if len(_cache_crop) >= 256:
-        oldest = _crop_order.pop(0)
-        _cache_crop.pop(oldest, None)
-    _cache_crop[key] = value
-    _crop_order.append(key)
+    with _cache_lock:
+        if len(_cache_crop) >= 256:
+            oldest = _crop_order.pop(0)
+            _cache_crop.pop(oldest, None)
+        _cache_crop[key] = value
+        _crop_order.append(key)
 
 
 # ── Azure coordinate scaling ────────────────────────────────────────────
@@ -69,8 +75,9 @@ _azure_response_order: list[str] = []
 
 
 def _get_cached_azure_response(doc_id: str) -> dict | None:
-    if doc_id in _cache_azure_response:
-        return _cache_azure_response[doc_id]
+    with _cache_lock:
+        if doc_id in _cache_azure_response:
+            return _cache_azure_response[doc_id]
     conn = get_db_connection()
     try:
         cur = conn.cursor()
@@ -79,11 +86,12 @@ def _get_cached_azure_response(doc_id: str) -> dict | None:
         row = cur.fetchone()
         if row and row[0]:
             raw = json.loads(row[0])
-            if len(_cache_azure_response) >= 128:
-                oldest = _azure_response_order.pop(0)
-                _cache_azure_response.pop(oldest, None)
-            _cache_azure_response[doc_id] = raw
-            _azure_response_order.append(doc_id)
+            with _cache_lock:
+                if len(_cache_azure_response) >= 128:
+                    oldest = _azure_response_order.pop(0)
+                    _cache_azure_response.pop(oldest, None)
+                _cache_azure_response[doc_id] = raw
+                _azure_response_order.append(doc_id)
             return raw
         return None
     finally:

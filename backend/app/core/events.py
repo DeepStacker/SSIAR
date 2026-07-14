@@ -21,7 +21,7 @@ def notify(event_type: str, data: dict, user_id: Optional[str] = None):
 
 
 def subscribe(user_id: Optional[str] = None) -> asyncio.Queue:
-    q: asyncio.Queue = asyncio.Queue(maxsize=100)
+    q: asyncio.Queue = asyncio.Queue(maxsize=1000)
     loop = asyncio.get_running_loop()
     with _sse_lock:
         _sse_subscribers.append((q, loop, user_id))

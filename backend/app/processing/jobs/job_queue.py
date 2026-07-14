@@ -8,6 +8,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, Future
 from enum import Enum
 from typing import Optional, Callable, Any
+from app.config import MAX_WORKERS
 
 
 class JobType(str, Enum):
@@ -97,7 +98,7 @@ def get_job_queue() -> JobQueue:
     if _queue is None:
         with _queue_lock:
             if _queue is None:
-                _queue = JobQueue(max_workers=4)
+                _queue = JobQueue(max_workers=MAX_WORKERS)
     return _queue
 
 
