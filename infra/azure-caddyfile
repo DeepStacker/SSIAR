@@ -1,8 +1,16 @@
 ssiar.duckdns.org {
     root * /var/www/ssiar/dist
 
-    # API and SSE routes → backend
-    reverse_proxy /api/* localhost:8000
+    # API routes → backend (must come before SPA handler)
+    handle /api/* {
+        reverse_proxy localhost:8000
+    }
+
+    # SPA fallback — serve index.html for non-file paths
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
 
     # Static assets with hash-based filenames → cache forever
     @static {
@@ -10,12 +18,6 @@ ssiar.duckdns.org {
     }
     header @static Cache-Control "public, max-age=31536000, immutable"
     encode @static gzip
-
-    # SPA fallback — serve index.html for non-file, non-API paths
-    handle {
-        try_files {path} /index.html
-        file_server
-    }
 
     header {
         Strict-Transport-Security "max-age=31536000;"
