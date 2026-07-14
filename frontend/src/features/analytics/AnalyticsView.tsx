@@ -46,8 +46,8 @@ export function AnalyticsView({ onBack, classFilter, genderFilter }: AnalyticsVi
         <CardHeader>
           <CardTitle className="flex items-center gap-2 sm:gap-3 text-lg sm:text-2xl font-extrabold">
             <Brain className="w-5 h-5 sm:w-7 sm:h-7 text-primary" />
-            <span className="hidden xs:inline">Research Analytics Platform</span>
-            <span className="xs:hidden">Analytics</span>
+            <span className="hidden sm:inline">Research Analytics Platform</span>
+            <span className="sm:hidden">Analytics</span>
           </CardTitle>
           <CardDescription>
             Dynamic SDQ domain scoring, psychological-academic correlations, and reliability stats.
