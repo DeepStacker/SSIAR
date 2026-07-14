@@ -12,7 +12,8 @@ import { useAuth } from '@/context/AuthContext';
 import { StatCards } from '@/features/analytics/StatCards';
 import { UploadZone } from '@/features/documents/UploadZone';
 import { DocumentTable } from '@/features/documents/DocumentTable';
-import { UsersView } from '@/components/UsersView';
+
+const UsersView = lazy(() => import('@/components/UsersView').then(m => ({ default: m.UsersView })));
 
 const ReviewView = memo(lazy(() => import('@/features/review/ReviewView').then(m => ({ default: m.ReviewView }))));
 const VerifiedView = memo(lazy(() => import('@/features/verification/VerifiedView').then(m => ({ default: m.VerifiedView }))));
@@ -194,7 +195,7 @@ export function AppContent(props: Props) {
         </div>
       );
     }
-    return <UsersView />;
+    return <Suspense fallback={<LoadingFallback />}><UsersView /></Suspense>;
   }
 
   const needsReviewCount = doc.queueStatus?.needs_review ?? doc.needsReview.length;

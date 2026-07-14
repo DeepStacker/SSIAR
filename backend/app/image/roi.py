@@ -124,7 +124,7 @@ def correct_crop_orientation(crop: np.ndarray) -> np.ndarray:
     h, w = crop.shape[:2]
     center = (w // 2, h // 2)
     M = cv2.getRotationMatrix2D(center, median_angle, 1.0)
-    return cv2.warpAffine(crop, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    return cv2.warpAffine(crop, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
 def get_padded_roi_crop(aligned_img: np.ndarray, refined_coords: Tuple[int, int, int, int], padding_pct: float = 0.20) -> np.ndarray:
     """

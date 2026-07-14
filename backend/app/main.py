@@ -1,6 +1,4 @@
 import os
-import gzip
-import io
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -17,69 +15,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi import Request
 
-
-class CompressionMiddleware(BaseHTTPMiddleware):
-    """Brotli/Gzip response compression for JSON and text responses."""
-
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-
-        content_type = response.headers.get("content-type", "")
-        if not any(t in content_type for t in ("application/json", "text/plain", "text/html")):
-            return response
-
-        accept_encoding = request.headers.get("accept-encoding", "")
-        supports_br = "br" in accept_encoding
-        supports_gzip = "gzip" in accept_encoding
-        if not supports_br and not supports_gzip:
-            return response
-
-        body = b""
-        if hasattr(response, "body"):
-            body = response.body
-        elif hasattr(response, "body_iterator"):
-            async for chunk in response.body_iterator:
-                if isinstance(chunk, bytes):
-                    body += chunk
-
-        if len(body) <= 500:
-            return Response(
-                content=body,
-                status_code=response.status_code,
-                headers=response.headers,
-                media_type=content_type,
-            )
-
-        if supports_br:
-            try:
-                import brotli
-                compressed = brotli.compress(body, quality=4)
-                headers = dict(response.headers)
-                headers["content-encoding"] = "br"
-                headers["content-length"] = str(len(compressed))
-                return Response(content=compressed, status_code=response.status_code, headers=headers, media_type=content_type)
-            except ImportError:
-                pass
-
-        if supports_gzip:
-            try:
-                buf = io.BytesIO()
-                with gzip.GzipFile(fileobj=buf, mode='wb') as f:
-                    f.write(body)
-                compressed = buf.getvalue()
-                headers = dict(response.headers)
-                headers["content-encoding"] = "gzip"
-                headers["content-length"] = str(len(compressed))
-                return Response(content=compressed, status_code=response.status_code, headers=headers, media_type=content_type)
-            except Exception:
-                pass
-
-        return Response(
-            content=body,
-            status_code=response.status_code,
-            headers=response.headers,
-            media_type=content_type,
-        )
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, requests_per_minute: int = 200):
@@ -148,10 +83,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(CompressionMiddleware)
-app.add_middleware(LoginRateLimitMiddleware)
-app.add_middleware(RateLimitMiddleware, requests_per_minute=250)
-app.add_middleware(MaxBodySizeMiddleware)
+    app.add_middleware(LoginRateLimitMiddleware)
+    app.add_middleware(RateLimitMiddleware, requests_per_minute=250)
+    app.add_middleware(MaxBodySizeMiddleware)
 
 from app.api.v1.auth import router as auth_router
 from app.api.v2.documents import router as documents_router

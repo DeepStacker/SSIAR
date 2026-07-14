@@ -60,6 +60,9 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def get_current_role() -> str:
+    cached = getattr(_auth_local, "role", None)
+    if cached:
+        return cached
     user_id = get_current_user_id()
     if not user_id:
         return "user"
@@ -74,7 +77,7 @@ def get_current_role() -> str:
         row = cur.fetchone()
         return row[0] if (row and row[0]) else "user"
     except Exception:
-        return getattr(_auth_local, "role", "user")
+        return "user"
     finally:
         put_conn(conn)
 

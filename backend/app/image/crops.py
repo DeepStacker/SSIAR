@@ -133,10 +133,9 @@ def resolve_crop_polygon(doc_id: str, crop_name: str) -> tuple[Optional[list[flo
             else:
                 from app.processing.field_resolver import resolve_field
                 from app.core.types import NormalizedAzureResponse
-                from app.processing.templates import get_template, init_templates_v2
+                from app.processing.templates import get_template
 
                 normalized = NormalizedAzureResponse(raw_dict)
-                init_templates_v2()
                 template = get_template("sdq_student_form_v1")
 
                 field_def = None
@@ -252,7 +251,7 @@ def perspective_crop(
     M = cv2.getPerspectiveTransform(padded_pts, dst)
     return cv2.warpPerspective(
         img, M, (out_w_padded, out_h_padded),
-        flags=cv2.INTER_CUBIC,
+        flags=cv2.INTER_LINEAR,
         borderMode=cv2.BORDER_REPLICATE,
     )
 
