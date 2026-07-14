@@ -183,6 +183,12 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
   }, [details.id]);
 
   const acceptedCount = activeFields.filter(f => fieldAccepted[f.key]).length;
+
+  useEffect(() => {
+    if (activeFields.length > 0 && acceptedCount === activeFields.length && !saving) {
+      onVerify();
+    }
+  }, [acceptedCount, activeFields.length, onVerify, saving]);
   const highConfQCount = Array.from({ length: 25 }, (_, i) => `q${i + 1}`).filter(q => {
     const c = checkboxConf[q];
     return c === 'high' || c === 'high_confidence' || !c;
