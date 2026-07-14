@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/context/ToastContext';
+import { useDocument } from '@/context/DocumentContext';
 
 interface FullPagePreviewProps {
   pageUrl: string;
@@ -220,6 +221,7 @@ function getConfStyle(score: number) {
 
 export const DeadLetterQueueView: React.FC = () => {
   const { show } = useToast();
+  const doc = useDocument();
 
   const [tasks, setTasks] = useState<DlqTask[]>([]);
   const [failedDocs, setFailedDocs] = useState<AppDocument[]>([]);
@@ -614,16 +616,25 @@ const activeReviewNeededDoc = reviewNeededDocs.find(d => d.id === selectedReview
                 </div>
               ))}
               {(failedDocs.length > 0 || reviewNeededDocs.length > 0) && tasks.length > 0 && <div className="border-t border-border/40 my-2" />}
-              {reviewNeededDocs.map(doc => (
+              {reviewNeededDocs.map(rdoc => (
                 <div
-                  key={doc.id}
-                  onClick={() => { setSelectedReviewNeededDocId(doc.id); setSelectedTaskId(null); setSelectedFailedDocId(null); }}
-                  className={c(
-                    'group relative pl-3 pr-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 border mb-1',
-                    selectedReviewNeededDocId === doc.id
-                      ? 'bg-warning/8 border-warning/20'
-                      : 'bg-transparent border-transparent hover:bg-secondary/40 hover:border-border'
-                  )}
+                  key={rdoc.id}
+                  onClick={() => {
+                    doc.setSelectedDoc(rdoc);
+                    doc.setDocDetails(null);
+                    doc.setDetailsLoading(true);
+                    doc.setDetailsError(null);
+                    api.getDocumentDetails(rdoc.id).then(data => {
+                      if (!data.responses) data.responses = {};
+                      if (!data.academic_scores) data.academic_scores = { math_pct: "", science_pct: "", language_pct: "", rank: "" };
+                      doc.setDocDetails(data);
+                      doc.setDetailsError(null);
+                    }).catch(err => {
+                      doc.setDocDetails(null);
+                      doc.setDetailsError(err instanceof Error ? err.message : 'Failed to load details');
+                    }).finally(() => doc.setDetailsLoading(false));
+                  }}
+                  className="group relative pl-3 pr-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 border mb-1 hover:bg-secondary/40 hover:border-border"
                 >
                   <div className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-full bg-warning" />
                   <div className="flex items-start justify-between gap-2 mb-1">
@@ -631,10 +642,10 @@ const activeReviewNeededDoc = reviewNeededDocs.find(d => d.id === selectedReview
                       Needs Review
                     </span>
                   </div>
-                  <div className="font-semibold text-xs mb-1 truncate">{doc.filename}</div>
+                  <div className="font-semibold text-xs mb-1 truncate">{rdoc.filename}</div>
                   <div className="flex items-center gap-1 text-[9px] text-muted-foreground font-medium">
-                    <AlertTriangle size={8} className="shrink-0 text-warning" />
-                    <span className="truncate">Flagged for manual review</span>
+                    <ArrowRight size={8} className="shrink-0" />
+                    <span className="truncate">Click to open in Review view</span>
                   </div>
                 </div>
               ))}
@@ -727,9 +738,23 @@ const activeReviewNeededDoc = reviewNeededDocs.find(d => d.id === selectedReview
             <AlertTriangle size={40} className="text-warning/60" />
             <h2 className="text-base font-bold">Needs Review</h2>
             <p className="text-xs text-muted-foreground max-w-md">{activeReviewNeededDoc.filename}</p>
-            <div className="w-full max-w-md rounded-lg p-3 text-xs text-left text-muted-foreground bg-warning/5 border border-warning/20">
-              This document was flagged for manual review but has no pending correction tasks. Open it in the Review view to inspect all fields.
-            </div>
+            <Button onClick={() => {
+              doc.setSelectedDoc(activeReviewNeededDoc);
+              doc.setDocDetails(null);
+              doc.setDetailsLoading(true);
+              doc.setDetailsError(null);
+              api.getDocumentDetails(activeReviewNeededDoc.id).then(data => {
+                if (!data.responses) data.responses = {};
+                if (!data.academic_scores) data.academic_scores = { math_pct: "", science_pct: "", language_pct: "", rank: "" };
+                doc.setDocDetails(data);
+                doc.setDetailsError(null);
+              }).catch(err => {
+                doc.setDocDetails(null);
+                doc.setDetailsError(err instanceof Error ? err.message : 'Failed to load details');
+              }).finally(() => doc.setDetailsLoading(false));
+            }} className="gap-2">
+              <ArrowRight size={14} /> Open in Review View
+            </Button>
           </Card>
         ) : activeTask ? (
           <Card className="flex flex-col h-full overflow-hidden">
