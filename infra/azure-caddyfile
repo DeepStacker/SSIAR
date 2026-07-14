@@ -1,4 +1,4 @@
-ssiar.yourdomain.com {
+ssiar.duckdns.org {
     reverse_proxy localhost:8000
     encode gzip
     header {
