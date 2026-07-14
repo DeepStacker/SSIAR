@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Search, Clock, AlertTriangle, Check, X, Eye, Download, RotateCcw, Trash2, ChevronUp, ChevronDown, FileWarning, Upload, Inbox } from 'lucide-react';
 import type { Document, TabType, SortKey } from '@/api';
 import { STATUS_REVIEW, STATUS_VERIFIED, STATUS_PROCESSING, STATUS_FAILED } from '@/api';
@@ -50,13 +50,13 @@ interface Props {
   onUpload?: () => void;
 }
 
-export const DocumentTable: React.FC<Props> = ({
+export const DocumentTable = React.memo<Props>(({
   documents, activeTab, onTabChange, searchQuery, onSearchChange,
   sortKey, sortDir, onSortChange, selectedIds, onToggleSelect, onToggleSelectAll,
   onOpenDoc, onDownloadReport, onReprocess, onDelete, onBulkDone,
   onBulkVerify, onBulkReprocess, onBulkDelete, loading, onUpload,
 }) => {
-  const filtered = (() => {
+  const filtered = useMemo(() => {
     const list = documents.filter(d => matchStatus(d, activeTab));
     let result = list;
     if (searchQuery.trim()) {
@@ -71,15 +71,15 @@ export const DocumentTable: React.FC<Props> = ({
       const bv = (b[sortKey] || '').toLowerCase();
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
-  })();
+  }, [documents, activeTab, searchQuery, sortKey, sortDir]);
 
-  const counts: Record<string, number> = {
+  const counts = useMemo(() => ({
     all: documents.length,
     processing: documents.filter(d => STATUS_PROCESSING.has(d.status)).length,
     needs_review: documents.filter(d => STATUS_REVIEW.has(d.status)).length,
     verified: documents.filter(d => STATUS_VERIFIED.has(d.status)).length,
     failed: documents.filter(d => STATUS_FAILED.has(d.status)).length,
-  };
+  }), [documents]);
 
   return (
     <div className="bg-card border border-border rounded-lg shadow-xs overflow-hidden">
@@ -246,7 +246,7 @@ export const DocumentTable: React.FC<Props> = ({
       </div>
     </div>
   );
-};
+});
 
 const SortTh: React.FC<{ label: string; sortKey: SortKey; current: SortKey; dir: 'asc' | 'desc'; onSort: (k: SortKey) => void; right?: boolean; className?: string }> = ({ label, sortKey, current, dir, onSort, right, className = '' }) => {
   const isActive = current === sortKey;
