@@ -3,16 +3,16 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
+      tags:
+        - "ssiar-app:latest"
     ports:
       - "8000:8000"
     env_file:
       - ../backend/.env
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 2g
-          cpus: "2"
+    mem_limit: 1g
+    mem_reservation: 512m
+    cpus: 1.5
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/api/v3/system/health"]
       interval: 30s
