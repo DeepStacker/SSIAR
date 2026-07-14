@@ -223,9 +223,11 @@ export const DeadLetterQueueView: React.FC = () => {
 
   const [tasks, setTasks] = useState<DlqTask[]>([]);
   const [failedDocs, setFailedDocs] = useState<AppDocument[]>([]);
+const [reviewNeededDocs, setReviewNeededDocs] = useState<AppDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedFailedDocId, setSelectedFailedDocId] = useState<string | null>(null);
+  const [selectedReviewNeededDocId, setSelectedReviewNeededDocId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dbTotalCount, setDbTotalCount] = useState(0);
   const [reprocessingFailed, setReprocessingFailed] = useState(false);
@@ -261,26 +263,36 @@ export const DeadLetterQueueView: React.FC = () => {
         api.listDocuments(['id', 'status', 'filename', 'created_at', 'error_message']).catch(() => [] as AppDocument[]),
       ]);
       setTasks(data.tasks);
-      setFailedDocs(docs.filter(d => d.status === 'failed'));
-      setDbTotalCount(data.total + docs.filter(d => d.status === 'failed').length);
+      const failed = docs.filter(d => d.status === 'failed');
+      const needsReview = docs.filter(d => d.status === 'needs_review' || d.status === 'review_required');
+      setFailedDocs(failed);
+      setReviewNeededDocs(needsReview);
+      setDbTotalCount(data.total + failed.length + needsReview.length);
 
       if (initialTotalCount === 0) {
-        setInitialTotalCount(data.total + docs.filter(d => d.status === 'failed').length);
+        setInitialTotalCount(data.total + failed.length + needsReview.length);
         setResolvedSessionCount(0);
       }
 
-      const totalItems = data.tasks.length + docs.filter(d => d.status === 'failed').length;
+      const totalItems = data.tasks.length + failed.length + needsReview.length;
       if (totalItems > 0) {
-        if (docs.filter(d => d.status === 'failed').length > 0 && !selectedFailedDocId && !selectedTaskId) {
-          setSelectedFailedDocId(docs.find(d => d.status === 'failed')!.id);
+        if (failed.length > 0 && !selectedFailedDocId && !selectedTaskId && !selectedReviewNeededDocId) {
+          setSelectedFailedDocId(failed[0].id);
           setSelectedTaskId(null);
+          setSelectedReviewNeededDocId(null);
+        } else if (needsReview.length > 0 && !selectedReviewNeededDocId && !selectedTaskId) {
+          setSelectedReviewNeededDocId(needsReview[0].id);
+          setSelectedTaskId(null);
+          setSelectedFailedDocId(null);
         } else if (data.tasks.length > 0 && !selectedTaskId) {
           setSelectedTaskId(data.tasks[0].id);
           setSelectedFailedDocId(null);
+          setSelectedReviewNeededDocId(null);
         }
       } else {
         setSelectedTaskId(null);
         setSelectedFailedDocId(null);
+        setSelectedReviewNeededDocId(null);
       }
     } catch (err) {
       console.error(err);
@@ -288,7 +300,7 @@ export const DeadLetterQueueView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [fieldType, priority, errorType, sortBy, sortDir, selectedTaskId, selectedFailedDocId, show, initialTotalCount]);
+  }, [fieldType, priority, errorType, sortBy, sortDir, selectedTaskId, selectedFailedDocId, selectedReviewNeededDocId, show, initialTotalCount]);
 
   useEffect(() => {
     loadTasks();
@@ -302,6 +314,7 @@ export const DeadLetterQueueView: React.FC = () => {
 
   const activeTask = tasks.find(t => t.id === selectedTaskId) || null;
   const activeFailedDoc = failedDocs.find(d => d.id === selectedFailedDocId) || null;
+const activeReviewNeededDoc = reviewNeededDocs.find(d => d.id === selectedReviewNeededDocId) || null;
 
   const formatDateStr = (raw: string): string => {
     const digits = raw.replace(/\D/g, '').slice(0, 8);
@@ -568,7 +581,7 @@ export const DeadLetterQueueView: React.FC = () => {
               <Loader2 className="animate-spin text-primary" size={18} />
               <span className="text-xs font-medium">Loading tasks...</span>
             </div>
-          ) : filteredTasks.length === 0 && failedDocs.length === 0 ? (
+          ) : filteredTasks.length === 0 && failedDocs.length === 0 && reviewNeededDocs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-muted-foreground text-sm gap-3">
               <FileWarning size={18} className="text-muted-foreground/60" />
               <span className="text-xs font-medium">No unresolved fields</span>
@@ -600,7 +613,32 @@ export const DeadLetterQueueView: React.FC = () => {
                   </div>
                 </div>
               ))}
-              {failedDocs.length > 0 && tasks.length > 0 && <div className="border-t border-border/40 my-2" />}
+              {(failedDocs.length > 0 || reviewNeededDocs.length > 0) && tasks.length > 0 && <div className="border-t border-border/40 my-2" />}
+              {reviewNeededDocs.map(doc => (
+                <div
+                  key={doc.id}
+                  onClick={() => { setSelectedReviewNeededDocId(doc.id); setSelectedTaskId(null); setSelectedFailedDocId(null); }}
+                  className={c(
+                    'group relative pl-3 pr-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 border mb-1',
+                    selectedReviewNeededDocId === doc.id
+                      ? 'bg-warning/8 border-warning/20'
+                      : 'bg-transparent border-transparent hover:bg-secondary/40 hover:border-border'
+                  )}
+                >
+                  <div className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-full bg-warning" />
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <span className="inline-flex items-center rounded-md border border-warning/20 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold text-warning">
+                      Needs Review
+                    </span>
+                  </div>
+                  <div className="font-semibold text-xs mb-1 truncate">{doc.filename}</div>
+                  <div className="flex items-center gap-1 text-[9px] text-muted-foreground font-medium">
+                    <AlertTriangle size={8} className="shrink-0 text-warning" />
+                    <span className="truncate">Flagged for manual review</span>
+                  </div>
+                </div>
+              ))}
+              {(failedDocs.length > 0 || reviewNeededDocs.length > 0) && tasks.length > 0 && <div className="border-t border-border/40 my-2" />}
             {filteredTasks.map(t => {
               const isSdq = t.field_name.startsWith('q') && t.field_name.substring(1).match(/^\d+$/);
               const confStyle = getConfStyle(t.confidence_score);
@@ -670,6 +708,7 @@ export const DeadLetterQueueView: React.FC = () => {
                   show('Reprocessing started', 'success');
                   setFailedDocs(prev => prev.filter(d => d.id !== activeFailedDoc.id));
                   setSelectedFailedDocId(null);
+                  setSelectedReviewNeededDocId(null);
                   loadTasks();
                 } catch (e: any) {
                   show('Failed to reprocess: ' + e.message, 'error');
@@ -682,6 +721,15 @@ export const DeadLetterQueueView: React.FC = () => {
               {reprocessingFailed ? <Loader2 size={14} className="animate-spin" /> : null}
               {reprocessingFailed ? 'Reprocessing...' : 'Reprocess Document'}
             </Button>
+          </Card>
+        ) : activeReviewNeededDoc ? (
+          <Card className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
+            <AlertTriangle size={40} className="text-warning/60" />
+            <h2 className="text-base font-bold">Needs Review</h2>
+            <p className="text-xs text-muted-foreground max-w-md">{activeReviewNeededDoc.filename}</p>
+            <div className="w-full max-w-md rounded-lg p-3 text-xs text-left text-muted-foreground bg-warning/5 border border-warning/20">
+              This document was flagged for manual review but has no pending correction tasks. Open it in the Review view to inspect all fields.
+            </div>
           </Card>
         ) : activeTask ? (
           <Card className="flex flex-col h-full overflow-hidden">
