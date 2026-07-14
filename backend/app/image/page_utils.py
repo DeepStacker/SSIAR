@@ -64,6 +64,31 @@ def cache_crop_set(key: tuple[str, str], value: bytes):
 
 # ── Azure coordinate scaling ────────────────────────────────────────────
 
+_cache_azure_response: dict[str, dict] = {}
+_azure_response_order: list[str] = []
+
+
+def _get_cached_azure_response(doc_id: str) -> dict | None:
+    if doc_id in _cache_azure_response:
+        return _cache_azure_response[doc_id]
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        from app.database import USE_POSTGRES
+        cur.execute("SELECT raw_response FROM azure_responses WHERE document_id = %s" if USE_POSTGRES else "SELECT raw_response FROM azure_responses WHERE document_id = ?", (doc_id,))
+        row = cur.fetchone()
+        if row and row[0]:
+            raw = json.loads(row[0])
+            if len(_cache_azure_response) >= 128:
+                oldest = _azure_response_order.pop(0)
+                _cache_azure_response.pop(oldest, None)
+            _cache_azure_response[doc_id] = raw
+            _azure_response_order.append(doc_id)
+            return raw
+        return None
+    finally:
+        put_conn(conn)
+
 
 def get_azure_scale(doc_id: str, page_num: int, img_w: int, img_h: int) -> tuple[float, float]:
     """Compute scale factors from Azure coordinate space → actual image pixel space.
@@ -74,35 +99,27 @@ def get_azure_scale(doc_id: str, page_num: int, img_w: int, img_h: int) -> tuple
     scaled_azure_w = 2483.0   # A4 @ 300 DPI fallback
     scaled_azure_h = 3508.0
 
-    conn = get_db_connection()
-    try:
-        cur = conn.cursor()
-        from app.database import USE_POSTGRES
-        cur.execute("SELECT raw_response FROM azure_responses WHERE document_id = %s" if USE_POSTGRES else "SELECT raw_response FROM azure_responses WHERE document_id = ?", (doc_id,))
-        row = cur.fetchone()
-        if row and row[0]:
-            try:
-                raw_dict = json.loads(row[0])
-                pages_list = raw_dict.get("pages", [])
-                if not pages_list:
-                    pg_key = f"page_{page_num}"
-                    sub_result = raw_dict.get(pg_key, {})
-                    if isinstance(sub_result, dict):
-                        pages_list = sub_result.get("pages", [])
-                for p in pages_list:
-                    p_num = p.get("pageNumber", p.get("page", 1))
-                    if p_num == page_num or len(pages_list) == 1:
-                        w_val = p.get("width", 0.0)
-                        h_val = p.get("height", 0.0)
-                        unit_val = p.get("unit", "inch")
-                        scale_val = 300.0 if unit_val == "inch" else 1.0
-                        scaled_azure_w = w_val * scale_val
-                        scaled_azure_h = h_val * scale_val
-                        break
-            except Exception:
-                pass
-    finally:
-        put_conn(conn)
+    raw_dict = _get_cached_azure_response(doc_id)
+    if raw_dict:
+        try:
+            pages_list = raw_dict.get("pages", [])
+            if not pages_list:
+                pg_key = f"page_{page_num}"
+                sub_result = raw_dict.get(pg_key, {})
+                if isinstance(sub_result, dict):
+                    pages_list = sub_result.get("pages", [])
+            for p in pages_list:
+                p_num = p.get("pageNumber", p.get("page", 1))
+                if p_num == page_num or len(pages_list) == 1:
+                    w_val = p.get("width", 0.0)
+                    h_val = p.get("height", 0.0)
+                    unit_val = p.get("unit", "inch")
+                    scale_val = 300.0 if unit_val == "inch" else 1.0
+                    scaled_azure_w = w_val * scale_val
+                    scaled_azure_h = h_val * scale_val
+                    break
+        except Exception:
+            pass
 
     scaled_azure_w = max(1.0, scaled_azure_w)
     scaled_azure_h = max(1.0, scaled_azure_h)

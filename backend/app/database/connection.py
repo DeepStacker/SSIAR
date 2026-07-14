@@ -173,6 +173,7 @@ def init_db():
                     recorded_at TEXT NOT NULL
                 )
             """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_processing_metrics_doc_id ON processing_metrics(document_id)")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS review_tasks (
                     id SERIAL PRIMARY KEY,
@@ -364,6 +365,7 @@ def init_db():
                     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
                 )
             """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_processing_metrics_doc_id ON processing_metrics(document_id)")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS review_tasks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -698,6 +700,34 @@ def get_document(doc_id: str) -> Optional[dict]:
                         pass
             return d
         return None
+    finally:
+        put_conn(conn)
+
+
+def get_documents_batch(doc_ids: list[str]) -> dict[str, dict]:
+    if not doc_ids:
+        return {}
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
+        placeholders = ', '.join(['%s' if USE_POSTGRES else '?' for _ in doc_ids])
+        query = f"""SELECT d.id, d.filename, d.status, d.classification, d.escalation_level, d.created_at, d.error_message,
+                   f.roll_number, f.class, f.dob, f.gender, f.consent, f.responses,
+                   f.academic_scores, f.remarks, f.confidence_scores
+                   FROM documents d LEFT JOIN form_data f ON d.id = f.document_id
+                   WHERE d.id IN ({placeholders})"""
+        cur.execute(query, doc_ids)
+        result = {}
+        for row in cur.fetchall():
+            d = dict(row)
+            for key in ('responses', 'academic_scores', 'confidence_scores', 'classification'):
+                if d.get(key):
+                    try:
+                        d[key] = json.loads(d[key])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            result[d['id']] = d
+        return result
     finally:
         put_conn(conn)
 

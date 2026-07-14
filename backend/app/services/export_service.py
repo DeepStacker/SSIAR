@@ -9,7 +9,7 @@ from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 from fastapi.responses import StreamingResponse
-from app.database import get_document
+from app.database import get_documents_batch
 
 HEADERS_EXTRACTED = [
     "Timestamp",
@@ -175,8 +175,10 @@ def build_export(
     
     if fmt == "csv":
         rows_data = []
+        doc_ids = [d["id"] for d in filtered_docs]
+        docs_map = get_documents_batch(doc_ids)
         for d in filtered_docs:
-            full_doc = _normalize_doc(get_document(d["id"]))
+            full_doc = _normalize_doc(docs_map.get(d["id"]))
             if not full_doc:
                 continue
                 
@@ -203,7 +205,8 @@ def build_export(
             
         return _build_csv(HEADERS_EXTRACTED, rows_data)
 
-    return _build_excel(meta, filtered_docs, lang)
+    docs_map = get_documents_batch([d["id"] for d in filtered_docs])
+    return _build_excel(meta, filtered_docs, docs_map, lang)
 
 def _build_csv(headers: list, rows: list) -> StreamingResponse:
     output = BytesIO()
@@ -220,7 +223,7 @@ def _build_csv(headers: list, rows: list) -> StreamingResponse:
         headers={"Content-Disposition": "attachment; filename=ssiar_sdq_digitized.csv"}
     )
 
-def _build_excel(meta: list, filtered_docs: list, lang: str) -> StreamingResponse:
+def _build_excel(meta: list, filtered_docs: list, docs_map: dict, lang: str) -> StreamingResponse:
     wb = Workbook()
     
     # Sheet 1: Extracted Data
@@ -243,7 +246,7 @@ def _build_excel(meta: list, filtered_docs: list, lang: str) -> StreamingRespons
     green_fill = PatternFill(start_color="D1E7DD", end_color="D1E7DD", fill_type="solid")
     
     for d in filtered_docs:
-        full_doc = _normalize_doc(get_document(d["id"]))
+        full_doc = _normalize_doc(docs_map.get(d["id"]))
         if not full_doc:
             continue
             

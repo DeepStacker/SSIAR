@@ -190,21 +190,20 @@ def compute_summary_stats(
             doc_params.append(date_to + "T23:59:59")
 
         where_extra = " AND " + " AND ".join(doc_filters) if doc_filters else ""
-
-        cursor.execute(f"SELECT COUNT(*) FROM documents d{fd_join} WHERE 1=1{where_extra}", doc_params)
-        total_forms = cursor.fetchone()[0]
-
-        cursor.execute(f"SELECT COUNT(*) FROM documents d{fd_join} WHERE d.status = 'verified'{where_extra}", doc_params)
-        verified_count = cursor.fetchone()[0]
-
-        cursor.execute(f"SELECT COUNT(*) FROM documents d{fd_join} WHERE d.status = 'needs_review'{where_extra}", doc_params)
-        pending_count = cursor.fetchone()[0]
-
         today_str = date.today().isoformat()
-        today_filters = [f"d.created_at LIKE {ph}"] + doc_filters
-        today_params = [f"{today_str}%"] + doc_params
-        cursor.execute(f"SELECT COUNT(*) FROM documents d{fd_join} WHERE 1=1 AND " + " AND ".join(today_filters), today_params)
-        processed_today = cursor.fetchone()[0]
+        cursor.execute(
+            f"SELECT COUNT(*),"
+            f" SUM(CASE WHEN d.status = 'verified' THEN 1 ELSE 0 END),"
+            f" SUM(CASE WHEN d.status = 'needs_review' THEN 1 ELSE 0 END),"
+            f" SUM(CASE WHEN d.created_at LIKE {ph} THEN 1 ELSE 0 END)"
+            f" FROM documents d{fd_join} WHERE 1=1{where_extra}",
+            doc_params + [f"{today_str}%"]
+        )
+        row = cursor.fetchone()
+        total_forms = row[0] or 0
+        verified_count = row[1] or 0
+        pending_count = row[2] or 0
+        processed_today = row[3] or 0
 
         quality_filters = ["d.status IN ('verified', 'needs_review')"]
         quality_params = []

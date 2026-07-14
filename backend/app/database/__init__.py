@@ -1,5 +1,5 @@
 from .connection import (
-    get_db_connection, put_conn, init_db, get_document, 
+    get_db_connection, put_conn, init_db, get_document, get_documents_batch,
     get_all_documents, delete_document, bulk_delete_documents,
     update_document_status, insert_or_update_form_data,
     log_correction_data, get_edit_history, get_page_image,
