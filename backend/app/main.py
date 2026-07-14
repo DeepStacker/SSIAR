@@ -83,9 +83,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-    app.add_middleware(LoginRateLimitMiddleware)
-    app.add_middleware(RateLimitMiddleware, requests_per_minute=250)
-    app.add_middleware(MaxBodySizeMiddleware)
+
+app.add_middleware(LoginRateLimitMiddleware)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=250)
+app.add_middleware(MaxBodySizeMiddleware)
 
 from app.api.v1.auth import router as auth_router
 from app.api.v2.documents import router as documents_router
