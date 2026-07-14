@@ -385,6 +385,18 @@ export const DeadLetterQueueView: React.FC = () => {
       return;
     }
 
+    // Immediately find and preload the next task's crop image
+    const currentIndex = tasks.findIndex(t => t.id === activeTask.id);
+    let nextTask: DlqTask | null = null;
+    if (currentIndex >= 0) {
+      const nextIdx = currentIndex + 1 < tasks.length ? currentIndex + 1 : (tasks.length > 1 ? 0 : -1);
+      if (nextIdx >= 0) nextTask = tasks[nextIdx];
+    }
+    if (nextTask) {
+      const preimg = new window.Image();
+      preimg.src = api.getCropUrl(nextTask.document_id, nextTask.field_name);
+    }
+
     setSaving(true);
     try {
       const result = await api.submitDlqResolution(activeTask.id, finalVal);
@@ -393,13 +405,16 @@ export const DeadLetterQueueView: React.FC = () => {
 
       setResolvedSessionCount(prev => prev + 1);
 
+      // Pre-selected next task is already being loaded; remove current from list
       const nextTasks = tasks.filter(t => t.id !== activeTask.id);
       setTasks(nextTasks);
 
       if (nextTasks.length > 0) {
-        const currentIndex = tasks.findIndex(t => t.id === activeTask.id);
-        const nextIndex = currentIndex + 1 < tasks.length ? currentIndex : 0;
-        setSelectedTaskId(nextTasks[nextIndex]?.id || nextTasks[0].id);
+        if (nextTask && nextTasks.some(t => t.id === nextTask!.id)) {
+          setSelectedTaskId(nextTask.id);
+        } else {
+          setSelectedTaskId(nextTasks[0].id);
+        }
       } else {
         setSelectedTaskId(null);
       }
