@@ -42,6 +42,7 @@ def create_review_task(
             task_id = str(cur.fetchone()["id"])
         else:
             task_id = str(cur.lastrowid)
+        conn.commit()
         return task_id
     finally:
         put_conn(conn)

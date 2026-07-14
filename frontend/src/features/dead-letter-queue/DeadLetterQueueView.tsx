@@ -8,7 +8,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/context/ToastContext';
-import { useDocument } from '@/context/DocumentContext';
 
 interface FullPagePreviewProps {
   pageUrl: string;
@@ -221,15 +220,12 @@ function getConfStyle(score: number) {
 
 export const DeadLetterQueueView: React.FC = () => {
   const { show } = useToast();
-  const doc = useDocument();
 
   const [tasks, setTasks] = useState<DlqTask[]>([]);
   const [failedDocs, setFailedDocs] = useState<AppDocument[]>([]);
-const [reviewNeededDocs, setReviewNeededDocs] = useState<AppDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedFailedDocId, setSelectedFailedDocId] = useState<string | null>(null);
-  const [selectedReviewNeededDocId, setSelectedReviewNeededDocId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dbTotalCount, setDbTotalCount] = useState(0);
   const [reprocessingFailed, setReprocessingFailed] = useState(false);
@@ -266,35 +262,26 @@ const [reviewNeededDocs, setReviewNeededDocs] = useState<AppDocument[]>([]);
       ]);
       setTasks(data.tasks);
       const failed = docs.filter(d => d.status === 'failed');
-      const needsReview = docs.filter(d => d.status === 'needs_review' || d.status === 'review_required');
       setFailedDocs(failed);
-      setReviewNeededDocs(needsReview);
-      setDbTotalCount(data.total + failed.length + needsReview.length);
+      setDbTotalCount(data.total + failed.length);
 
       if (initialTotalCount === 0) {
-        setInitialTotalCount(data.total + failed.length + needsReview.length);
+        setInitialTotalCount(data.total + failed.length);
         setResolvedSessionCount(0);
       }
 
-      const totalItems = data.tasks.length + failed.length + needsReview.length;
+      const totalItems = data.tasks.length + failed.length;
       if (totalItems > 0) {
-        if (failed.length > 0 && !selectedFailedDocId && !selectedTaskId && !selectedReviewNeededDocId) {
+        if (failed.length > 0 && !selectedFailedDocId && !selectedTaskId) {
           setSelectedFailedDocId(failed[0].id);
           setSelectedTaskId(null);
-          setSelectedReviewNeededDocId(null);
-        } else if (needsReview.length > 0 && !selectedReviewNeededDocId && !selectedTaskId) {
-          setSelectedReviewNeededDocId(needsReview[0].id);
-          setSelectedTaskId(null);
-          setSelectedFailedDocId(null);
         } else if (data.tasks.length > 0 && !selectedTaskId) {
           setSelectedTaskId(data.tasks[0].id);
           setSelectedFailedDocId(null);
-          setSelectedReviewNeededDocId(null);
         }
       } else {
         setSelectedTaskId(null);
         setSelectedFailedDocId(null);
-        setSelectedReviewNeededDocId(null);
       }
     } catch (err) {
       console.error(err);
@@ -302,7 +289,7 @@ const [reviewNeededDocs, setReviewNeededDocs] = useState<AppDocument[]>([]);
     } finally {
       setLoading(false);
     }
-  }, [fieldType, priority, errorType, sortBy, sortDir, selectedTaskId, selectedFailedDocId, selectedReviewNeededDocId, show, initialTotalCount]);
+  }, [fieldType, priority, errorType, sortBy, sortDir, selectedTaskId, selectedFailedDocId, show, initialTotalCount]);
 
   useEffect(() => {
     loadTasks();
@@ -316,7 +303,6 @@ const [reviewNeededDocs, setReviewNeededDocs] = useState<AppDocument[]>([]);
 
   const activeTask = tasks.find(t => t.id === selectedTaskId) || null;
   const activeFailedDoc = failedDocs.find(d => d.id === selectedFailedDocId) || null;
-const activeReviewNeededDoc = reviewNeededDocs.find(d => d.id === selectedReviewNeededDocId) || null;
 
   const formatDateStr = (raw: string): string => {
     const digits = raw.replace(/\D/g, '').slice(0, 8);
@@ -583,7 +569,7 @@ const activeReviewNeededDoc = reviewNeededDocs.find(d => d.id === selectedReview
               <Loader2 className="animate-spin text-primary" size={18} />
               <span className="text-xs font-medium">Loading tasks...</span>
             </div>
-          ) : filteredTasks.length === 0 && failedDocs.length === 0 && reviewNeededDocs.length === 0 ? (
+          ) : filteredTasks.length === 0 && failedDocs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-muted-foreground text-sm gap-3">
               <FileWarning size={18} className="text-muted-foreground/60" />
               <span className="text-xs font-medium">No unresolved fields</span>
@@ -615,41 +601,7 @@ const activeReviewNeededDoc = reviewNeededDocs.find(d => d.id === selectedReview
                   </div>
                 </div>
               ))}
-              {(failedDocs.length > 0 || reviewNeededDocs.length > 0) && tasks.length > 0 && <div className="border-t border-border/40 my-2" />}
-              {reviewNeededDocs.map(rdoc => (
-                <div
-                  key={rdoc.id}
-                  onClick={() => {
-                    doc.setSelectedDoc(rdoc);
-                    doc.setDocDetails(null);
-                    doc.setDetailsLoading(true);
-                    doc.setDetailsError(null);
-                    api.getDocumentDetails(rdoc.id).then(data => {
-                      if (!data.responses) data.responses = {};
-                      if (!data.academic_scores) data.academic_scores = { math_pct: "", science_pct: "", language_pct: "", rank: "" };
-                      doc.setDocDetails(data);
-                      doc.setDetailsError(null);
-                    }).catch(err => {
-                      doc.setDocDetails(null);
-                      doc.setDetailsError(err instanceof Error ? err.message : 'Failed to load details');
-                    }).finally(() => doc.setDetailsLoading(false));
-                  }}
-                  className="group relative pl-3 pr-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 border mb-1 hover:bg-secondary/40 hover:border-border"
-                >
-                  <div className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-full bg-warning" />
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <span className="inline-flex items-center rounded-md border border-warning/20 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold text-warning">
-                      Needs Review
-                    </span>
-                  </div>
-                  <div className="font-semibold text-xs mb-1 truncate">{rdoc.filename}</div>
-                  <div className="flex items-center gap-1 text-[9px] text-muted-foreground font-medium">
-                    <ArrowRight size={8} className="shrink-0" />
-                    <span className="truncate">Click to open in Review view</span>
-                  </div>
-                </div>
-              ))}
-              {(failedDocs.length > 0 || reviewNeededDocs.length > 0) && tasks.length > 0 && <div className="border-t border-border/40 my-2" />}
+              {failedDocs.length > 0 && tasks.length > 0 && <div className="border-t border-border/40 my-2" />}
             {filteredTasks.map(t => {
               const isSdq = t.field_name.startsWith('q') && t.field_name.substring(1).match(/^\d+$/);
               const confStyle = getConfStyle(t.confidence_score);
@@ -719,7 +671,6 @@ const activeReviewNeededDoc = reviewNeededDocs.find(d => d.id === selectedReview
                   show('Reprocessing started', 'success');
                   setFailedDocs(prev => prev.filter(d => d.id !== activeFailedDoc.id));
                   setSelectedFailedDocId(null);
-                  setSelectedReviewNeededDocId(null);
                   loadTasks();
                 } catch (e: any) {
                   show('Failed to reprocess: ' + e.message, 'error');
@@ -731,29 +682,6 @@ const activeReviewNeededDoc = reviewNeededDocs.find(d => d.id === selectedReview
             >
               {reprocessingFailed ? <Loader2 size={14} className="animate-spin" /> : null}
               {reprocessingFailed ? 'Reprocessing...' : 'Reprocess Document'}
-            </Button>
-          </Card>
-        ) : activeReviewNeededDoc ? (
-          <Card className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
-            <AlertTriangle size={40} className="text-warning/60" />
-            <h2 className="text-base font-bold">Needs Review</h2>
-            <p className="text-xs text-muted-foreground max-w-md">{activeReviewNeededDoc.filename}</p>
-            <Button onClick={() => {
-              doc.setSelectedDoc(activeReviewNeededDoc);
-              doc.setDocDetails(null);
-              doc.setDetailsLoading(true);
-              doc.setDetailsError(null);
-              api.getDocumentDetails(activeReviewNeededDoc.id).then(data => {
-                if (!data.responses) data.responses = {};
-                if (!data.academic_scores) data.academic_scores = { math_pct: "", science_pct: "", language_pct: "", rank: "" };
-                doc.setDocDetails(data);
-                doc.setDetailsError(null);
-              }).catch(err => {
-                doc.setDocDetails(null);
-                doc.setDetailsError(err instanceof Error ? err.message : 'Failed to load details');
-              }).finally(() => doc.setDetailsLoading(false));
-            }} className="gap-2">
-              <ArrowRight size={14} /> Open in Review View
             </Button>
           </Card>
         ) : activeTask ? (

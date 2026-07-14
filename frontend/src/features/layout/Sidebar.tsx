@@ -42,9 +42,8 @@ export const Sidebar: React.FC<Props> = ({
     if (id === 'dashboard' && reviewCount > 0) {
       return <span className={cn("ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive min-w-[18px] text-center", collapsed && "absolute -top-1 -right-1")}>{reviewCount > 99 ? '99+' : reviewCount}</span>;
     }
-    if (id === 'dlq' && (failedCount > 0 || reviewCount > 0)) {
-      const count = failedCount + reviewCount;
-      return <span className={cn("ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive min-w-[18px] text-center", collapsed && "absolute -top-1 -right-1")}>{count > 99 ? '99+' : count}</span>;
+    if (id === 'dlq' && failedCount > 0) {
+      return <span className={cn("ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive min-w-[18px] text-center", collapsed && "absolute -top-1 -right-1")}>{failedCount > 99 ? '99+' : failedCount}</span>;
     }
     return null;
   };
