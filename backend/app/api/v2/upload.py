@@ -57,10 +57,7 @@ def _process_upload_sync(content, filename, auto_verify, split, user_id=None):
             doc_ids.append(_queue_single_pdf(part_bytes, f"{base}_p{i//2+1}.pdf", auto_verify, pages=2, user_id=user_id))
         src.close()
     else:
-        src = fitz.open(stream=content, filetype="pdf")
-        total = len(src)
-        src.close()
-        doc_ids.append(_queue_single_pdf(content, filename, auto_verify, pages=total, user_id=user_id))
+        doc_ids.append(_queue_single_pdf(content, filename, auto_verify, pages=1, user_id=user_id))
     return doc_ids
 
 
