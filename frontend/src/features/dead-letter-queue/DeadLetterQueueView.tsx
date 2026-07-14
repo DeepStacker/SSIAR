@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, Search, ArrowUpDown, Check, AlertTriangle, ArrowRight, Sparkles, Image, Scan, BarChart, FileWarning, Hash, X, ArrowLeft, ArrowRightCircle } from 'lucide-react';
 import type { DlqTask, Document as AppDocument } from '@/api';
 import { api, clearApiCache } from '@/api';
-import { CanvasCrop } from '@/features/review/CanvasCrop';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -241,6 +240,7 @@ export const DeadLetterQueueView: React.FC = () => {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const [previewMode, setPreviewMode] = useState<'crop' | 'full'>('crop');
+  const [cropLoading, setCropLoading] = useState(true);
 
   const [inputValue, setInputValue] = useState('');
   const [isValidDate, setIsValidDate] = useState(true);
@@ -315,6 +315,7 @@ export const DeadLetterQueueView: React.FC = () => {
 
   useEffect(() => {
     if (activeTask) {
+      setCropLoading(true);
       const raw = activeTask.original_value || '';
       if (activeTask.field_name === 'dob') {
         setInputValue(formatDateStr(raw));
@@ -739,11 +740,18 @@ export const DeadLetterQueueView: React.FC = () => {
                     <kbd className="text-[9px] px-1 py-0.5 rounded bg-secondary text-muted-foreground/60 font-mono border border-border">Alt+V</kbd>
                   </div>
                   {previewMode === 'crop' ? (
-                    <div className="w-full flex items-center justify-center p-4 border border-border rounded-lg bg-secondary/10 overflow-hidden min-h-[120px]">
-                      <CanvasCrop
-                        pageUrl={api.getPageUrl(activeTask.document_id, activeTask.page_number)}
-                        polygon={activeTask.polygon}
+                    <div className="w-full relative flex items-center justify-center p-4 border border-border rounded-lg bg-secondary/10 overflow-hidden min-h-[120px]">
+                      {cropLoading && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-background/60">
+                          <Loader2 className="animate-spin text-primary" size={16} />
+                        </div>
+                      )}
+                      <img
+                        src={api.getCropUrl(activeTask.document_id, activeTask.field_name)}
+                        alt={getFieldLabel(activeTask.field_name)}
                         className="max-w-full max-h-[160px] object-contain rounded"
+                        onLoad={() => setCropLoading(false)}
+                        onError={() => setCropLoading(false)}
                       />
                     </div>
                   ) : (
