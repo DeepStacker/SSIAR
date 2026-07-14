@@ -121,15 +121,25 @@ def get_pending_review_tasks(
         
         rows = [dict(r) for r in cur.fetchall()]
         
+        # Batch fetch all form_data confidence_scores to avoid N+1 queries
+        doc_ids = list({r["document_id"] for r in rows if r.get("document_id")})
+        fd_map = {}
+        if doc_ids:
+            placeholders = ", ".join(["%s"] * len(doc_ids)) if USE_POSTGRES else ", ".join(["?"] * len(doc_ids))
+            cur.execute(
+                f"SELECT document_id, confidence_scores FROM form_data WHERE document_id IN ({placeholders})",
+                doc_ids
+            )
+            for fd_row in cur.fetchall():
+                fd_map[fd_row["document_id"]] = fd_row["confidence_scores"] if fd_row else None
+        
         # Enrich coordinates from form_data confidence_scores
         for row in rows:
             doc_id = row["document_id"]
             field_name = row["field_name"]
             
-            cur.execute("SELECT confidence_scores FROM form_data WHERE document_id = %s" if USE_POSTGRES else "SELECT confidence_scores FROM form_data WHERE document_id = ?", (doc_id,))
-            fd_row = cur.fetchone()
-            confidence_scores = fd_row["confidence_scores"] if fd_row else None
-            if fd_row and confidence_scores:
+            confidence_scores = fd_map.get(doc_id)
+            if confidence_scores:
                 try:
                     cs = json.loads(confidence_scores)
                     v2_trust = cs.get("v2_trust", {})

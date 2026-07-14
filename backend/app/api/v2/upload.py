@@ -69,7 +69,7 @@ async def upload_files(
     split: bool = Query(False),
 ):
     uid = request.state.user_id
-    doc_ids = []
+    tasks = []
     for f in files:
         if not f.filename or not f.filename.lower().endswith(".pdf"):
             continue
@@ -77,8 +77,10 @@ async def upload_files(
         if len(content) > MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=413, detail="File exceeds maximum upload size")
         loop = asyncio.get_event_loop()
-        docs = await loop.run_in_executor(None, _process_upload_sync, content, f.filename, auto_verify, split, uid)
-        doc_ids.extend(docs)
+        tasks.append(loop.run_in_executor(None, _process_upload_sync, content, f.filename, auto_verify, split, uid))
+    doc_ids = []
+    for coro in asyncio.as_completed(tasks):
+        doc_ids.extend(await coro)
     return {"message": f"Uploaded {len(doc_ids)} file(s)", "document_ids": doc_ids, "auto_verify": auto_verify}
 
 
