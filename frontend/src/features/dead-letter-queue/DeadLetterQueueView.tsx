@@ -331,6 +331,21 @@ export const DeadLetterQueueView: React.FC = () => {
     }
   }, [selectedTaskId, activeTask]);
 
+  // Prefetch adjacent task crop images
+  useEffect(() => {
+    if (!activeTask || tasks.length === 0) return;
+    const idx = tasks.findIndex(t => t.id === activeTask.id);
+    if (idx === -1) return;
+    const prefetch = (task: DlqTask) => {
+      const img = new window.Image();
+      img.src = api.getCropUrl(task.document_id, task.field_name);
+    };
+    for (let i = 1; i <= 2; i++) {
+      if (idx + i < tasks.length) prefetch(tasks[idx + i]);
+    }
+    if (idx - 1 >= 0) prefetch(tasks[idx - 1]);
+  }, [activeTask?.id, tasks]);
+
   const handleDateChange = (val: string) => {
     let digits = val.replace(/\D/g, '').slice(0, 8);
 

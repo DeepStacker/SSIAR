@@ -58,6 +58,17 @@ def _add_cache_headers(response, max_age: int):
     response.headers["Cache-Control"] = f"private, max-age={max_age}"
 
 
+def _respond_with_etag(data, request: Request, max_age: int = 10):
+    etag = _compute_etag(data)
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match and if_none_match.strip('"') == etag:
+        return Response(status_code=304, headers={"ETag": f'"{etag}"'})
+    response = APIResponse.success(data=data)
+    _add_cache_headers(response, max_age)
+    response.headers["ETag"] = f'"{etag}"'
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Auth  (no auth required for register / login; refresh needs auth)
 # ---------------------------------------------------------------------------
@@ -329,6 +340,7 @@ from app.api.v2.review import list_review_tasks as _review_tasks, submit_review_
 
 @v3_router.get("/review/tasks", dependencies=[_Auth])
 async def v3_review_tasks(
+    request: Request,
     priority: Optional[str] = Query(None),
     limit: int = Query(50),
     document_id: Optional[str] = Query(None),
@@ -337,11 +349,18 @@ async def v3_review_tasks(
     sort_by: str = Query("priority"),
     sort_dir: str = Query("asc"),
 ):
-    return await _call_async(
-        _review_tasks, priority=priority, limit=limit,
-        document_id=document_id, field_type=field_type,
-        error_type=error_type, sort_by=sort_by, sort_dir=sort_dir,
-    )
+    try:
+        data = await _review_tasks(
+            priority=priority, limit=limit,
+            document_id=document_id, field_type=field_type,
+            error_type=error_type, sort_by=sort_by, sort_dir=sort_dir,
+        )
+        return _respond_with_etag(data, request, max_age=5)
+    except HTTPException as e:
+        return APIResponse.error(status=e.status_code, message=e.detail)
+    except Exception:
+        logger.exception("Internal server error in review/tasks")
+        return APIResponse.error(status=500, message="Internal server error")
 
 
 @v3_router.post("/review/tasks/{task_id}/submit", dependencies=[_Auth])

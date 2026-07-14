@@ -119,6 +119,7 @@ const DEFAULT_TTL = 30_000
 const getTtl = (url: string) => {
   if (url.includes('/queue-status')) return 3_000
   if (url.includes('/documents/')) return 3_000
+  if (url.includes('/review/tasks')) return 5_000
   return DEFAULT_TTL
 }
 

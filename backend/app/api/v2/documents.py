@@ -21,7 +21,7 @@ from app.database import (
 from app.models import VerifyDataRequest, BulkRequest
 from app.core.events import notify as SSE
 from app.image.crops import extract_crop, get_crop_page, generate_crop_jpeg
-from app.image.page_utils import get_page, get_azure_scale, cache_crop_set, _cache_crop
+from app.image.page_utils import get_page, get_azure_scale, cache_crop_set, cache_page_set, _cache_crop, _cache_page_jpeg
 from app.image.coordinate_resolver import (
     get_sdq_row_polygon_from_table,
     get_field_polygon_from_table,
@@ -144,6 +144,16 @@ def serve_page(doc_id: str, page_num: int):
     doc = get_document(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Page not found")
+
+    cache_key = (doc_id, page_num)
+    if cache_key in _cache_page_jpeg:
+        return Response(content=_cache_page_jpeg[cache_key], media_type="image/jpeg",
+                        headers={
+                            "Cache-Control": "public, max-age=86400",
+                            "Access-Control-Allow-Origin": "*",
+                            "Access-Control-Allow-Methods": "GET"
+                        })
+
     if use_r2() and R2_PUBLIC_URL:
         redirect_url = f"{R2_PUBLIC_URL}/pages/{doc_id}/page_{page_num}.jpg"
         from fastapi.responses import RedirectResponse
@@ -167,6 +177,7 @@ def serve_page(doc_id: str, page_num: int):
     if not img_bytes and page_num == 2:
         img_bytes = get_page_image_file(doc_id, 1)
     if img_bytes:
+        cache_page_set(cache_key, img_bytes)
         return Response(content=img_bytes, media_type="image/jpeg",
                         headers={
                             "Cache-Control": "public, max-age=86400",
@@ -179,6 +190,7 @@ def serve_page(doc_id: str, page_num: int):
     if not img and page_num == 2:
         img = get_page_image(doc_id, 1)
     if img:
+        cache_page_set(cache_key, img)
         return Response(content=img, media_type="image/jpeg",
                         headers={
                             "Cache-Control": "public, max-age=86400",

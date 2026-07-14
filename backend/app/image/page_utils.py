@@ -34,6 +34,20 @@ def get_page(doc_id: str, page_num: int) -> np.ndarray | None:
     return img
 
 
+# ── Page JPEG bytes cache (LRU, max 32 pages) ─────────────────────────────
+
+_cache_page_jpeg: dict[tuple[str, int], bytes] = {}
+_page_jpeg_order: list[tuple[str, int]] = []
+
+
+def cache_page_set(key: tuple[str, int], value: bytes):
+    if len(_cache_page_jpeg) >= 32:
+        oldest = _page_jpeg_order.pop(0)
+        _cache_page_jpeg.pop(oldest, None)
+    _cache_page_jpeg[key] = value
+    _page_jpeg_order.append(key)
+
+
 # ── Crop image cache (LRU, max 256 crops) ────────────────────────────────
 
 _cache_crop: dict[tuple[str, str], bytes] = {}
