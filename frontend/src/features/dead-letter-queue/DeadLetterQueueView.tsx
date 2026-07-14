@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, Search, ArrowUpDown, Check, AlertTriangle, ArrowRight, Sparkles, Image, Scan, BarChart, FileWarning, Hash, X, ArrowLeft, ArrowRightCircle } from 'lucide-react';
-import type { DlqTask } from '@/api';
+import type { DlqTask, Document as AppDocument } from '@/api';
 import { api, clearApiCache } from '@/api';
 import { CanvasCrop } from '@/features/review/CanvasCrop';
 import { Button } from '@/components/ui/button';
@@ -222,10 +222,13 @@ export const DeadLetterQueueView: React.FC = () => {
   const { show } = useToast();
 
   const [tasks, setTasks] = useState<DlqTask[]>([]);
+  const [failedDocs, setFailedDocs] = useState<AppDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [selectedFailedDocId, setSelectedFailedDocId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dbTotalCount, setDbTotalCount] = useState(0);
+  const [reprocessingFailed, setReprocessingFailed] = useState(false);
 
   const [resolvedSessionCount, setResolvedSessionCount] = useState(0);
   const [initialTotalCount, setInitialTotalCount] = useState(0);
@@ -247,27 +250,37 @@ export const DeadLetterQueueView: React.FC = () => {
   const loadTasks = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.getDlqTasks({
-        field_type: fieldType !== 'all' ? fieldType : undefined,
-        priority: priority !== 'all' ? priority : undefined,
-        error_type: errorType !== 'all' ? errorType : undefined,
-        sort_by: sortBy,
-        sort_dir: sortDir,
-      });
+      const [data, docs] = await Promise.all([
+        api.getDlqTasks({
+          field_type: fieldType !== 'all' ? fieldType : undefined,
+          priority: priority !== 'all' ? priority : undefined,
+          error_type: errorType !== 'all' ? errorType : undefined,
+          sort_by: sortBy,
+          sort_dir: sortDir,
+        }),
+        api.listDocuments(['id', 'status', 'filename', 'created_at', 'error_message']).catch(() => [] as AppDocument[]),
+      ]);
       setTasks(data.tasks);
-      setDbTotalCount(data.total);
+      setFailedDocs(docs.filter(d => d.status === 'failed'));
+      setDbTotalCount(data.total + docs.filter(d => d.status === 'failed').length);
 
       if (initialTotalCount === 0) {
-        setInitialTotalCount(data.total);
+        setInitialTotalCount(data.total + docs.filter(d => d.status === 'failed').length);
         setResolvedSessionCount(0);
       }
 
-      if (data.tasks.length > 0) {
-        if (!(selectedTaskId && data.tasks.some(t => t.id === selectedTaskId))) {
+      const totalItems = data.tasks.length + docs.filter(d => d.status === 'failed').length;
+      if (totalItems > 0) {
+        if (docs.filter(d => d.status === 'failed').length > 0 && !selectedFailedDocId && !selectedTaskId) {
+          setSelectedFailedDocId(docs.find(d => d.status === 'failed')!.id);
+          setSelectedTaskId(null);
+        } else if (data.tasks.length > 0 && !selectedTaskId) {
           setSelectedTaskId(data.tasks[0].id);
+          setSelectedFailedDocId(null);
         }
       } else {
         setSelectedTaskId(null);
+        setSelectedFailedDocId(null);
       }
     } catch (err) {
       console.error(err);
@@ -275,7 +288,7 @@ export const DeadLetterQueueView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [fieldType, priority, errorType, sortBy, sortDir, selectedTaskId, show, initialTotalCount]);
+  }, [fieldType, priority, errorType, sortBy, sortDir, selectedTaskId, selectedFailedDocId, show, initialTotalCount]);
 
   useEffect(() => {
     loadTasks();
@@ -288,6 +301,7 @@ export const DeadLetterQueueView: React.FC = () => {
   };
 
   const activeTask = tasks.find(t => t.id === selectedTaskId) || null;
+  const activeFailedDoc = failedDocs.find(d => d.id === selectedFailedDocId) || null;
 
   const formatDateStr = (raw: string): string => {
     const digits = raw.replace(/\D/g, '').slice(0, 8);
@@ -554,14 +568,40 @@ export const DeadLetterQueueView: React.FC = () => {
               <Loader2 className="animate-spin text-primary" size={18} />
               <span className="text-xs font-medium">Loading tasks...</span>
             </div>
-          ) : filteredTasks.length === 0 ? (
+          ) : filteredTasks.length === 0 && failedDocs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-muted-foreground text-sm gap-3">
               <FileWarning size={18} className="text-muted-foreground/60" />
               <span className="text-xs font-medium">No unresolved fields</span>
               {search && <span className="text-[10px] text-muted-foreground/60">Try adjusting your search</span>}
             </div>
           ) : (
-            filteredTasks.map(t => {
+            <>
+              {failedDocs.map(doc => (
+                <div
+                  key={doc.id}
+                  onClick={() => { setSelectedFailedDocId(doc.id); setSelectedTaskId(null); }}
+                  className={c(
+                    'group relative pl-3 pr-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 border mb-1',
+                    selectedFailedDocId === doc.id
+                      ? 'bg-destructive/8 border-destructive/20'
+                      : 'bg-transparent border-transparent hover:bg-secondary/40 hover:border-border'
+                  )}
+                >
+                  <div className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-full bg-destructive" />
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <span className="inline-flex items-center rounded-md border border-destructive/20 bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold text-destructive">
+                      Failed
+                    </span>
+                  </div>
+                  <div className="font-semibold text-xs mb-1 truncate">{doc.filename}</div>
+                  <div className="flex items-center gap-1 text-[9px] text-destructive font-medium">
+                    <AlertTriangle size={8} className="shrink-0" />
+                    <span className="truncate">{doc.error_message || 'Processing failed'}</span>
+                  </div>
+                </div>
+              ))}
+              {failedDocs.length > 0 && tasks.length > 0 && <div className="border-t border-border/40 my-2" />}
+            {filteredTasks.map(t => {
               const isSdq = t.field_name.startsWith('q') && t.field_name.substring(1).match(/^\d+$/);
               const confStyle = getConfStyle(t.confidence_score);
               return (
@@ -601,14 +641,49 @@ export const DeadLetterQueueView: React.FC = () => {
                   </div>
                 </div>
               );
-            })
+            })}
+          </>
           )}
         </div>
       </Card>
 
       {/* ── Right Panel: Detail View ── */}
       <div className="md:col-span-2 flex flex-col md:h-full overflow-hidden">
-        {activeTask ? (
+        {activeFailedDoc ? (
+          <Card className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
+            <AlertTriangle size={40} className="text-destructive/60" />
+            <h2 className="text-base font-bold">Processing Failed</h2>
+            <p className="text-xs text-muted-foreground max-w-md">{activeFailedDoc.filename}</p>
+            {activeFailedDoc.error_message && (
+              <div className="w-full max-w-md rounded-lg p-3 text-xs text-left text-destructive bg-destructive/5 border border-destructive/20">
+                <strong>Error:</strong> {activeFailedDoc.error_message}
+              </div>
+            )}
+            <Button
+              variant="default"
+              size="sm"
+              disabled={reprocessingFailed}
+              onClick={async () => {
+                setReprocessingFailed(true);
+                try {
+                  await api.reprocessDocument(activeFailedDoc.id);
+                  show('Reprocessing started', 'success');
+                  setFailedDocs(prev => prev.filter(d => d.id !== activeFailedDoc.id));
+                  setSelectedFailedDocId(null);
+                  loadTasks();
+                } catch (e: any) {
+                  show('Failed to reprocess: ' + e.message, 'error');
+                } finally {
+                  setReprocessingFailed(false);
+                }
+              }}
+              className="gap-2"
+            >
+              {reprocessingFailed ? <Loader2 size={14} className="animate-spin" /> : null}
+              {reprocessingFailed ? 'Reprocessing...' : 'Reprocess Document'}
+            </Button>
+          </Card>
+        ) : activeTask ? (
           <Card className="flex flex-col h-full overflow-hidden">
             {/* Header */}
             <div className="px-5 py-3 border-b border-border flex items-center justify-between shrink-0 gap-3">
