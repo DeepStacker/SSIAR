@@ -1,6 +1,6 @@
 ssiar.yourdomain.com {
     reverse_proxy localhost:8000
-    encode zstd br gzip
+    encode gzip
     header {
         Strict-Transport-Security "max-age=31536000;"
         X-Content-Type-Options "nosniff"
