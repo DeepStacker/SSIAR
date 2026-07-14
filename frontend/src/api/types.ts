@@ -176,7 +176,31 @@ export interface DataQualityData {
   total_documents?: number;
 }
 
-export type ViewMode = 'dashboard' | 'reporting' | 'analytics' | 'dlq' | 'users';
+export interface FeedbackItem {
+  id: number;
+  user_id: string;
+  subject: string;
+  message: string;
+  attachment_path: string | null;
+  attachment_type: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string | null;
+  user_email?: string;
+}
+
+export interface FeedbackMessage {
+  id: number;
+  feedback_id: number;
+  user_id: string;
+  message: string;
+  attachment_path: string | null;
+  attachment_type: string | null;
+  created_at: string;
+  user_email: string;
+}
+
+export type ViewMode = 'dashboard' | 'reporting' | 'analytics' | 'dlq' | 'users' | 'feedback';
 export type TabType = 'all' | 'needs_review' | 'verified' | 'processing' | 'failed';
 export type SortKey = 'filename' | 'roll_number' | 'status' | 'created_at';
 export type ReportFormat = 'excel' | 'csv';

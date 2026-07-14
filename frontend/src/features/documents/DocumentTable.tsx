@@ -83,9 +83,9 @@ export const DocumentTable: React.FC<Props> = ({
 
   return (
     <div className="bg-card border border-border rounded-lg shadow-xs overflow-hidden">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-4 border-b border-border">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 sm:px-6 py-4 border-b border-border">
         <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as TabType)}>
-          <TabsList variant="line" className="bg-transparent border-none p-0 flex gap-1">
+          <TabsList variant="line" className="bg-transparent border-none p-0 flex gap-1 overflow-x-auto min-w-0 pb-0.5">
             {tabConfig.map(tab => (
               <TabsTrigger key={tab.key} value={tab.key} className="text-xs px-3 py-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground font-semibold gap-1.5 text-muted-foreground rounded-none transition-colors">
                 {tab.icon} {tab.label}
@@ -116,16 +116,16 @@ export const DocumentTable: React.FC<Props> = ({
 
       <div className="overflow-x-auto">
         {loading ? (
-          <div className="py-6 px-6 space-y-3">
+          <div className="py-4 sm:py-6 px-4 sm:px-6 space-y-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex items-center gap-4">
                 <div className="skeleton h-4 w-4 rounded shrink-0" />
                 <div className="skeleton h-4 rounded flex-1" />
-                <div className="skeleton h-4 rounded w-24" />
-                <div className="skeleton h-4 rounded w-16" />
-                <div className="skeleton h-4 rounded w-20" />
-                <div className="skeleton h-4 rounded w-24" />
-                <div className="skeleton h-7 rounded w-20" />
+                <div className="skeleton h-4 rounded w-20 sm:w-24" />
+                <div className="skeleton h-4 rounded w-12 sm:w-16" />
+                <div className="skeleton h-4 rounded w-16 sm:w-20" />
+                <div className="skeleton h-4 rounded w-20 sm:w-24" />
+                <div className="skeleton h-7 rounded w-16 sm:w-20" />
               </div>
             ))}
           </div>
@@ -175,7 +175,7 @@ export const DocumentTable: React.FC<Props> = ({
           <Table>
             <TableHeader>
               <TableRow className="border-b border-border hover:bg-transparent">
-                <TableHead className="w-10 px-6">
+                <TableHead className="w-10 px-3 sm:px-6">
                   <input
                     type="checkbox"
                     checked={filtered.length > 0 && selectedIds.size === filtered.length}
@@ -184,12 +184,12 @@ export const DocumentTable: React.FC<Props> = ({
                     aria-label={selectedIds.size === filtered.length ? "Deselect all documents" : "Select all documents"}
                   />
                 </TableHead>
-                <SortTh label="Document Filename" sortKey="filename" current={sortKey} dir={sortDir} onSort={onSortChange} />
-                <SortTh label="Class Roll Number" sortKey="roll_number" current={sortKey} dir={sortDir} onSort={onSortChange} />
-                <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 w-20">Class</TableHead>
-                <SortTh label="Pipeline Status" sortKey="status" current={sortKey} dir={sortDir} onSort={onSortChange} />
-                <SortTh label="Processed Date" sortKey="created_at" current={sortKey} dir={sortDir} onSort={onSortChange} right />
-                <TableHead className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 w-32 px-6">Actions</TableHead>
+                <SortTh label="Filename" sortKey="filename" current={sortKey} dir={sortDir} onSort={onSortChange} />
+                <SortTh label="Roll Number" sortKey="roll_number" current={sortKey} dir={sortDir} onSort={onSortChange} className="hidden sm:table-cell" />
+                <TableHead className="hidden sm:table-cell text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 w-20">Class</TableHead>
+                <SortTh label="Status" sortKey="status" current={sortKey} dir={sortDir} onSort={onSortChange} />
+                <SortTh label="Date" sortKey="created_at" current={sortKey} dir={sortDir} onSort={onSortChange} right />
+                <TableHead className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 w-28 sm:w-32 px-2 sm:px-6">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -203,7 +203,7 @@ export const DocumentTable: React.FC<Props> = ({
                     } ${
                       isSelected ? 'bg-accent/5 hover:bg-accent/10' : 'hover:bg-muted'
                     }`}>
-                    <TableCell onClick={e => e.stopPropagation()} className="px-6 py-3">
+                    <TableCell onClick={e => e.stopPropagation()} className="px-3 sm:px-6 py-3">
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -212,18 +212,18 @@ export const DocumentTable: React.FC<Props> = ({
                         aria-label={`Select ${doc.filename || doc.id}`}
                       />
                     </TableCell>
-                    <TableCell className="font-semibold py-3 max-w-[280px]">
-                      <span className="truncate block" title={doc.filename}>{doc.filename}</span>
+                    <TableCell className="font-semibold py-3 max-w-[180px] sm:max-w-[280px]">
+                      <span className="truncate block text-xs sm:text-sm" title={doc.filename}>{doc.filename}</span>
                     </TableCell>
-                    <TableCell className="text-xs font-mono text-muted-foreground py-3">{doc.roll_number || '—'}</TableCell>
-                    <TableCell className="text-xs font-mono text-muted-foreground py-3">{doc.class || '—'}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-xs font-mono text-muted-foreground py-3">{doc.roll_number || '—'}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-xs font-mono text-muted-foreground py-3">{doc.class || '—'}</TableCell>
                     <TableCell className="py-3">
                       <StatusBadge status={doc.status} />
                     </TableCell>
-                    <TableCell className="text-right text-xs font-mono text-muted-foreground py-3 whitespace-nowrap">
+                    <TableCell className="text-right text-[10px] sm:text-xs font-mono text-muted-foreground py-3 whitespace-nowrap">
                       {doc.created_at?.slice(0, 10)}
                     </TableCell>
-                    <TableCell className="text-right whitespace-nowrap py-3 px-6" onClick={e => e.stopPropagation()}>
+                    <TableCell className="text-right whitespace-nowrap py-3 px-2 sm:px-6" onClick={e => e.stopPropagation()}>
                       <span className="inline-flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
                         <ActionBtn doc={doc} onOpen={onOpenDoc} onDownload={onDownloadReport} onReprocess={onReprocess} onDelete={onDelete} />
                       </span>
@@ -248,12 +248,12 @@ export const DocumentTable: React.FC<Props> = ({
   );
 };
 
-const SortTh: React.FC<{ label: string; sortKey: SortKey; current: SortKey; dir: 'asc' | 'desc'; onSort: (k: SortKey) => void; right?: boolean }> = ({ label, sortKey, current, dir, onSort, right }) => {
+const SortTh: React.FC<{ label: string; sortKey: SortKey; current: SortKey; dir: 'asc' | 'desc'; onSort: (k: SortKey) => void; right?: boolean; className?: string }> = ({ label, sortKey, current, dir, onSort, right, className = '' }) => {
   const isActive = current === sortKey;
   return (
     <TableHead onClick={() => onSort(sortKey)} role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter') onSort(sortKey); }}
-      className={`cursor-pointer select-none text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 group/sort${right ? ' text-right' : ''}`}>
+      className={`cursor-pointer select-none text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 group/sort${right ? ' text-right' : ''} ${className}`}>
       <span className={`inline-flex items-center gap-1.5 ${right ? 'justify-end w-full' : ''}`}>
         {label}
         <span className={`inline-flex flex-col leading-none ${isActive ? 'text-foreground' : 'opacity-0 group-hover/sort:opacity-50 transition-opacity'}`}>

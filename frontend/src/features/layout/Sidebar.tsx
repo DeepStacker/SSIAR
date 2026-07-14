@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   AlertOctagon, BarChart3, ChevronLeft,
-  FileText, LayoutDashboard, Users, X,
+  FileText, LayoutDashboard, MessageSquare, Users, X,
 } from 'lucide-react';
 import type { ViewMode } from '@/api';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,7 @@ const navItems: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
   { id: 'reporting', label: 'Reporting', icon: <FileText size={18} /> },
   { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={18} /> },
   { id: 'dlq', label: 'DLQ', icon: <AlertOctagon size={18} /> },
+  { id: 'feedback', label: 'Feedback', icon: <MessageSquare size={18} /> },
 ];
 
 interface Props {
@@ -55,7 +56,7 @@ export const Sidebar: React.FC<Props> = ({
   const renderContent = () => (
     <>
       {onMobileClose && (
-        <button onClick={onMobileClose} className="absolute right-3 top-3 z-10 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground xl:hidden" aria-label="Close sidebar">
+        <button onClick={onMobileClose} className="absolute right-3 top-3 z-10 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden" aria-label="Close sidebar">
           <X size={16} />
         </button>
       )}
@@ -99,7 +100,7 @@ export const Sidebar: React.FC<Props> = ({
     <>
       <aside className={cn(
         "no-print border-r border-border bg-card flex flex-col shrink-0 min-h-0 transition-all duration-200",
-        "hidden xl:flex",
+        "hidden lg:flex",
         hovered ? "w-52 shadow-md" : collapsed ? "w-16" : "w-52"
       )}
         onMouseEnter={() => setHovered(true)}
@@ -109,7 +110,7 @@ export const Sidebar: React.FC<Props> = ({
       </aside>
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 xl:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={onMobileClose} />
           <aside className="relative h-full w-60 flex flex-col border-r border-border bg-card">
             {renderContent()}

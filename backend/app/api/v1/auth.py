@@ -285,6 +285,13 @@ async def delete_user(user_id: str, request: Request):
     conn = get_db_connection()
     try:
         cur = conn.cursor()
+        ph = "%s" if USE_POSTGRES else "?"
+        # Delete any feedback messages referencing this user's feedbacks or the user
+        cur.execute(f"DELETE FROM feedback_messages WHERE feedback_id IN (SELECT id FROM feedback WHERE user_id = {ph})", (user_id,))
+        cur.execute(f"DELETE FROM feedback_messages WHERE user_id = {ph}", (user_id,))
+        # Delete feedback entries owned by this user
+        cur.execute(f"DELETE FROM feedback WHERE user_id = {ph}", (user_id,))
+        # Finally delete the user
         cur.execute(
             "DELETE FROM users WHERE id = %s" if USE_POSTGRES else
             "DELETE FROM users WHERE id = ?", (user_id,)

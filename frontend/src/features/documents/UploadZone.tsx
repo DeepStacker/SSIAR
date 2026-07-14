@@ -87,7 +87,7 @@ export const UploadZone: React.FC<Props> = ({
 
   return (
     <Card
-      className={`mb-6 border-2 border-dashed rounded-2xl p-6 transition-all duration-300 cursor-pointer ${
+      className={`mb-6 border-2 border-dashed rounded-2xl p-4 sm:p-6 transition-all duration-300 cursor-pointer ${
         uploadSuccess
           ? 'border-emerald-500/60 bg-emerald-500/[0.04] shadow-[0_0_25px_rgba(16,185,129,0.08)]'
           : isDragOver
@@ -151,7 +151,7 @@ export const UploadZone: React.FC<Props> = ({
           )}
         </div>
       </div>
-      <div className="text-left text-[10px] text-[var(--text-muted)]/60 mt-4 pointer-events-none border-t border-border/30 pt-3 w-full flex justify-between items-center">
+      <div className="text-left text-[10px] text-[var(--text-muted)]/60 mt-4 pointer-events-none border-t border-border/30 pt-3 w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1">
         <span className="flex items-center gap-1.5">
           <FileText size={10} />
           {isUploading ? 'Ingesting PDF data structures...' : `PDF files up to ${MAX_FILE_SIZE_MB}MB`}

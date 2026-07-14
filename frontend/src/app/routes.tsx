@@ -21,6 +21,7 @@ const ProcessingView = memo(lazy(() => import('@/features/documents/ProcessingVi
 const AnalyticsView = memo(lazy(() => import('@/features/analytics/AnalyticsView').then(m => ({ default: m.AnalyticsView }))));
 const DeadLetterQueueView = memo(lazy(() => import('@/features/dead-letter-queue/DeadLetterQueueView').then(m => ({ default: m.DeadLetterQueueView }))));
 const ReportingView = memo(lazy(() => import('@/features/reporting/ReportingView').then(m => ({ default: m.ReportingView }))));
+const FeedbackView = memo(lazy(() => import('@/features/feedback/FeedbackView').then(m => ({ default: m.FeedbackView }))));
 
 interface Props {
   onClose: () => void;
@@ -171,6 +172,10 @@ export function AppContent(props: Props) {
 
   if (ui.view === 'dlq') {
     return <Suspense fallback={<LoadingFallback />}><DeadLetterQueueView /></Suspense>;
+  }
+
+  if (ui.view === 'feedback') {
+    return <Suspense fallback={<LoadingFallback />}><FeedbackView /></Suspense>;
   }
 
   if (ui.view === 'users') {

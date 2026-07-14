@@ -12,7 +12,7 @@ interface Props {
 
 export const StatCards: React.FC<Props> = ({ statCards, escBreakdown, onTabClick }) => (
   <>
-    <div className="grid grid-cols-5 gap-3 mb-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-3 mb-4">
       {statCards.map((s) => {
         const numericValue = typeof s.value === 'string' ? parseFloat(s.value) : s.value;
         const displayValue = !isNaN(numericValue as number) && typeof s.value === 'number'
@@ -36,7 +36,7 @@ export const StatCards: React.FC<Props> = ({ statCards, escBreakdown, onTabClick
     </div>
 
     {escBreakdown && (
-      <div className="flex items-center gap-4 px-4 py-2 mb-4 rounded-md border border-border bg-card text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-3 sm:gap-4 px-3 sm:px-4 py-2 mb-4 rounded-md border border-border bg-card text-xs text-muted-foreground">
         <span className="font-medium text-foreground">Quality:</span>
         <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> L1 <strong className="text-foreground">{formatNumber(escBreakdown.level_1)}</strong></span>
         <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> L2 <strong className="text-foreground">{formatNumber(escBreakdown.level_2)}</strong></span>

@@ -190,6 +190,30 @@ def init_db():
                     error_details TEXT
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id SERIAL PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id),
+                    subject TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    attachment_path TEXT,
+                    attachment_type TEXT,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS feedback_messages (
+                    id SERIAL PRIMARY KEY,
+                    feedback_id INTEGER NOT NULL REFERENCES feedback(id) ON DELETE CASCADE,
+                    user_id TEXT NOT NULL REFERENCES users(id),
+                    message TEXT NOT NULL,
+                    attachment_path TEXT,
+                    attachment_type TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
             # PostgreSQL migrations
             cur.execute("""
                 SELECT column_name 
@@ -204,6 +228,18 @@ def init_db():
                     cur.execute("ALTER TABLE review_tasks ADD COLUMN confidence_score REAL")
                 if "error_details" not in pg_cols:
                     cur.execute("ALTER TABLE review_tasks ADD COLUMN error_details TEXT")
+            # Feedback messages table migrations
+            cur.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'feedback_messages'
+            """)
+            fm_cols = [col[0] for col in cur.fetchall()]
+            if fm_cols:
+                if "attachment_path" not in fm_cols:
+                    cur.execute("ALTER TABLE feedback_messages ADD COLUMN attachment_path TEXT")
+                if "attachment_type" not in fm_cols:
+                    cur.execute("ALTER TABLE feedback_messages ADD COLUMN attachment_type TEXT")
             # Documents table migrations
             cur.execute("""
                 SELECT column_name 
@@ -220,6 +256,9 @@ def init_db():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_edit_history_document_id ON edit_history(document_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_review_tasks_document_id ON review_tasks(document_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_review_tasks_status ON review_tasks(status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feedback_user_id ON feedback(user_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feedback_messages_feedback_id ON feedback_messages(feedback_id)")
         else:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -343,6 +382,33 @@ def init_db():
                     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    attachment_path TEXT,
+                    attachment_type TEXT,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS feedback_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    feedback_id INTEGER NOT NULL,
+                    user_id TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    attachment_path TEXT,
+                    attachment_type TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (feedback_id) REFERENCES feedback(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at)")
@@ -350,6 +416,9 @@ def init_db():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_edit_history_document_id ON edit_history(document_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_review_tasks_document_id ON review_tasks(document_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_review_tasks_status ON review_tasks(status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feedback_user_id ON feedback(user_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feedback_messages_feedback_id ON feedback_messages(feedback_id)")
             _run_migrations(cur)
         conn.commit()
         print(f"Database initialized ({'PostgreSQL' if USE_POSTGRES else 'SQLite'})")
@@ -406,6 +475,19 @@ def _run_migrations(cursor):
     if "error_details" not in rt_columns:
         try:
             cursor.execute("ALTER TABLE review_tasks ADD COLUMN error_details TEXT")
+        except Exception:
+            pass
+
+    cursor.execute("PRAGMA table_info(feedback_messages)")
+    fm_cols = [col[1] for col in cursor.fetchall()]
+    if "attachment_path" not in fm_cols:
+        try:
+            cursor.execute("ALTER TABLE feedback_messages ADD COLUMN attachment_path TEXT")
+        except Exception:
+            pass
+    if "attachment_type" not in fm_cols:
+        try:
+            cursor.execute("ALTER TABLE feedback_messages ADD COLUMN attachment_type TEXT")
         except Exception:
             pass
 

@@ -640,10 +640,10 @@ async def event_stream(request: Request):
     if not uid:
         uid = get_current_user_id()
     queue = subscribe(user_id=uid)
-    try:
-        from fastapi.responses import StreamingResponse
-        async def gen():
-            # Send initial connection verification message
+    from fastapi.responses import StreamingResponse
+
+    async def gen():
+        try:
             yield f"data: {json.dumps({'event': 'connected', 'data': {}})}\n\n"
             while True:
                 try:
@@ -651,16 +651,17 @@ async def event_stream(request: Request):
                     yield f"data: {json.dumps(msg)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
-        return StreamingResponse(
-            gen(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-                "Content-Encoding": "none",
-            }
-        )
-    finally:
-        unsubscribe(queue)
+        finally:
+            unsubscribe(queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Content-Encoding": "none",
+        }
+    )
 

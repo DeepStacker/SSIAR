@@ -62,7 +62,7 @@ export const LoginPage: React.FC = () => {
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-4 overflow-hidden">
       {/* Background glow effects */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] pointer-events-none bg-[radial-gradient(circle,rgba(99,102,241,0.05),transparent_70%)] dark:bg-[radial-gradient(circle,rgba(129,140,248,0.03),transparent_70%)]" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] sm:w-[400px] md:w-[500px] h-[300px] sm:h-[400px] md:h-[500px] pointer-events-none bg-[radial-gradient(circle,rgba(99,102,241,0.05),transparent_70%)] dark:bg-[radial-gradient(circle,rgba(129,140,248,0.03),transparent_70%)]" />
       
       <div className="relative w-full max-w-[420px] animate-in fade-in slide-in-from-bottom-4 duration-300">
         <Card className="border border-border/80 bg-card shadow-[var(--shadow-lg)]">

@@ -153,7 +153,7 @@ function AppInnerContents() {
       />
       <div className="flex-1 flex flex-col min-w-0">
         <Header view={ui.view} onViewChange={ui.setView} />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-3 md:p-4 lg:p-6">
           <div className="max-w-[1400px] mx-auto" onDragOver={e => e.preventDefault()} onDrop={e => e.preventDefault()}>
             <AppContent
               onClose={closeDoc}

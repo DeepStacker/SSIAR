@@ -63,6 +63,8 @@ export function useSSE(
                   }, ...prev];
                 }
               });
+            } else if (['feedback_created', 'feedback_message', 'feedback_status'].includes(eventType) && data?.feedback_id) {
+              window.dispatchEvent(new CustomEvent(eventType, { detail: data }));
             } else if (eventType !== 'connected') {
               invalidateCache('/documents');
               loadRef.current();

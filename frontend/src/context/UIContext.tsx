@@ -8,6 +8,7 @@ export const VIEW_PATHS: Record<ViewMode, string> = {
   analytics: '/app/analytics',
   dlq: '/app/dlq',
   users: '/app/users',
+  feedback: '/app/feedback',
 };
 
 export function getViewFromPath(pathname: string): ViewMode {
@@ -15,6 +16,7 @@ export function getViewFromPath(pathname: string): ViewMode {
   if (pathname.startsWith('/app/analytics')) return 'analytics';
   if (pathname.startsWith('/app/dlq')) return 'dlq';
   if (pathname.startsWith('/app/users')) return 'users';
+  if (pathname.startsWith('/app/feedback')) return 'feedback';
   return 'dashboard';
 }
 

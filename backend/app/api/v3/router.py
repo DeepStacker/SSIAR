@@ -7,7 +7,7 @@ import logging
 import hashlib
 import json
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, Request, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, Form, Query, Request, UploadFile, File, HTTPException
 from fastapi.responses import Response
 from app.auth import require_auth
 from app.core.response import APIResponse
@@ -445,6 +445,70 @@ def v3_analytics_per_field_confidence(
     response = _call(_analytics_per_field_confidence, class_filter=class_filter, gender=gender, date_from=date_from, date_to=date_to)
     _add_cache_headers(response, 120)
     return response
+
+
+# ---------------------------------------------------------------------------
+# Feedback
+# ---------------------------------------------------------------------------
+from app.api.v1.feedback import (
+    create_feedback as _feedback_create,
+    list_feedback as _feedback_list,
+    get_feedback as _feedback_get,
+    update_feedback_status as _feedback_status,
+    list_messages as _feedback_messages_list,
+    add_message as _feedback_messages_add,
+    serve_attachment as _feedback_attachment,
+)
+
+
+@v3_router.post("/feedback", dependencies=[_Auth])
+async def v3_feedback_create(
+    request: Request,
+    subject: str = Form(...),
+    message: str = Form(...),
+    attachment: Optional[UploadFile] = File(None),
+):
+    return await _call_async(_feedback_create, request, subject=subject, message=message, attachment=attachment)
+
+
+@v3_router.get("/feedback", dependencies=[_Auth])
+async def v3_feedback_list(
+    request: Request,
+    status: Optional[str] = Query(None),
+    limit: int = Query(50),
+    offset: int = Query(0),
+):
+    return await _call_async(_feedback_list, request, status=status, limit=limit, offset=offset)
+
+
+@v3_router.get("/feedback/{feedback_id}", dependencies=[_Auth])
+async def v3_feedback_get(feedback_id: int, request: Request):
+    return await _call_async(_feedback_get, feedback_id, request)
+
+
+@v3_router.put("/feedback/{feedback_id}/status", dependencies=[_Auth])
+async def v3_feedback_status(feedback_id: int, request: Request, status: str = Query(...)):
+    return await _call_async(_feedback_status, feedback_id, request, status=status)
+
+
+@v3_router.get("/feedback/{feedback_id}/messages", dependencies=[_Auth])
+async def v3_feedback_messages_list(feedback_id: int, request: Request):
+    return await _call_async(_feedback_messages_list, feedback_id, request)
+
+
+@v3_router.post("/feedback/{feedback_id}/messages", dependencies=[_Auth])
+async def v3_feedback_messages_add(
+    feedback_id: int,
+    request: Request,
+    message: str = Form(...),
+    attachment: Optional[UploadFile] = File(None),
+):
+    return await _call_async(_feedback_messages_add, feedback_id, request, message=message, attachment=attachment)
+
+
+@v3_router.get("/feedback/attachments/{filename}", dependencies=[_Auth])
+async def v3_feedback_attachment(filename: str, request: Request):
+    return await _feedback_attachment(filename, request)
 
 
 # ---------------------------------------------------------------------------

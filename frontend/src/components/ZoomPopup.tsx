@@ -19,7 +19,7 @@ export const ZoomPopup: React.FC<Props> = ({ zoom }) => {
       <img
         src={zoom.src}
         alt=""
-        className="block w-[440px] max-h-[180px] object-contain bg-black/40"
+        className="block w-[80vw] max-w-[440px] max-h-[180px] object-contain bg-black/40"
       />
     </div>
   );

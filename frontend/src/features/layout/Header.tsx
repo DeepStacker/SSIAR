@@ -20,6 +20,7 @@ const BREADCRUMB_LABELS: Record<ViewMode, string> = {
   analytics: 'Analytics',
   dlq: 'Dead Letter Queue',
   users: 'Users',
+  feedback: 'Feedback',
 };
 
 export const Header: React.FC<Props> = ({ view, onViewChange }) => {
@@ -69,14 +70,14 @@ export const Header: React.FC<Props> = ({ view, onViewChange }) => {
           <Button
             variant="ghost"
             size="icon-sm"
-            className="xl:hidden"
+            className="lg:hidden"
             onClick={() => ui.setSidebarMobileOpen(true)}
             aria-label="Open menu"
           >
             <Menu size={18} />
           </Button>
           <AppLogo className="shrink-0" />
-          <div className="hidden xl:flex items-center gap-2 text-xs">
+          <div className="hidden lg:flex items-center gap-2 text-xs">
             <button
               onClick={() => onViewChange('dashboard')}
               className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"

@@ -444,9 +444,9 @@ export const DeadLetterQueueView: React.FC = () => {
   const progressPercent = totalInSession > 0 ? Math.round((resolvedSessionCount / totalInSession) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100vh-9rem)] overflow-hidden">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 min-h-0 overflow-y-auto md:overflow-hidden" style={{ height: 'calc(100vh - 9rem)' }}>
       {/* ── Left Sidebar: Filtered Task List ── */}
-      <Card className="flex flex-col h-full overflow-hidden">
+      <Card className="flex flex-col md:h-full overflow-hidden">
         <div className="p-4 border-b border-border space-y-3 shrink-0">
           <Card className="p-3 bg-card">
             <div className="flex items-center justify-between text-xs mb-2">
@@ -607,7 +607,7 @@ export const DeadLetterQueueView: React.FC = () => {
       </Card>
 
       {/* ── Right Panel: Detail View ── */}
-      <div className="md:col-span-2 flex flex-col h-full overflow-hidden">
+      <div className="md:col-span-2 flex flex-col md:h-full overflow-hidden">
         {activeTask ? (
           <Card className="flex flex-col h-full overflow-hidden">
             {/* Header */}

@@ -5,12 +5,14 @@ export { uploadApi } from './upload';
 export { exportApi } from './export';
 export { analyticsApi } from './analytics';
 export { usersApi } from './users';
+export { feedbackApi } from './feedback';
 
 import { documentsApi } from './documents';
 import { uploadApi } from './upload';
 import { exportApi } from './export';
 import { analyticsApi } from './analytics';
 import { usersApi } from './users';
+import { feedbackApi } from './feedback';
 
 export const api = {
   ...documentsApi,
@@ -18,4 +20,5 @@ export const api = {
   ...exportApi,
   ...analyticsApi,
   ...usersApi,
+  ...feedbackApi,
 };
