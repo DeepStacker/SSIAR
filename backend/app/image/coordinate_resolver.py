@@ -30,19 +30,24 @@ def get_sdq_row_polygon_from_table(raw_dict: dict, q_num: int) -> Optional[tuple
 
     if tables:
         if page_num == 1:
-            table = tables[1] if len(tables) >= 2 else tables[0]
-            row_idx = q_num
+            # SDQ table is the one with columns 1/2/3 (checkboxes) for the given row.
+            # Try tables in reverse (SDQ is usually the last table on page 1).
+            for table in reversed(tables):
+                target_cells = [
+                    c for c in table.get("cells", [])
+                    if c.get("rowIndex") == q_num and c.get("columnIndex") in (1, 2, 3)
+                ]
+                if target_cells:
+                    return _polygon_from_cells(target_cells, page_raw, page_num)
         else:
             table = tables[0]
             row_idx = q_num - 13
-
-        target_cells = []
-        for cell in table.get("cells", []):
-            if cell.get("rowIndex") == row_idx and cell.get("columnIndex") in (1, 2, 3):
-                target_cells.append(cell)
-
-        if target_cells:
-            return _polygon_from_cells(target_cells, page_raw, page_num)
+            target_cells = [
+                c for c in table.get("cells", [])
+                if c.get("rowIndex") == row_idx and c.get("columnIndex") in (1, 2, 3)
+            ]
+            if target_cells:
+                return _polygon_from_cells(target_cells, page_raw, page_num)
 
     # Fallback: use Azure selection marks for this row
     return _polygon_from_selection_marks(page_raw, page_num, q_num)
