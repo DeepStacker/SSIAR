@@ -9,6 +9,12 @@ from app.database import (
     update_document_status, log_fix, log_issue,
 )
 
+if USE_POSTGRES:
+    from psycopg2.extras import RealDictCursor
+
+def _cursor(conn):
+    return conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
+
 router = APIRouter()
 
 
@@ -18,7 +24,7 @@ router = APIRouter()
 def get_document_stats(doc_id: str):
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
         cur.execute(
             "SELECT id, filename, status, escalation_level, error_message, retry_count, created_at "
             "FROM documents WHERE id = %s" if USE_POSTGRES else
@@ -102,7 +108,7 @@ def list_dlq(
 ):
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = _cursor(conn)
         where = "WHERE d.status = 'failed'"
         params: list = []
         if status_filter:
@@ -175,7 +181,7 @@ def retry_from_dlq(doc_id: str):
 def get_tracking_summary():
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = _cursor(conn)
 
         cur.execute("SELECT COUNT(*) FROM documents")
         total = cur.fetchone()[0]
@@ -257,7 +263,7 @@ def list_issues(
 ):
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = _cursor(conn)
         clauses = []
         params: list = []
         if severity:
@@ -292,7 +298,7 @@ def list_issues(
 def resolve_issue(issue_id: int, resolution: str = "manual"):
     conn = get_db_connection()
     try:
-        cur = conn.cursor()
+        cur = _cursor(conn)
         now_str = datetime.now().isoformat()
         cur.execute(
             "UPDATE document_issues SET resolved_at = %s, resolution = %s WHERE id = %s"
