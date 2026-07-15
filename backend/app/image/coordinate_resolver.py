@@ -197,9 +197,32 @@ def get_static_fallback_polygon(field_name: str) -> Optional[tuple[list[float], 
     elif field_name.startswith("q"):
         try:
             q_num = int(field_name[1:])
-            if q_num >= 21:
+            if q_num >= 13:
                 page_num = 2
         except ValueError:
+            pass
+
+    if field_name.startswith("q") and page_num in (1, 2):
+        try:
+            from app.image.pdf import P1_Y_RANGES, P2_Y_RANGES, COLS_X_PTS
+            q_num = int(field_name[1:])
+            if page_num == 1:
+                idx = q_num - 1
+                y0, y1 = P1_Y_RANGES[idx] if 0 <= idx < len(P1_Y_RANGES) else (0, 0)
+            else:
+                idx = q_num - 13
+                y0, y1 = P2_Y_RANGES[idx] if 0 <= idx < len(P2_Y_RANGES) else (0, 0)
+            x0 = 230.0
+            x1 = (COLS_X_PTS[-1] + 2.5) + 70.0
+            s = scale
+            polygon = [
+                x0 * s, y0 * s,
+                x1 * s, y0 * s,
+                x1 * s, y1 * s,
+                x0 * s, y1 * s
+            ]
+            return polygon, page_num
+        except Exception:
             pass
 
     rect = None

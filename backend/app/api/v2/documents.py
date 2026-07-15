@@ -126,6 +126,14 @@ def _enrich_coordinates(doc: dict, doc_id: str) -> None:
                     poly, page_num = fallback
                     v2[field_name] = {"page": page_num, "polygon": poly}
 
+        for q_num in range(1, 26):
+            q_key = f"q{q_num}"
+            if q_key not in v2 or not v2[q_key].get("polygon"):
+                fallback = get_static_fallback_polygon(q_key)
+                if fallback:
+                    poly, page_num = fallback
+                    v2[q_key] = {"page": page_num, "polygon": poly}
+
         if "consent" not in v2 or not v2["consent"].get("polygon"):
             v2["consent"] = {"page": 1, "polygon": [1550, 920, 2050, 920, 2050, 1070, 1550, 1070]}
         else:
