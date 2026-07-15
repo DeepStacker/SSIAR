@@ -83,12 +83,18 @@ def _polygon_from_selection_marks(page_raw: dict, page_num: int, q_num: int) -> 
 
     unit = "pixel"
     selection_marks = []
+    page_h = 3508.0
     for p in page_raw.get("pages", []):
         pn = p.get("pageNumber", p.get("page", 1))
         if pn == page_num:
             unit = p.get("unit", "pixel")
+            page_h = p.get("height", 3508.0) * (300.0 if unit == "inch" else 1.0)
             selection_marks = p.get("selectionMarks", [])
             break
+
+    scale_template_to_azure = page_h / 3508.0
+    y0 = y0_template * scale_template_to_azure
+    y1 = y1_template * scale_template_to_azure
 
     matched_polys = []
     for sm in selection_marks:
@@ -99,7 +105,7 @@ def _polygon_from_selection_marks(page_raw: dict, page_num: int, q_num: int) -> 
             poly = [pt * 300.0 for pt in poly]
         ys = [poly[i] for i in range(1, 8, 2)]
         cy = (min(ys) + max(ys)) / 2.0
-        if y0_template <= cy <= y1_template:
+        if y0 <= cy <= y1:
             matched_polys.append(poly)
 
     if len(matched_polys) < 2:
