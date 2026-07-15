@@ -278,6 +278,10 @@ def init_db():
                 cur.execute("ALTER TABLE documents ADD COLUMN error_message TEXT")
             if doc_cols and "retry_count" not in doc_cols:
                 cur.execute("ALTER TABLE documents ADD COLUMN retry_count INTEGER DEFAULT 0")
+            cur.execute(
+                "UPDATE document_issues SET severity = 'error' "
+                "WHERE severity = 'warning' AND details::jsonb->>'priority' = 'critical'"
+            )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at)")
@@ -558,6 +562,14 @@ def _run_migrations(cursor):
     if cursor.fetchone()[0] == 0:
         print("No users found. First registration will create the initial user.")
         cursor.execute("UPDATE documents SET user_id = 'orphan' WHERE user_id IS NULL")
+
+    cursor.execute("PRAGMA table_info(document_issues)")
+    di_cols = [col[1] for col in cursor.fetchall()]
+    if "severity" in di_cols:
+        cursor.execute(
+            "UPDATE document_issues SET severity = 'error' "
+            "WHERE severity = 'warning' AND details LIKE '%\"priority\": \"critical\"%'"
+        )
 
 
 def insert_document(doc_id: str, filename: str, status: str = "processing",

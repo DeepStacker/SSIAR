@@ -390,7 +390,7 @@ def process_document_background(
                     log_issue(
                         doc_id=doc_id,
                         issue_type="low_confidence" if priority == "low_trust" else "validation_error",
-                        severity="warning",
+                        severity="error" if priority == "critical" else "warning",
                         field_name=fd.name,
                         description=err_msg or f"Trust confidence {tc.trust_confidence:.2f}",
                         details={"priority": priority, "confidence": tc.trust_confidence}
@@ -431,7 +431,7 @@ def process_document_background(
                     log_issue(
                         doc_id=doc_id,
                         issue_type=err_msg if err_msg in ("multi_tick", "unanswered") else "low_confidence",
-                        severity="warning",
+                        severity="error" if priority == "critical" else "warning",
                         field_name=q_key,
                         description=f"SDQ {q_key}: {err_msg}",
                         details={"priority": priority, "confidence": tc.trust_confidence}
