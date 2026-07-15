@@ -13,7 +13,7 @@ from app.database import get_document, get_db_connection, put_conn
 
 def get_sdq_row_polygon_from_table(raw_dict: dict, q_num: int) -> Optional[tuple[list[float], int]]:
     """Determine the bounding box and polygon of the three checkbox cells
-    for a specific question using Azure's table model."""
+    for a specific question using Azure's table model or selection marks."""
     page_num = 2 if q_num >= 13 else 1
 
     page_raw = raw_dict.get(f"page_{page_num}", {})
@@ -28,33 +28,35 @@ def get_sdq_row_polygon_from_table(raw_dict: dict, q_num: int) -> Optional[tuple
                 tables = p.get("tables", [])
                 break
 
-    if not tables:
-        return None
+    if tables:
+        if page_num == 1:
+            table = tables[1] if len(tables) >= 2 else tables[0]
+            row_idx = q_num
+        else:
+            table = tables[0]
+            row_idx = q_num - 13
 
-    if page_num == 1:
-        table = tables[1] if len(tables) >= 2 else tables[0]
-        row_idx = q_num
-    else:
-        table = tables[0]
-        row_idx = q_num - 13
+        target_cells = []
+        for cell in table.get("cells", []):
+            if cell.get("rowIndex") == row_idx and cell.get("columnIndex") in (1, 2, 3):
+                target_cells.append(cell)
 
-    target_cells = []
-    for cell in table.get("cells", []):
-        if cell.get("rowIndex") == row_idx and cell.get("columnIndex") in (1, 2, 3):
-            target_cells.append(cell)
+        if target_cells:
+            return _polygon_from_cells(target_cells, page_raw, page_num)
 
-    if not target_cells:
-        return None
+    # Fallback: use Azure selection marks for this row
+    return _polygon_from_selection_marks(page_raw, page_num, q_num)
 
-    polys = []
+
+def _polygon_from_cells(cells: list[dict], page_raw: dict, page_num: int) -> Optional[tuple[list[float], int]]:
     unit = "pixel"
     for p in page_raw.get("pages", []):
-        p_num = p.get("pageNumber", p.get("page", 1))
-        if p_num == page_num:
+        pn = p.get("pageNumber", p.get("page", 1))
+        if pn == page_num:
             unit = p.get("unit", "pixel")
             break
-
-    for cell in target_cells:
+    polys = []
+    for cell in cells:
         regions = cell.get("boundingRegions", [])
         if regions:
             poly = regions[0].get("polygon", [])
@@ -62,24 +64,62 @@ def get_sdq_row_polygon_from_table(raw_dict: dict, q_num: int) -> Optional[tuple
                 poly = [pt * 300.0 for pt in poly]
             if poly and len(poly) >= 8:
                 polys.append(poly)
-
     if not polys:
         return None
+    return _combine_polygons(polys, page_num)
 
+
+def _polygon_from_selection_marks(page_raw: dict, page_num: int, q_num: int) -> Optional[tuple[list[float], int]]:
+    """Get the bounding polygon for an SDQ row from Azure selection marks."""
+    from app.image.pdf import P1_Y_RANGES, P2_Y_RANGES
+    if page_num == 1:
+        if not (1 <= q_num <= 12):
+            return None
+        y0_template, y1_template = P1_Y_RANGES[q_num - 1]
+    else:
+        if not (13 <= q_num <= 25):
+            return None
+        y0_template, y1_template = P2_Y_RANGES[q_num - 13]
+
+    unit = "pixel"
+    selection_marks = []
+    for p in page_raw.get("pages", []):
+        pn = p.get("pageNumber", p.get("page", 1))
+        if pn == page_num:
+            unit = p.get("unit", "pixel")
+            selection_marks = p.get("selectionMarks", [])
+            break
+
+    matched_polys = []
+    for sm in selection_marks:
+        poly = sm.get("polygon", [])
+        if not poly or len(poly) < 8:
+            continue
+        if unit == "inch":
+            poly = [pt * 300.0 for pt in poly]
+        ys = [poly[i] for i in range(1, 8, 2)]
+        cy = (min(ys) + max(ys)) / 2.0
+        if y0_template <= cy <= y1_template:
+            matched_polys.append(poly)
+
+    if len(matched_polys) < 2:
+        return None
+
+    return _combine_polygons(matched_polys, page_num)
+
+
+def _combine_polygons(polys: list[list[float]], page_num: int) -> tuple[list[float], int]:
     all_xs = []
     all_ys = []
     for poly in polys:
         all_xs.extend(poly[0::2])
         all_ys.extend(poly[1::2])
-
     x0 = min(all_xs)
     x1 = max(all_xs)
     y0 = min(all_ys)
     y1 = max(all_ys)
-
     pad_x = (x1 - x0) * 0.02
     pad_y = (y1 - y0) * 0.10
-
     polygon = [
         x0 - pad_x, y0 - pad_y,
         x1 + pad_x, y0 - pad_y,
