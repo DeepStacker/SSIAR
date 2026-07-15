@@ -212,14 +212,13 @@ def get_static_fallback_polygon(field_name: str) -> Optional[tuple[list[float], 
             else:
                 idx = q_num - 13
                 y0, y1 = P2_Y_RANGES[idx] if 0 <= idx < len(P2_Y_RANGES) else (0, 0)
-            x0 = 230.0
-            x1 = (COLS_X_PTS[-1] + 2.5) + 70.0
-            s = scale
+            x0 = 230.0 * scale
+            x1 = ((COLS_X_PTS[-1] + 2.5) + 70.0) * scale
             polygon = [
-                x0 * s, y0 * s,
-                x1 * s, y0 * s,
-                x1 * s, y1 * s,
-                x0 * s, y1 * s
+                x0, y0,
+                x1, y0,
+                x1, y1,
+                x0, y1
             ]
             return polygon, page_num
         except Exception:
