@@ -276,6 +276,8 @@ def init_db():
             doc_cols = [col[0] for col in cur.fetchall()]
             if doc_cols and "error_message" not in doc_cols:
                 cur.execute("ALTER TABLE documents ADD COLUMN error_message TEXT")
+            if doc_cols and "retry_count" not in doc_cols:
+                cur.execute("ALTER TABLE documents ADD COLUMN retry_count INTEGER DEFAULT 0")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at)")
