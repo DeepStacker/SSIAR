@@ -37,6 +37,8 @@ frontend/.vite/
 shared/uploads/
 shared/processed/
 shared/database/*.db
+shared/database/*.db-shm
+shared/database/*.db-wal
 shared/database/*.sqlite
 
 # --- Root PDFs (large source docs, not code) ---
