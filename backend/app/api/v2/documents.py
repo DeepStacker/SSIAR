@@ -85,11 +85,10 @@ def _enrich_coordinates(doc: dict, doc_id: str) -> None:
             for q_num in range(1, 26):
                 q_key = f"q{q_num}"
                 expected_page = 2 if q_num >= 13 else 1
-                if q_key not in v2 or not v2[q_key].get("polygon"):
-                    tbl_res = get_sdq_row_polygon_from_table(raw_dict, q_num)
-                    if tbl_res:
-                        poly, page_num = tbl_res
-                        v2[q_key] = {"page": page_num, "polygon": poly}
+                tbl_res = get_sdq_row_polygon_from_table(raw_dict, q_num)
+                if tbl_res:
+                    poly, page_num = tbl_res
+                    v2[q_key] = {"page": page_num, "polygon": poly}
                 elif q_key in v2:
                     v2[q_key]["page"] = expected_page
 
