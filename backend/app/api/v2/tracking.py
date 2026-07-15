@@ -300,6 +300,229 @@ def list_issues(
         put_conn(conn)
 
 
+# ── Processing Funnel ───────────────────────────────────────────────────────
+
+@router.get("/api/stats/funnel")
+def get_processing_funnel():
+    conn = get_db_connection()
+    try:
+        cur = _cursor(conn)
+        cur.execute(
+            "SELECT status, COUNT(*) as cnt FROM documents GROUP BY status "
+            "ORDER BY CASE status "
+            "  WHEN 'uploaded' THEN 1 WHEN 'processing' THEN 2 "
+            "  WHEN 'azure_completed' THEN 3 WHEN 'validation_completed' THEN 4 "
+            "  WHEN 'needs_review' THEN 5 WHEN 'review_required' THEN 6 "
+            "  WHEN 'verified' THEN 7 WHEN 'approved' THEN 8 "
+            "  WHEN 'failed' THEN 9 ELSE 10 END"
+        )
+        stages = [dict(r) for r in cur.fetchall()]
+        total = sum(s["cnt"] for s in stages)
+        return {"total": total, "stages": stages}
+    finally:
+        put_conn(conn)
+
+
+# ── Trends (Time-Series) ────────────────────────────────────────────────────
+
+@router.get("/api/stats/trends")
+def get_trends(days: int = Query(30, le=365)):
+    conn = get_db_connection()
+    try:
+        cur = _cursor(conn)
+        from datetime import datetime, timedelta
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+
+        cur.execute(
+            "SELECT DATE(created_at) as d, COUNT(*) as cnt "
+            "FROM documents WHERE created_at >= %s GROUP BY d ORDER BY d"
+            if USE_POSTGRES else
+            "SELECT DATE(created_at) as d, COUNT(*) as cnt "
+            "FROM documents WHERE created_at >= ? GROUP BY d ORDER BY d",
+            (cutoff,)
+        )
+        docs_per_day = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT DATE(created_at) as d, COUNT(*) as cnt "
+            "FROM document_issues WHERE created_at >= %s GROUP BY d ORDER BY d"
+            if USE_POSTGRES else
+            "SELECT DATE(created_at) as d, COUNT(*) as cnt "
+            "FROM document_issues WHERE created_at >= ? GROUP BY d ORDER BY d",
+            (cutoff,)
+        )
+        issues_per_day = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT DATE(created_at) as d, COUNT(*) as cnt "
+            "FROM document_fixes WHERE created_at >= %s GROUP BY d ORDER BY d"
+            if USE_POSTGRES else
+            "SELECT DATE(created_at) as d, COUNT(*) as cnt "
+            "FROM document_fixes WHERE created_at >= ? GROUP BY d ORDER BY d",
+            (cutoff,)
+        )
+        fixes_per_day = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT AVG(metric_value) as avg_val, MIN(metric_value) as min_val, "
+            "MAX(metric_value) as max_val, COUNT(*) as samples "
+            "FROM processing_metrics WHERE metric_name = 'processing_time_seconds'"
+        )
+        raw = cur.fetchone()
+        processing_time = dict(raw) if raw else {}
+
+        cur.execute(
+            "SELECT AVG(metric_value) as avg_val, COUNT(*) as samples "
+            "FROM processing_metrics WHERE metric_name = 'review_fields_count'"
+        )
+        raw = cur.fetchone()
+        review_fields = dict(raw) if raw else {}
+
+        return {
+            "docs_per_day": docs_per_day,
+            "issues_per_day": issues_per_day,
+            "fixes_per_day": fixes_per_day,
+            "processing_time": processing_time,
+            "review_fields": review_fields,
+        }
+    finally:
+        put_conn(conn)
+
+
+# ── Field-Level Quality ────────────────────────────────────────────────────
+
+@router.get("/api/stats/fields")
+def get_field_quality():
+    conn = get_db_connection()
+    try:
+        cur = _cursor(conn)
+        cur.execute(
+            "SELECT field_name, issue_type, COUNT(*) as cnt "
+            "FROM document_issues WHERE field_name IS NOT NULL "
+            "GROUP BY field_name, issue_type ORDER BY cnt DESC LIMIT 50"
+        )
+        field_breakdown = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT field_name, COUNT(*) as cnt "
+            "FROM document_issues WHERE field_name IS NOT NULL "
+            "GROUP BY field_name ORDER BY cnt DESC LIMIT 20"
+        )
+        field_totals = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT field_name, COUNT(*) as cnt "
+            "FROM document_fixes WHERE field_name IS NOT NULL "
+            "GROUP BY field_name ORDER BY cnt DESC LIMIT 20"
+        )
+        field_fixes = [dict(r) for r in cur.fetchall()]
+
+        return {
+            "field_breakdown": field_breakdown,
+            "field_totals": field_totals,
+            "field_fixes": field_fixes,
+        }
+    finally:
+        put_conn(conn)
+
+
+# ── User Activity ──────────────────────────────────────────────────────────
+
+@router.get("/api/stats/activity")
+def get_user_activity():
+    conn = get_db_connection()
+    try:
+        cur = _cursor(conn)
+        cur.execute(
+            "SELECT reviewer_id, COUNT(*) as cnt "
+            "FROM review_tasks WHERE reviewer_id IS NOT NULL AND status = 'completed' "
+            "GROUP BY reviewer_id ORDER BY cnt DESC"
+        )
+        review_activity = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT triggered_by, COUNT(*) as cnt "
+            "FROM document_fixes WHERE triggered_by IS NOT NULL "
+            "GROUP BY triggered_by ORDER BY cnt DESC"
+        )
+        fix_activity = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT COUNT(*) as total_reviews FROM review_tasks WHERE status = 'completed'"
+        )
+        total_reviews = cur.fetchone()["cnt"]
+
+        cur.execute(
+            "SELECT COUNT(*) as total_corrections FROM edit_history"
+        )
+        total_corrections = cur.fetchone()["cnt"]
+
+        cur.execute(
+            "SELECT COUNT(*) as total_fixes FROM document_fixes"
+        )
+        total_fixes = cur.fetchone()["cnt"]
+
+        return {
+            "review_activity": review_activity,
+            "fix_activity": fix_activity,
+            "total_reviews": total_reviews,
+            "total_corrections": total_corrections,
+            "total_fixes": total_fixes,
+        }
+    finally:
+        put_conn(conn)
+
+
+# ── Processing Metrics Aggregate ────────────────────────────────────────────
+
+@router.get("/api/stats/processing")
+def get_processing_aggregate():
+    conn = get_db_connection()
+    try:
+        cur = _cursor(conn)
+        cur.execute(
+            "SELECT metric_name, "
+            "ROUND(AVG(metric_value)::numeric, 2) as avg_val, "
+            "ROUND(MIN(metric_value)::numeric, 2) as min_val, "
+            "ROUND(MAX(metric_value)::numeric, 2) as max_val, "
+            "COUNT(*) as samples, metric_unit "
+            "FROM processing_metrics GROUP BY metric_name, metric_unit"
+            if USE_POSTGRES else
+            "SELECT metric_name, "
+            "ROUND(AVG(metric_value), 2) as avg_val, "
+            "ROUND(MIN(metric_value), 2) as min_val, "
+            "ROUND(MAX(metric_value), 2) as max_val, "
+            "COUNT(*) as samples, metric_unit "
+            "FROM processing_metrics GROUP BY metric_name, metric_unit"
+        )
+        metrics = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT escalation_level, COUNT(*) as cnt "
+            "FROM documents GROUP BY escalation_level ORDER BY escalation_level"
+        )
+        escalation = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT status, COUNT(*) as cnt, "
+            "ROUND(AVG(COALESCE(retry_count, 0))::numeric, 1) as avg_retries "
+            "FROM documents GROUP BY status"
+            if USE_POSTGRES else
+            "SELECT status, COUNT(*) as cnt, "
+            "ROUND(AVG(COALESCE(retry_count, 0)), 1) as avg_retries "
+            "FROM documents GROUP BY status"
+        )
+        status_breakdown = [dict(r) for r in cur.fetchall()]
+
+        return {
+            "metrics": metrics,
+            "escalation": escalation,
+            "status_breakdown": status_breakdown,
+        }
+    finally:
+        put_conn(conn)
+
+
 # ── Resolve Issue ────────────────────────────────────────────────────────────
 
 @router.post("/api/stats/issues/{issue_id}/resolve")

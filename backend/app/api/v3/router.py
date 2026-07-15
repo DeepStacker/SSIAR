@@ -540,6 +540,11 @@ from app.api.v2.tracking import (
     get_tracking_summary as _get_tracking_summary,
     list_issues as _list_issues,
     resolve_issue as _resolve_issue,
+    get_processing_funnel as _get_processing_funnel,
+    get_trends as _get_trends,
+    get_field_quality as _get_field_quality,
+    get_user_activity as _get_user_activity,
+    get_processing_aggregate as _get_processing_aggregate,
 )
 
 
@@ -577,6 +582,31 @@ def v3_stats_issues(
 @v3_router.post("/stats/issues/{issue_id}/resolve", dependencies=[_Auth])
 def v3_stats_resolve_issue(issue_id: int, resolution: str = "manual"):
     return _call(_resolve_issue, issue_id, resolution)
+
+
+@v3_router.get("/stats/funnel", dependencies=[_Auth])
+def v3_stats_funnel():
+    return _call(_get_processing_funnel)
+
+
+@v3_router.get("/stats/trends", dependencies=[_Auth])
+def v3_stats_trends(days: int = Query(30, le=365)):
+    return _call(_get_trends, days)
+
+
+@v3_router.get("/stats/fields", dependencies=[_Auth])
+def v3_stats_fields():
+    return _call(_get_field_quality)
+
+
+@v3_router.get("/stats/activity", dependencies=[_Auth])
+def v3_stats_activity():
+    return _call(_get_user_activity)
+
+
+@v3_router.get("/stats/processing", dependencies=[_Auth])
+def v3_stats_processing():
+    return _call(_get_processing_aggregate)
 
 
 # ---------------------------------------------------------------------------

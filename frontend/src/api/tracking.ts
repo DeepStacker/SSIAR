@@ -48,4 +48,46 @@ export const trackingApi = {
   resolveIssue: async (issueId: number, resolution: string): Promise<{ message: string }> => {
     return fetchJson<{ message: string }>(`${API_BASE}/stats/issues/${issueId}/resolve?resolution=${encodeURIComponent(resolution)}`, { method: 'POST' });
   },
+
+  // ── New expanded stats ──────────────────────────────────────────────────────
+
+  getFunnel: async (): Promise<{ total: number; stages: { status: string; cnt: number }[] }> => {
+    return fetchJson(`${API_BASE}/stats/funnel`);
+  },
+
+  getTrends: async (days: number = 30): Promise<{
+    docs_per_day: { d: string; cnt: number }[];
+    issues_per_day: { d: string; cnt: number }[];
+    fixes_per_day: { d: string; cnt: number }[];
+    processing_time: { avg_val: number; min_val: number; max_val: number; samples: number };
+    review_fields: { avg_val: number; samples: number };
+  }> => {
+    return fetchJson(`${API_BASE}/stats/trends?days=${days}`);
+  },
+
+  getFieldQuality: async (): Promise<{
+    field_breakdown: { field_name: string; issue_type: string; cnt: number }[];
+    field_totals: { field_name: string; cnt: number }[];
+    field_fixes: { field_name: string; cnt: number }[];
+  }> => {
+    return fetchJson(`${API_BASE}/stats/fields`);
+  },
+
+  getActivity: async (): Promise<{
+    review_activity: { reviewer_id: string; cnt: number }[];
+    fix_activity: { triggered_by: string; cnt: number }[];
+    total_reviews: number;
+    total_corrections: number;
+    total_fixes: number;
+  }> => {
+    return fetchJson(`${API_BASE}/stats/activity`);
+  },
+
+  getProcessingAggregate: async (): Promise<{
+    metrics: { metric_name: string; avg_val: number; min_val: number; max_val: number; samples: number; metric_unit: string }[];
+    escalation: { escalation_level: string; cnt: number }[];
+    status_breakdown: { status: string; cnt: number; avg_retries: number }[];
+  }> => {
+    return fetchJson(`${API_BASE}/stats/processing`);
+  },
 };
