@@ -483,7 +483,7 @@ def get_user_activity():
         cur.execute(
             "SELECT COUNT(*) as total_fixes FROM document_fixes"
         )
-        total_fixes = cur.fetchone()["cnt"]
+        total_fixes = cur.fetchone()["total_fixes"]
 
         return {
             "review_activity": review_activity,
