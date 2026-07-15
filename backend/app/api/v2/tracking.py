@@ -478,7 +478,7 @@ def get_user_activity():
         cur.execute(
             "SELECT COUNT(*) as total_corrections FROM edit_history"
         )
-        total_corrections = cur.fetchone()["cnt"]
+        total_corrections = cur.fetchone()["total_corrections"]
 
         cur.execute(
             "SELECT COUNT(*) as total_fixes FROM document_fixes"
@@ -524,18 +524,18 @@ def get_processing_aggregate():
             "SELECT escalation_level, COUNT(*) as cnt "
             "FROM documents GROUP BY escalation_level ORDER BY escalation_level"
         )
-        escalation = [dict(r) for r in cur.fetchall()]
+        escalation = [_row_to_json(r) for r in cur.fetchall()]
 
         cur.execute(
             "SELECT status, COUNT(*) as cnt, "
-            "ROUND(AVG(COALESCE(retry_count, 0))::numeric, 1) as avg_retries "
+            "ROUND(AVG(COALESCE(retry_count, 0))::numeric, 1)::float8 as avg_retries "
             "FROM documents GROUP BY status"
             if USE_POSTGRES else
             "SELECT status, COUNT(*) as cnt, "
             "ROUND(AVG(COALESCE(retry_count, 0)), 1) as avg_retries "
             "FROM documents GROUP BY status"
         )
-        status_breakdown = [dict(r) for r in cur.fetchall()]
+        status_breakdown = [_row_to_json(r) for r in cur.fetchall()]
 
         return {
             "metrics": metrics,
