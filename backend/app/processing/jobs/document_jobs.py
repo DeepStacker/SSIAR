@@ -38,6 +38,7 @@ def process_document_background(
 
     This is the V2 replacement for `process_pdf_background`.
     """
+    _pipeline_start = datetime.utcnow()
     try:
         import cv2
         # Delete existing ROI files from disk to force re-cropping
@@ -284,6 +285,12 @@ def process_document_background(
                 text, conf, found, _, poly, res_page = "", 0.0, False, None, None, 1
                 normalized_text = ""
 
+            if found and text and normalized_text != text:
+                from app.database import log_fix
+                log_fix(doc_id, fix_type="auto_correct", field_name=fd.name,
+                        previous_value=text, new_value=normalized_text,
+                        triggered_by="system")
+
             extracted_fields[fd.name] = normalized_text
             polygons[fd.name] = poly
             resolved_pages[fd.name] = res_page
@@ -462,8 +469,8 @@ def process_document_background(
         }, user_id=user_id)
 
         from app.database import record_metric
-        record_metric(doc_id, "processing_time_seconds", 0,
-                      "seconds")  # TODO: track actual duration
+        elapsed = (datetime.utcnow() - _pipeline_start).total_seconds()
+        record_metric(doc_id, "processing_time_seconds", elapsed, "seconds")
         record_metric(doc_id, "review_fields_count", len(review_fields), "fields")
         if is_consistent is not None:
             record_metric(doc_id, "cross_field_consistent", 1.0 if is_consistent else 0.0)
