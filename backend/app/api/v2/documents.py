@@ -471,7 +471,12 @@ def reprocess_document(doc_id: str):
         raise HTTPException(status_code=400, detail="Original PDF data or processed page images not found")
         
     update_document_status(doc_id, "processing")
-    
+
+    from app.database import increment_retry_count, log_fix
+    increment_retry_count(doc_id)
+    log_fix(doc_id, fix_type="reprocess", field_name=None,
+            triggered_by=get_current_user_id())
+
     from app.processing.jobs.document_jobs import get_job_queue, process_document_background
     get_job_queue().enqueue(
         "document_processing",

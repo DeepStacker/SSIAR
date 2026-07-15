@@ -531,6 +531,55 @@ async def v3_feedback_attachment(filename: str, request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Tracking & Stats
+# ---------------------------------------------------------------------------
+from app.api.v2.tracking import (
+    get_document_stats as _get_document_stats,
+    list_dlq as _list_dlq,
+    retry_from_dlq as _retry_from_dlq,
+    get_tracking_summary as _get_tracking_summary,
+    list_issues as _list_issues,
+    resolve_issue as _resolve_issue,
+)
+
+
+@v3_router.get("/stats/document/{doc_id}", dependencies=[_Auth])
+def v3_stats_document(doc_id: str):
+    return _call(_get_document_stats, doc_id)
+
+
+@v3_router.get("/stats/dlq", dependencies=[_Auth])
+def v3_stats_dlq(status: Optional[str] = Query(None)):
+    return _call(_list_dlq, status)
+
+
+@v3_router.post("/stats/dlq/{doc_id}/retry", dependencies=[_Auth])
+def v3_stats_dlq_retry(doc_id: str):
+    return _call(_retry_from_dlq, doc_id)
+
+
+@v3_router.get("/stats/summary", dependencies=[_Auth])
+def v3_stats_summary():
+    return _call(_get_tracking_summary)
+
+
+@v3_router.get("/stats/issues", dependencies=[_Auth])
+def v3_stats_issues(
+    severity: Optional[str] = Query(None),
+    issue_type: Optional[str] = Query(None),
+    resolved: Optional[bool] = Query(None),
+    doc_id: Optional[str] = Query(None, alias="document_id"),
+    limit: int = Query(100, le=500),
+):
+    return _call(_list_issues, severity, issue_type, resolved, doc_id, limit)
+
+
+@v3_router.post("/stats/issues/{issue_id}/resolve", dependencies=[_Auth])
+def v3_stats_resolve_issue(issue_id: int, resolution: str = "manual"):
+    return _call(_resolve_issue, issue_id, resolution)
+
+
+# ---------------------------------------------------------------------------
 # System
 # ---------------------------------------------------------------------------
 from app.api.v2.documents import queue_status as _queue_status, event_stream as _event_stream

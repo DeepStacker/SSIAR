@@ -5,5 +5,7 @@ from .connection import (
     log_correction_data, get_edit_history, get_page_image,
     document_exists_by_filename, insert_document, store_pdf,
     get_pdf, delete_pdf, store_page_image, get_corrections_log,
+    update_document_error, increment_retry_count,
+    log_issue, log_fix, record_metric,
     USE_POSTGRES,
 )

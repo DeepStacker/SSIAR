@@ -173,6 +173,32 @@ def init_db():
                     recorded_at TEXT NOT NULL
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS document_issues (
+                    id SERIAL PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                    field_name TEXT,
+                    issue_type TEXT NOT NULL,
+                    severity TEXT NOT NULL DEFAULT 'warning',
+                    description TEXT,
+                    details TEXT,
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT,
+                    resolution TEXT
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS document_fixes (
+                    id SERIAL PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                    field_name TEXT,
+                    fix_type TEXT NOT NULL,
+                    previous_value TEXT,
+                    new_value TEXT,
+                    triggered_by TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_processing_metrics_doc_id ON processing_metrics(document_id)")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS review_tasks (
@@ -365,6 +391,34 @@ def init_db():
                     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS document_issues (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    document_id TEXT NOT NULL,
+                    field_name TEXT,
+                    issue_type TEXT NOT NULL,
+                    severity TEXT NOT NULL DEFAULT 'warning',
+                    description TEXT,
+                    details TEXT,
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT,
+                    resolution TEXT,
+                    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS document_fixes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    document_id TEXT NOT NULL,
+                    field_name TEXT,
+                    fix_type TEXT NOT NULL,
+                    previous_value TEXT,
+                    new_value TEXT,
+                    triggered_by TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+                )
+            """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_processing_metrics_doc_id ON processing_metrics(document_id)")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS review_tasks (
@@ -444,6 +498,11 @@ def _run_migrations(cursor):
     if "user_id" not in columns:
         try:
             cursor.execute("ALTER TABLE documents ADD COLUMN user_id TEXT REFERENCES users(id)")
+        except Exception:
+            pass
+    if "retry_count" not in columns:
+        try:
+            cursor.execute("ALTER TABLE documents ADD COLUMN retry_count INTEGER DEFAULT 0")
         except Exception:
             pass
 
@@ -539,6 +598,95 @@ def update_document_status(doc_id: str, status: str, escalation_level: Optional[
                 "UPDATE documents SET status = ? WHERE id = ?",
                 (status, doc_id)
             )
+        conn.commit()
+    finally:
+        put_conn(conn)
+
+
+def update_document_error(doc_id: str, error_message: str):
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE documents SET error_message = %s WHERE id = %s"
+            if USE_POSTGRES else
+            "UPDATE documents SET error_message = ? WHERE id = ?",
+            (error_message, doc_id)
+        )
+        conn.commit()
+    finally:
+        put_conn(conn)
+
+
+def increment_retry_count(doc_id: str):
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE documents SET retry_count = COALESCE(retry_count, 0) + 1 WHERE id = %s"
+            if USE_POSTGRES else
+            "UPDATE documents SET retry_count = COALESCE(retry_count, 0) + 1 WHERE id = ?",
+            (doc_id,)
+        )
+        conn.commit()
+    finally:
+        put_conn(conn)
+
+
+def log_issue(doc_id: str, issue_type: str, severity: str = "warning",
+              field_name: Optional[str] = None, description: Optional[str] = None,
+              details: Optional[dict] = None):
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        now_str = datetime.now().isoformat()
+        details_json = json.dumps(details) if details else None
+        cur.execute(
+            "INSERT INTO document_issues (document_id, field_name, issue_type, severity, description, details, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            if USE_POSTGRES else
+            "INSERT INTO document_issues (document_id, field_name, issue_type, severity, description, details, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (doc_id, field_name, issue_type, severity, description, details_json, now_str)
+        )
+        conn.commit()
+    finally:
+        put_conn(conn)
+
+
+def log_fix(doc_id: str, fix_type: str, field_name: Optional[str] = None,
+            previous_value: Optional[str] = None, new_value: Optional[str] = None,
+            triggered_by: Optional[str] = None):
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        now_str = datetime.now().isoformat()
+        cur.execute(
+            "INSERT INTO document_fixes (document_id, field_name, fix_type, previous_value, new_value, triggered_by, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            if USE_POSTGRES else
+            "INSERT INTO document_fixes (document_id, field_name, fix_type, previous_value, new_value, triggered_by, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (doc_id, field_name, fix_type, previous_value, new_value, triggered_by, now_str)
+        )
+        conn.commit()
+    finally:
+        put_conn(conn)
+
+
+def record_metric(doc_id: str, metric_name: str, metric_value: float, metric_unit: str = ""):
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        now_str = datetime.now().isoformat()
+        cur.execute(
+            "INSERT INTO processing_metrics (document_id, metric_name, metric_value, metric_unit, recorded_at) "
+            "VALUES (%s, %s, %s, %s, %s)"
+            if USE_POSTGRES else
+            "INSERT INTO processing_metrics (document_id, metric_name, metric_value, metric_unit, recorded_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (doc_id, metric_name, metric_value, metric_unit, now_str)
+        )
         conn.commit()
     finally:
         put_conn(conn)

@@ -386,6 +386,15 @@ def process_document_background(
                         confidence_score=tc.trust_confidence,
                         error_details=err_msg
                     )
+                    from app.database import log_issue
+                    log_issue(
+                        doc_id=doc_id,
+                        issue_type="low_confidence" if priority == "low_trust" else "validation_error",
+                        severity="warning",
+                        field_name=fd.name,
+                        description=err_msg or f"Trust confidence {tc.trust_confidence:.2f}",
+                        details={"priority": priority, "confidence": tc.trust_confidence}
+                    )
 
         # Create review tasks for SDQ questions if low trust
         for q_num in range(1, 26):
@@ -418,6 +427,15 @@ def process_document_background(
                         confidence_score=tc.trust_confidence,
                         error_details=err_msg
                     )
+                    from app.database import log_issue
+                    log_issue(
+                        doc_id=doc_id,
+                        issue_type=err_msg if err_msg in ("multi_tick", "unanswered") else "low_confidence",
+                        severity="warning",
+                        field_name=q_key,
+                        description=f"SDQ {q_key}: {err_msg}",
+                        details={"priority": priority, "confidence": tc.trust_confidence}
+                    )
 
         if review_fields:
             status = "needs_review"
@@ -443,6 +461,13 @@ def process_document_background(
             "escalation_level": escalation,
         }, user_id=user_id)
 
+        from app.database import record_metric
+        record_metric(doc_id, "processing_time_seconds", 0,
+                      "seconds")  # TODO: track actual duration
+        record_metric(doc_id, "review_fields_count", len(review_fields), "fields")
+        if is_consistent is not None:
+            record_metric(doc_id, "cross_field_consistent", 1.0 if is_consistent else 0.0)
+
         # Delete original uploaded PDF since we keep page images and can compile PDF on-the-fly
         from app.database import delete_pdf
         delete_pdf(doc_id)
@@ -450,6 +475,10 @@ def process_document_background(
     except Exception as e:
         import traceback
         traceback.print_exc()
+        from app.database import update_document_error, log_issue
+        update_document_error(doc_id, str(e)[:500])
+        log_issue(doc_id, issue_type="pipeline_error", severity="error",
+                  description=f"Pipeline failed: {str(e)[:200]}")
         _update_doc_status(doc_id, "failed", "level_4", user_id=user_id)
         notify_sse("document_updated", {
             "doc_id": doc_id, "status": "failed", "escalation_level": "level_4"
