@@ -237,6 +237,7 @@ def serve_crop(doc_id: str, filename: str):
     crop_bytes = generate_crop_jpeg(doc_id, crop_name)
     if crop_bytes is not None:
         cache_crop_set(cache_key, crop_bytes)
+        _persist_crop(doc_id, crop_name, crop_bytes)
         return Response(content=crop_bytes, media_type="image/jpeg",
                         headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
@@ -261,6 +262,15 @@ def serve_crop(doc_id: str, filename: str):
     cache_crop_set(cache_key, crop_bytes)
     return Response(content=crop_bytes, media_type="image/jpeg",
                     headers={"Cache-Control": "public, max-age=3600"})
+
+
+def _persist_crop(doc_id: str, crop_name: str, jpeg_bytes: bytes):
+    try:
+        doc_dir = PROCESSED_DIR / doc_id
+        doc_dir.mkdir(parents=True, exist_ok=True)
+        (doc_dir / f"roi_{crop_name}.jpg").write_bytes(jpeg_bytes)
+    except Exception:
+        pass
 
 
 @router.post("/api/documents/{doc_id}/verify")
