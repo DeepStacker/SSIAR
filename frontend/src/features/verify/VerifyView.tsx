@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, Search, ArrowUpDown, Check, AlertTriangle, ArrowRight, Sparkles, Image, Scan, BarChart, FileWarning, Hash, X, ArrowLeft, ArrowRightCircle } from 'lucide-react';
-import type { DlqTask, Document as AppDocument } from '@/api';
+import type { VerifyTask, Document as AppDocument } from '@/api';
 import { api, clearApiCache } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -217,10 +217,10 @@ function getConfStyle(score: number) {
   return { text: 'text-destructive', badge: 'error' as const };
 }
 
-export const DeadLetterQueueView: React.FC = () => {
+export const VerifyView: React.FC = () => {
   const { show } = useToast();
 
-  const [tasks, setTasks] = useState<DlqTask[]>([]);
+  const [tasks, setTasks] = useState<VerifyTask[]>([]);
   const [failedDocs, setFailedDocs] = useState<AppDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -251,7 +251,7 @@ export const DeadLetterQueueView: React.FC = () => {
     setLoading(true);
     try {
       const [data, docs] = await Promise.all([
-        api.getDlqTasks({
+        api.getVerifyTasks({
           field_type: fieldType !== 'all' ? fieldType : undefined,
           priority: priority !== 'all' ? priority : undefined,
           error_type: errorType !== 'all' ? errorType : undefined,
@@ -285,7 +285,7 @@ export const DeadLetterQueueView: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
-      show('Failed to fetch DLQ tasks', 'error');
+      show('Failed to fetch tasks', 'error');
     } finally {
       setLoading(false);
     }
@@ -336,7 +336,7 @@ export const DeadLetterQueueView: React.FC = () => {
     if (!activeTask || tasks.length === 0) return;
     const idx = tasks.findIndex(t => t.id === activeTask.id);
     if (idx === -1) return;
-    const prefetch = (task: DlqTask) => {
+    const prefetch = (task: VerifyTask) => {
       const img = new window.Image();
       img.src = api.getCropUrl(task.document_id, task.field_name);
     };
@@ -387,7 +387,7 @@ export const DeadLetterQueueView: React.FC = () => {
 
     // Immediately find and preload the next task's crop image
     const currentIndex = tasks.findIndex(t => t.id === activeTask.id);
-    let nextTask: DlqTask | null = null;
+    let nextTask: VerifyTask | null = null;
     if (currentIndex >= 0) {
       const nextIdx = currentIndex + 1 < tasks.length ? currentIndex + 1 : (tasks.length > 1 ? 0 : -1);
       if (nextIdx >= 0) nextTask = tasks[nextIdx];
@@ -399,7 +399,7 @@ export const DeadLetterQueueView: React.FC = () => {
 
     setSaving(true);
     try {
-      const result = await api.submitDlqResolution(activeTask.id, finalVal);
+      const result = await api.submitVerifyResolution(activeTask.id, finalVal);
       clearApiCache();
       show(result.message || `Resolved ${activeTask.field_name} successfully`);
 
@@ -534,8 +534,8 @@ export const DeadLetterQueueView: React.FC = () => {
           <div className="space-y-2 text-xs">
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label htmlFor="dlq-field-type" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Field Type</label>
-                <select id="dlq-field-type"
+                <label htmlFor="verify-field-type" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Field Type</label>
+                <select id="verify-field-type"
                   value={fieldType}
                   onChange={e => { setFieldType(e.target.value as 'all' | 'demographic' | 'sdq'); resetProgressStats(); }}
                   className="w-full h-8 px-2 border border-border rounded-lg bg-secondary/20 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
@@ -546,8 +546,8 @@ export const DeadLetterQueueView: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label htmlFor="dlq-priority" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Priority</label>
-                <select id="dlq-priority"
+                <label htmlFor="verify-priority" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Priority</label>
+                <select id="verify-priority"
                   value={priority}
                   onChange={e => { setPriority(e.target.value as 'all' | 'critical' | 'low_trust'); resetProgressStats(); }}
                   className="w-full h-8 px-2 border border-border rounded-lg bg-secondary/20 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
@@ -560,8 +560,8 @@ export const DeadLetterQueueView: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label htmlFor="dlq-error-type" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Error Type</label>
-                <select id="dlq-error-type"
+                <label htmlFor="verify-error-type" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Error Type</label>
+                <select id="verify-error-type"
                   value={errorType}
                   onChange={e => { setErrorType(e.target.value); resetProgressStats(); }}
                   className="w-full h-8 px-2 border border-border rounded-lg bg-secondary/20 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
@@ -573,9 +573,9 @@ export const DeadLetterQueueView: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label htmlFor="dlq-sort-by" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Sort By</label>
+                <label htmlFor="verify-sort-by" className="block text-muted-foreground mb-1 text-[10px] font-semibold">Sort By</label>
                 <div className="flex items-center gap-1">
-                  <select id="dlq-sort-by"
+                  <select id="verify-sort-by"
                     value={sortBy}
                     onChange={e => { setSortBy(e.target.value); resetProgressStats(); }}
                     className="flex-1 h-8 px-2 border border-border rounded-lg bg-secondary/20 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
@@ -1035,7 +1035,7 @@ export const DeadLetterQueueView: React.FC = () => {
           <Card className="flex flex-col items-center justify-center h-full p-10 text-center">
             <Check size={32} className="text-primary mb-4" />
             <h3 className="font-bold text-lg mb-1">Queue Clear!</h3>
-            <p className="text-xs text-muted-foreground max-w-sm">All fields resolved. No pending DLQ tasks.</p>
+              <p className="text-xs text-muted-foreground max-w-sm">All fields resolved. No pending tasks.</p>
           </Card>
         )}
       </div>

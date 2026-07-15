@@ -1,4 +1,4 @@
-"""Debug script to test DLQ review task submission flow and bulk resolve all duplicate tasks."""
+"""Debug script to test review task submission flow and bulk resolve all duplicate tasks."""
 import sys
 sys.path.insert(0, "/Users/deepstacker/WorkSpace/dupcq/SSIAR/backend")
 

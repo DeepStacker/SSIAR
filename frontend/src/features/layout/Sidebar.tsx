@@ -12,7 +12,7 @@ const navGroups: { label: string; items: { id: ViewMode; label: string; icon: Re
   {
     label: 'Main',
     items: [
-      { id: 'dlq', label: 'Dead Letter Queue', icon: <AlertOctagon size={18} className="text-orange-500" /> },
+      { id: 'verify', label: 'Verify', icon: <AlertOctagon size={18} className="text-orange-500" /> },
       { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
       { id: 'reporting', label: 'Reporting', icon: <FileText size={18} /> },
       { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={18} /> },
@@ -52,7 +52,7 @@ export const Sidebar: React.FC<Props> = ({
     if (id === 'dashboard' && reviewCount > 0) {
       return <span className={cn("ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive min-w-[18px] text-center leading-tight", collapsed && "absolute -top-1 -right-1")}>{reviewCount > 99 ? '99+' : reviewCount}</span>;
     }
-    if (id === 'dlq' && failedCount > 0) {
+    if (id === 'verify' && failedCount > 0) {
       return <span className={cn("ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive min-w-[18px] text-center leading-tight", collapsed && "absolute -top-1 -right-1")}>{failedCount > 99 ? '99+' : failedCount}</span>;
     }
     return null;

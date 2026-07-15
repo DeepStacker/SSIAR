@@ -18,7 +18,7 @@ const BREADCRUMB_LABELS: Record<ViewMode, string> = {
   dashboard: 'Dashboard',
   reporting: 'Reporting',
   analytics: 'Analytics',
-  dlq: 'Dead Letter Queue',
+  verify: 'Verify',
   users: 'Users',
   feedback: 'Feedback',
 };

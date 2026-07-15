@@ -59,14 +59,14 @@ export const analyticsApi = {
     return fetchJson<QueueStatus>(`${API_BASE}/system/queue-status`)
   },
 
-  getDlqTasks: async (filters?: {
+  getVerifyTasks: async (filters?: {
     document_id?: string;
     field_type?: 'demographic' | 'sdq';
     priority?: 'critical' | 'low_trust';
     error_type?: string;
     sort_by?: string;
     sort_dir?: 'asc' | 'desc';
-  }): Promise<{ tasks: import('./types').DlqTask[]; total: number }> => {
+  }): Promise<{ tasks: import('./types').VerifyTask[]; total: number }> => {
     const params = new URLSearchParams();
     if (filters) {
       if (filters.document_id) params.set('document_id', filters.document_id);
@@ -77,10 +77,10 @@ export const analyticsApi = {
       if (filters.sort_dir) params.set('sort_dir', filters.sort_dir);
     }
     const qs = params.toString();
-    return fetchJson<{ tasks: import('./types').DlqTask[]; total: number }>(`${API_BASE}/review/tasks${qs ? `?${qs}` : ''}`);
+    return fetchJson<{ tasks: import('./types').VerifyTask[]; total: number }>(`${API_BASE}/review/tasks${qs ? `?${qs}` : ''}`);
   },
 
-  submitDlqResolution: async (taskId: number, value: string): Promise<{ message: string }> => {
+  submitVerifyResolution: async (taskId: number, value: string): Promise<{ message: string }> => {
     const response = await fetch(`${API_BASE}/review/tasks/${taskId}/submit?corrected_value=${encodeURIComponent(value)}`, {
       method: "POST",
       headers: authHeaders(),

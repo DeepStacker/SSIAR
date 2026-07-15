@@ -20,7 +20,7 @@ const VerifiedView = memo(lazy(() => import('@/features/verification/VerifiedVie
 const FailedView = memo(lazy(() => import('@/features/verification/FailedView').then(m => ({ default: m.FailedView }))));
 const ProcessingView = memo(lazy(() => import('@/features/documents/ProcessingView').then(m => ({ default: m.ProcessingView }))));
 const AnalyticsView = memo(lazy(() => import('@/features/analytics/AnalyticsView').then(m => ({ default: m.AnalyticsView }))));
-const DeadLetterQueueView = memo(lazy(() => import('@/features/dead-letter-queue/DeadLetterQueueView').then(m => ({ default: m.DeadLetterQueueView }))));
+const VerifyView = memo(lazy(() => import('@/features/verify/VerifyView').then(m => ({ default: m.VerifyView }))));
 const ReportingView = memo(lazy(() => import('@/features/reporting/ReportingView').then(m => ({ default: m.ReportingView }))));
 const FeedbackView = memo(lazy(() => import('@/features/feedback/FeedbackView').then(m => ({ default: m.FeedbackView }))));
 
@@ -171,8 +171,8 @@ export function AppContent(props: Props) {
     );
   }
 
-  if (ui.view === 'dlq') {
-    return <Suspense fallback={<LoadingFallback />}><DeadLetterQueueView /></Suspense>;
+  if (ui.view === 'verify') {
+    return <Suspense fallback={<LoadingFallback />}><VerifyView /></Suspense>;
   }
 
   if (ui.view === 'feedback') {

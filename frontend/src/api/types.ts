@@ -88,7 +88,7 @@ export interface BatchFolderResponse {
   document_ids: string[];
 }
 
-export interface DlqTask {
+export interface VerifyTask {
   id: number;
   document_id: string;
   filename: string;
@@ -200,7 +200,7 @@ export interface FeedbackMessage {
   user_email: string;
 }
 
-export type ViewMode = 'dashboard' | 'reporting' | 'analytics' | 'dlq' | 'users' | 'feedback';
+export type ViewMode = 'dashboard' | 'reporting' | 'analytics' | 'verify' | 'users' | 'feedback';
 export type TabType = 'all' | 'needs_review' | 'verified' | 'processing' | 'failed';
 export type SortKey = 'filename' | 'roll_number' | 'status' | 'created_at';
 export type ReportFormat = 'excel' | 'csv';
