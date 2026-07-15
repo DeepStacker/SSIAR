@@ -6,6 +6,7 @@ export { exportApi } from './export';
 export { analyticsApi } from './analytics';
 export { usersApi } from './users';
 export { feedbackApi } from './feedback';
+export { trackingApi } from './tracking';
 
 import { documentsApi } from './documents';
 import { uploadApi } from './upload';
@@ -13,6 +14,7 @@ import { exportApi } from './export';
 import { analyticsApi } from './analytics';
 import { usersApi } from './users';
 import { feedbackApi } from './feedback';
+import { trackingApi } from './tracking';
 
 export const api = {
   ...documentsApi,
@@ -21,4 +23,5 @@ export const api = {
   ...analyticsApi,
   ...usersApi,
   ...feedbackApi,
+  ...trackingApi,
 };

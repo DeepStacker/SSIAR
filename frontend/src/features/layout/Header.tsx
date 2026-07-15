@@ -21,6 +21,7 @@ const BREADCRUMB_LABELS: Record<ViewMode, string> = {
   verify: 'Verify',
   users: 'Users',
   feedback: 'Feedback',
+  tracking: 'Tracking',
 };
 
 export const Header: React.FC<Props> = React.memo(({ view, onViewChange }) => {

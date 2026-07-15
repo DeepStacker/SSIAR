@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  AlertOctagon, BarChart3, ChevronLeft, ChevronRight,
+  Activity, AlertOctagon, BarChart3, ChevronLeft, ChevronRight,
   FileText, LayoutDashboard, MessageSquare, Users, X, LogOut,
 } from 'lucide-react';
 import type { ViewMode } from '@/api';
@@ -41,7 +41,10 @@ export const Sidebar: React.FC<Props> = ({
   if (role === 'admin') {
     groups.push({
       label: 'Admin',
-      items: [{ id: 'users', label: 'Users', icon: <Users size={18} /> }],
+      items: [
+        { id: 'users', label: 'Users', icon: <Users size={18} /> },
+        { id: 'tracking', label: 'Tracking', icon: <Activity size={18} /> },
+      ],
     });
   }
 

@@ -23,6 +23,7 @@ const AnalyticsView = memo(lazy(() => import('@/features/analytics/AnalyticsView
 const VerifyView = memo(lazy(() => import('@/features/verify/VerifyView').then(m => ({ default: m.VerifyView }))));
 const ReportingView = memo(lazy(() => import('@/features/reporting/ReportingView').then(m => ({ default: m.ReportingView }))));
 const FeedbackView = memo(lazy(() => import('@/features/feedback/FeedbackView').then(m => ({ default: m.FeedbackView }))));
+const TrackingView = memo(lazy(() => import('@/features/tracking/TrackingView').then(m => ({ default: m.TrackingView }))));
 
 interface Props {
   onClose: () => void;
@@ -177,6 +178,25 @@ export function AppContent(props: Props) {
 
   if (ui.view === 'feedback') {
     return <Suspense fallback={<LoadingFallback />}><FeedbackView /></Suspense>;
+  }
+
+  if (ui.view === 'tracking') {
+    if (role !== 'admin') {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <Card className="flex flex-col items-center justify-center p-8 min-h-[200px] max-w-md text-center gap-4">
+            <div className="rounded-full bg-red-50 p-3 dark:bg-red-900/20">
+              <ShieldOff className="h-8 w-8 text-red-500" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">Access Denied</h3>
+              <p className="text-xs text-muted-foreground mt-1">You need admin privileges to view document tracking.</p>
+            </div>
+          </Card>
+        </div>
+      );
+    }
+    return <Suspense fallback={<LoadingFallback />}><TrackingView /></Suspense>;
   }
 
   if (ui.view === 'users') {

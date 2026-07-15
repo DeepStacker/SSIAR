@@ -200,7 +200,75 @@ export interface FeedbackMessage {
   user_email: string;
 }
 
-export type ViewMode = 'dashboard' | 'reporting' | 'analytics' | 'verify' | 'users' | 'feedback';
+export type ViewMode = 'dashboard' | 'reporting' | 'analytics' | 'verify' | 'users' | 'feedback' | 'tracking';
+
+export interface TrackingIssue {
+  id: number;
+  document_id: string;
+  field_name: string | null;
+  issue_type: string;
+  severity: string;
+  description: string;
+  details: Record<string, any> | null;
+  created_at: string;
+  resolved_at: string | null;
+  resolution: string | null;
+  filename?: string;
+  roll_number?: string;
+}
+
+export interface TrackingFix {
+  id: number;
+  document_id: string;
+  field_name: string | null;
+  fix_type: string;
+  previous_value: string | null;
+  new_value: string | null;
+  triggered_by: string | null;
+  created_at: string;
+  filename?: string;
+  roll_number?: string;
+}
+
+export interface DocumentStats {
+  document_id: string;
+  status: string;
+  retry_count: number;
+  error_message: string | null;
+  escalation_level: string | null;
+  filename: string | null;
+  roll_number: string | null;
+  created_at: string;
+  issues: TrackingIssue[];
+  fixes: TrackingFix[];
+  metrics: Record<string, any>[] | null;
+}
+
+export interface TrackingSummary {
+  total_documents: number;
+  by_status: Record<string, number>;
+  by_escalation: Record<string, number>;
+  total_issues: number;
+  resolved_issues: number;
+  resolution_rate: number;
+  issues_by_type: Record<string, number>;
+  issues_by_severity: Record<string, number>;
+  total_fixes: number;
+  fixes_by_type: Record<string, number>;
+  total_retries: number;
+}
+
+export interface DlqEntry {
+  document_id: string;
+  status: string;
+  retry_count: number;
+  error_message: string | null;
+  filename: string | null;
+  roll_number: string | null;
+  issue_count: number;
+  fix_count: number;
+  last_error_at: string | null;
+}
 export type TabType = 'all' | 'needs_review' | 'verified' | 'processing' | 'failed';
 export type SortKey = 'filename' | 'roll_number' | 'status' | 'created_at';
 export type ReportFormat = 'excel' | 'csv';

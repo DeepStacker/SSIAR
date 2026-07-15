@@ -9,6 +9,7 @@ export const VIEW_PATHS: Record<ViewMode, string> = {
   verify: '/app/verify',
   users: '/app/users',
   feedback: '/app/feedback',
+  tracking: '/app/tracking',
 };
 
 export function getViewFromPath(pathname: string): ViewMode {
@@ -17,6 +18,7 @@ export function getViewFromPath(pathname: string): ViewMode {
   if (pathname.startsWith('/app/verify')) return 'verify';
   if (pathname.startsWith('/app/users')) return 'users';
   if (pathname.startsWith('/app/feedback')) return 'feedback';
+  if (pathname.startsWith('/app/tracking')) return 'tracking';
   return 'dashboard';
 }
 
