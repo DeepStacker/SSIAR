@@ -317,7 +317,8 @@ def verify_document(doc_id: str, payload: VerifyDataRequest):
     update_document_status(doc_id, "verified", doc.get("escalation_level", "level_1"))
     
     # Automatically complete any pending review tasks for this document
-    from app.database import USE_POSTGRES
+    from app.database import USE_POSTGRES, resolve_document_issues
+    resolve_document_issues(doc_id, resolution="resolved_by_verification")
     conn = get_db_connection()
     try:
         cur = conn.cursor()
@@ -407,11 +408,13 @@ def _cleanup_files(doc_ids: list[str]):
 
 @router.post("/api/documents/bulk-verify")
 def bulk_verify(payload: BulkRequest):
+    from app.database import resolve_document_issues
     count = 0
     for doc_id in payload.doc_ids:
         doc = get_document(doc_id)
         if doc and doc["status"] != "verified":
             update_document_status(doc_id, "verified", "level_1")
+            resolve_document_issues(doc_id, resolution="resolved_by_verification")
             count += 1
     SSE("documents_bulk_verified", {"count": count}, user_id=get_current_user_id())
     return {"message": f"Verified {count} document(s)"}
@@ -472,8 +475,9 @@ def reprocess_document(doc_id: str):
         
     update_document_status(doc_id, "processing")
 
-    from app.database import increment_retry_count, log_fix
+    from app.database import increment_retry_count, log_fix, resolve_document_issues
     increment_retry_count(doc_id)
+    resolve_document_issues(doc_id, resolution="resolved_by_reprocess")
     log_fix(doc_id, fix_type="reprocess", field_name=None,
             triggered_by=get_current_user_id())
 

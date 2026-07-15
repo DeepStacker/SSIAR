@@ -199,6 +199,9 @@ def init_db():
                     created_at TEXT NOT NULL
                 )
             """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_document_issues_doc_id ON document_issues(document_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_document_issues_resolved ON document_issues(resolved_at)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_document_fixes_doc_id ON document_fixes(document_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_processing_metrics_doc_id ON processing_metrics(document_id)")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS review_tasks (
@@ -570,6 +573,9 @@ def _run_migrations(cursor):
             "UPDATE document_issues SET severity = 'error' "
             "WHERE severity = 'warning' AND details LIKE '%\"priority\": \"critical\"%'"
         )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_document_issues_doc_id ON document_issues(document_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_document_issues_resolved ON document_issues(resolved_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_document_fixes_doc_id ON document_fixes(document_id)")
 
 
 def insert_document(doc_id: str, filename: str, status: str = "processing",
@@ -662,6 +668,24 @@ def log_issue(doc_id: str, issue_type: str, severity: str = "warning",
             "INSERT INTO document_issues (document_id, field_name, issue_type, severity, description, details, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (doc_id, field_name, issue_type, severity, description, details_json, now_str)
+        )
+        conn.commit()
+    finally:
+        put_conn(conn)
+
+
+def resolve_document_issues(doc_id: str, resolution: str = "resolved_by_verification"):
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        now_str = datetime.now().isoformat()
+        cur.execute(
+            "UPDATE document_issues SET resolved_at = %s, resolution = %s "
+            "WHERE document_id = %s AND resolved_at IS NULL"
+            if USE_POSTGRES else
+            "UPDATE document_issues SET resolved_at = ?, resolution = ? "
+            "WHERE document_id = ? AND resolved_at IS NULL",
+            (now_str, resolution, doc_id)
         )
         conn.commit()
     finally:
