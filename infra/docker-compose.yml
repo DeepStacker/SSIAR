@@ -13,6 +13,10 @@ services:
     mem_limit: 1g
     mem_reservation: 512m
     cpus: 1.5
+    volumes:
+      - ../shared/uploads:/app/shared/uploads
+      - ../shared/processed:/app/shared/processed
+      - ../shared/temp:/app/shared/temp
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/api/v3/system/health"]
       interval: 30s
