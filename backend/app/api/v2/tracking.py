@@ -1,6 +1,7 @@
 """Tracking & statistics endpoints for per-document stats, issues, fixes, and DLQ."""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
@@ -14,6 +15,17 @@ if USE_POSTGRES:
 
 def _cursor(conn):
     return conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else conn.cursor()
+
+
+def _row_to_json(row):
+    """Convert a DB row (RealDictRow) to a plain dict with JSON-safe types."""
+    d = dict(row)
+    for k, v in d.items():
+        if isinstance(v, Decimal):
+            d[k] = float(v)
+        elif isinstance(v, date):
+            d[k] = v.isoformat()
+    return d
 
 router = APIRouter()
 
@@ -341,7 +353,7 @@ def get_trends(days: int = Query(30, le=365)):
             "FROM documents WHERE created_at >= ? GROUP BY d ORDER BY d",
             (cutoff,)
         )
-        docs_per_day = [dict(r) for r in cur.fetchall()]
+        docs_per_day = [_row_to_json(r) for r in cur.fetchall()]
 
         cur.execute(
             "SELECT DATE(created_at) as d, COUNT(*) as cnt "
@@ -351,7 +363,7 @@ def get_trends(days: int = Query(30, le=365)):
             "FROM document_issues WHERE created_at >= ? GROUP BY d ORDER BY d",
             (cutoff,)
         )
-        issues_per_day = [dict(r) for r in cur.fetchall()]
+        issues_per_day = [_row_to_json(r) for r in cur.fetchall()]
 
         cur.execute(
             "SELECT DATE(created_at) as d, COUNT(*) as cnt "
@@ -361,18 +373,29 @@ def get_trends(days: int = Query(30, le=365)):
             "FROM document_fixes WHERE created_at >= ? GROUP BY d ORDER BY d",
             (cutoff,)
         )
-        fixes_per_day = [dict(r) for r in cur.fetchall()]
+        fixes_per_day = [_row_to_json(r) for r in cur.fetchall()]
 
         cur.execute(
-            "SELECT AVG(metric_value) as avg_val, MIN(metric_value) as min_val, "
-            "MAX(metric_value) as max_val, COUNT(*) as samples "
+            "SELECT ROUND(AVG(metric_value)::numeric, 2)::float8 as avg_val, "
+            "ROUND(MIN(metric_value)::numeric, 2)::float8 as min_val, "
+            "ROUND(MAX(metric_value)::numeric, 2)::float8 as max_val, "
+            "COUNT(*) as samples "
+            "FROM processing_metrics WHERE metric_name = 'processing_time_seconds'"
+            if USE_POSTGRES else
+            "SELECT ROUND(AVG(metric_value), 2) as avg_val, "
+            "ROUND(MIN(metric_value), 2) as min_val, "
+            "ROUND(MAX(metric_value), 2) as max_val, "
+            "COUNT(*) as samples "
             "FROM processing_metrics WHERE metric_name = 'processing_time_seconds'"
         )
         raw = cur.fetchone()
         processing_time = dict(raw) if raw else {}
 
         cur.execute(
-            "SELECT AVG(metric_value) as avg_val, COUNT(*) as samples "
+            "SELECT ROUND(AVG(metric_value)::numeric, 2)::float8 as avg_val, COUNT(*) as samples "
+            "FROM processing_metrics WHERE metric_name = 'review_fields_count'"
+            if USE_POSTGRES else
+            "SELECT ROUND(AVG(metric_value), 2) as avg_val, COUNT(*) as samples "
             "FROM processing_metrics WHERE metric_name = 'review_fields_count'"
         )
         raw = cur.fetchone()
@@ -401,21 +424,21 @@ def get_field_quality():
             "FROM document_issues WHERE field_name IS NOT NULL "
             "GROUP BY field_name, issue_type ORDER BY cnt DESC LIMIT 50"
         )
-        field_breakdown = [dict(r) for r in cur.fetchall()]
+        field_breakdown = [_row_to_json(r) for r in cur.fetchall()]
 
         cur.execute(
             "SELECT field_name, COUNT(*) as cnt "
             "FROM document_issues WHERE field_name IS NOT NULL "
             "GROUP BY field_name ORDER BY cnt DESC LIMIT 20"
         )
-        field_totals = [dict(r) for r in cur.fetchall()]
+        field_totals = [_row_to_json(r) for r in cur.fetchall()]
 
         cur.execute(
             "SELECT field_name, COUNT(*) as cnt "
             "FROM document_fixes WHERE field_name IS NOT NULL "
             "GROUP BY field_name ORDER BY cnt DESC LIMIT 20"
         )
-        field_fixes = [dict(r) for r in cur.fetchall()]
+        field_fixes = [_row_to_json(r) for r in cur.fetchall()]
 
         return {
             "field_breakdown": field_breakdown,
@@ -450,7 +473,7 @@ def get_user_activity():
         cur.execute(
             "SELECT COUNT(*) as total_reviews FROM review_tasks WHERE status = 'completed'"
         )
-        total_reviews = cur.fetchone()["cnt"]
+        total_reviews = cur.fetchone()["total_reviews"]
 
         cur.execute(
             "SELECT COUNT(*) as total_corrections FROM edit_history"
@@ -495,7 +518,7 @@ def get_processing_aggregate():
             "COUNT(*) as samples, metric_unit "
             "FROM processing_metrics GROUP BY metric_name, metric_unit"
         )
-        metrics = [dict(r) for r in cur.fetchall()]
+        metrics = [_row_to_json(r) for r in cur.fetchall()]
 
         cur.execute(
             "SELECT escalation_level, COUNT(*) as cnt "
