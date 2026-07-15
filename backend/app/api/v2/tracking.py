@@ -118,15 +118,15 @@ def list_dlq(
         cur.execute(
             f"SELECT d.id, d.filename, d.status, d.escalation_level, d.error_message, "
             f"d.retry_count, d.created_at, "
-            f"(SELECT COUNT(*) FROM document_issues di WHERE di.document_id = d.id) as issue_count, "
-            f"(SELECT COUNT(*) FROM document_fixes df WHERE df.document_id = d.id) as fix_count "
+            f"(SELECT COUNT(*) as cnt FROM document_issues di WHERE di.document_id = d.id) as issue_count, "
+            f"(SELECT COUNT(*) as cnt FROM document_fixes df WHERE df.document_id = d.id) as fix_count "
             f"FROM documents d {where} "
             f"ORDER BY d.created_at DESC LIMIT 100"
             if USE_POSTGRES else
             f"SELECT d.id, d.filename, d.status, d.escalation_level, d.error_message, "
             f"d.retry_count, d.created_at, "
-            f"(SELECT COUNT(*) FROM document_issues di WHERE di.document_id = d.id) as issue_count, "
-            f"(SELECT COUNT(*) FROM document_fixes df WHERE df.document_id = d.id) as fix_count "
+            f"(SELECT COUNT(*) as cnt FROM document_issues di WHERE di.document_id = d.id) as issue_count, "
+            f"(SELECT COUNT(*) as cnt FROM document_fixes df WHERE df.document_id = d.id) as fix_count "
             f"FROM documents d {where} "
             f"ORDER BY d.created_at DESC LIMIT 100",
             params if USE_POSTGRES else params,
@@ -183,38 +183,38 @@ def get_tracking_summary():
     try:
         cur = _cursor(conn)
 
-        cur.execute("SELECT COUNT(*) FROM documents")
-        total = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as cnt FROM documents")
+        total = cur.fetchone()['cnt']
 
         by_status = {}
         for s in ("processing", "approved", "needs_review", "verified", "failed",
                    "azure_completed", "validation_completed"):
             cur.execute(
-                "SELECT COUNT(*) FROM documents WHERE status = %s"
+                "SELECT COUNT(*) as cnt FROM documents WHERE status = %s"
                 if USE_POSTGRES else
-                "SELECT COUNT(*) FROM documents WHERE status = ?",
+                "SELECT COUNT(*) as cnt FROM documents WHERE status = ?",
                 (s,)
             )
-            by_status[s] = cur.fetchone()[0]
+            by_status[s] = cur.fetchone()['cnt']
 
         by_escalation = {}
         for el in ("level_1", "level_2", "level_3", "level_4"):
             cur.execute(
-                "SELECT COUNT(*) FROM documents WHERE escalation_level = %s"
+                "SELECT COUNT(*) as cnt FROM documents WHERE escalation_level = %s"
                 if USE_POSTGRES else
-                "SELECT COUNT(*) FROM documents WHERE escalation_level = ?",
+                "SELECT COUNT(*) as cnt FROM documents WHERE escalation_level = ?",
                 (el,)
             )
-            by_escalation[el] = cur.fetchone()[0]
+            by_escalation[el] = cur.fetchone()['cnt']
 
-        cur.execute("SELECT COUNT(*) FROM document_issues")
-        total_issues = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as cnt FROM document_issues")
+        total_issues = cur.fetchone()['cnt']
 
-        cur.execute("SELECT COUNT(*) FROM document_issues WHERE resolved_at IS NOT NULL")
-        resolved_issues = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as cnt FROM document_issues WHERE resolved_at IS NOT NULL")
+        resolved_issues = cur.fetchone()['cnt']
 
-        cur.execute("SELECT COUNT(*) FROM document_fixes")
-        total_fixes = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as cnt FROM document_fixes")
+        total_fixes = cur.fetchone()['cnt']
 
         cur.execute(
             "SELECT issue_type, COUNT(*) as cnt FROM document_issues "
@@ -228,11 +228,11 @@ def get_tracking_summary():
         )
         fixes_by_type = [dict(r) for r in cur.fetchall()]
 
-        cur.execute("SELECT COUNT(*) FROM documents WHERE retry_count > 0")
-        documents_with_retries = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as cnt FROM documents WHERE retry_count > 0")
+        documents_with_retries = cur.fetchone()['cnt']
 
-        cur.execute("SELECT SUM(retry_count) FROM documents")
-        total_retries = cur.fetchone()[0] or 0
+        cur.execute("SELECT COALESCE(SUM(retry_count), 0) as cnt FROM documents")
+        total_retries = cur.fetchone()['cnt'] or 0
 
         return {
             "total_documents": total,
@@ -287,7 +287,8 @@ def list_issues(
             f"LEFT JOIN documents d ON d.id = di.document_id "
             f"{where} ORDER BY di.created_at DESC LIMIT {limit}"
         )
-        return {"total": cur.rowcount if hasattr(cur, 'rowcount') else 0, "issues": [dict(r) for r in cur.fetchall()]}
+        issues = [dict(r) for r in cur.fetchall()]
+        return {"total": len(issues), "issues": issues}
     finally:
         put_conn(conn)
 
