@@ -59,10 +59,10 @@ function SummaryCards({ summary }: { summary: TrackingSummary | null }) {
 }
 
 function IssuesByTypeChart({ summary }: { summary: TrackingSummary | null }) {
-  if (!summary) return null;
-  const types = Object.entries(summary.issues_by_type);
+  if (!summary || !summary.issues_by_type) return null;
+  const types = summary.issues_by_type;
   if (types.length === 0) return null;
-  const total = types.reduce((s, [, v]) => s + v, 0);
+  const total = types.reduce((s, t) => s + t.cnt, 0);
   return (
     <Card size="sm">
       <CardHeader className="pb-2">
@@ -70,16 +70,16 @@ function IssuesByTypeChart({ summary }: { summary: TrackingSummary | null }) {
       </CardHeader>
       <CardContent className="p-4 pt-0">
         <div className="flex flex-col gap-1.5">
-          {types.map(([type, count]) => (
-            <div key={type} className="flex items-center gap-2">
-              <span className="text-[11px] text-muted-foreground w-24 truncate">{issueTypeLabels[type] || type}</span>
+          {types.map(t => (
+            <div key={t.issue_type} className="flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground w-24 truncate">{issueTypeLabels[t.issue_type] || t.issue_type}</span>
               <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${(count / total) * 100}%`, backgroundColor: 'var(--accent-rose)' }}
+                  style={{ width: `${(t.cnt / total) * 100}%`, backgroundColor: 'var(--accent-rose)' }}
                 />
               </div>
-              <span className="text-[11px] font-medium w-6 text-right">{count}</span>
+              <span className="text-[11px] font-medium w-6 text-right">{t.cnt}</span>
             </div>
           ))}
         </div>
@@ -89,10 +89,9 @@ function IssuesByTypeChart({ summary }: { summary: TrackingSummary | null }) {
 }
 
 function IssuesBySeverityChart({ summary }: { summary: TrackingSummary | null }) {
-  if (!summary) return null;
-  const sevs = Object.entries(summary.issues_by_severity);
-  if (sevs.length === 0) return null;
-  const total = sevs.reduce((s, [, v]) => s + v, 0);
+  if (!summary || !summary.issues_by_severity || summary.issues_by_severity.length === 0) return null;
+  const sevs = summary.issues_by_severity;
+  const total = sevs.reduce((s, t) => s + t.cnt, 0);
   return (
     <Card size="sm">
       <CardHeader className="pb-2">
@@ -100,16 +99,16 @@ function IssuesBySeverityChart({ summary }: { summary: TrackingSummary | null })
       </CardHeader>
       <CardContent className="p-4 pt-0">
         <div className="flex flex-col gap-1.5">
-          {sevs.map(([sev, count]) => (
-            <div key={sev} className="flex items-center gap-2">
-              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 w-16 justify-center ${severityColors[sev] || ''}`}>{sev}</Badge>
+          {sevs.map(t => (
+            <div key={t.severity} className="flex items-center gap-2">
+              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 w-16 justify-center ${severityColors[t.severity] || ''}`}>{t.severity}</Badge>
               <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${(count / total) * 100}%`, backgroundColor: sev === 'critical' ? 'var(--accent-rose)' : sev === 'error' ? 'var(--accent-amber)' : sev === 'warning' ? 'var(--accent-orange)' : 'var(--accent-cyan)' }}
+                  style={{ width: `${(t.cnt / total) * 100}%`, backgroundColor: t.severity === 'critical' ? 'var(--accent-rose)' : t.severity === 'error' ? 'var(--accent-amber)' : t.severity === 'warning' ? 'var(--accent-orange)' : 'var(--accent-cyan)' }}
                 />
               </div>
-              <span className="text-[11px] font-medium w-6 text-right">{count}</span>
+              <span className="text-[11px] font-medium w-6 text-right">{t.cnt}</span>
             </div>
           ))}
         </div>

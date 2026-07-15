@@ -223,6 +223,12 @@ def get_tracking_summary():
         issues_by_type = [dict(r) for r in cur.fetchall()]
 
         cur.execute(
+            "SELECT severity, COUNT(*) as cnt FROM document_issues "
+            "GROUP BY severity ORDER BY cnt DESC"
+        )
+        issues_by_severity = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
             "SELECT fix_type, COUNT(*) as cnt FROM document_fixes "
             "GROUP BY fix_type ORDER BY cnt DESC"
         )
@@ -242,6 +248,7 @@ def get_tracking_summary():
             "resolved_issues": resolved_issues,
             "resolution_rate": round(resolved_issues / total_issues, 3) if total_issues else 0,
             "issues_by_type": issues_by_type,
+            "issues_by_severity": issues_by_severity,
             "total_fixes": total_fixes,
             "fixes_by_type": fixes_by_type,
             "documents_with_retries": documents_with_retries,

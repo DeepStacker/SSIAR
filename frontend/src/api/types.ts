@@ -251,10 +251,11 @@ export interface TrackingSummary {
   total_issues: number;
   resolved_issues: number;
   resolution_rate: number;
-  issues_by_type: Record<string, number>;
-  issues_by_severity: Record<string, number>;
+  issues_by_type: { issue_type: string; cnt: number }[];
+  issues_by_severity?: { severity: string; cnt: number }[];
   total_fixes: number;
-  fixes_by_type: Record<string, number>;
+  fixes_by_type: { fix_type: string; cnt: number }[];
+  documents_with_retries: number;
   total_retries: number;
 }
 
