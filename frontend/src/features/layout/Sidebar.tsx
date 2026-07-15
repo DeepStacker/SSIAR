@@ -12,15 +12,10 @@ const navGroups: { label: string; items: { id: ViewMode; label: string; icon: Re
   {
     label: 'Main',
     items: [
+      { id: 'dlq', label: 'Dead Letter Queue', icon: <AlertOctagon size={18} className="text-orange-500" /> },
       { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
       { id: 'reporting', label: 'Reporting', icon: <FileText size={18} /> },
       { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={18} /> },
-    ],
-  },
-  {
-    label: 'Management',
-    items: [
-      { id: 'dlq', label: 'Dead Letter Queue', icon: <AlertOctagon size={18} /> },
       { id: 'feedback', label: 'Feedback', icon: <MessageSquare size={18} /> },
     ],
   },
