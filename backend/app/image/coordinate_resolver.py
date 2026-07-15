@@ -70,48 +70,67 @@ def _polygon_from_cells(cells: list[dict], page_raw: dict, page_num: int) -> Opt
 
 
 def _polygon_from_selection_marks(page_raw: dict, page_num: int, q_num: int) -> Optional[tuple[list[float], int]]:
-    """Get the bounding polygon for an SDQ row from Azure selection marks."""
-    from app.image.pdf import P1_Y_RANGES, P2_Y_RANGES
-    if page_num == 1:
-        if not (1 <= q_num <= 12):
-            return None
-        y0_template, y1_template = P1_Y_RANGES[q_num - 1]
-    else:
-        if not (13 <= q_num <= 25):
-            return None
-        y0_template, y1_template = P2_Y_RANGES[q_num - 13]
-
-    unit = "pixel"
+    """Get the bounding polygon for an SDQ row from Azure selection marks.
+    
+    Groups marks into 3 x-columns (left/mid/right), sorts each column by center-y,
+    and picks the q_num-th unselected mark from each column. This avoids template
+    coordinate scaling issues and works regardless of page DPI.
+    """
     selection_marks = []
-    page_h = 3508.0
+    unit = "pixel"
     for p in page_raw.get("pages", []):
         pn = p.get("pageNumber", p.get("page", 1))
         if pn == page_num:
             unit = p.get("unit", "pixel")
-            page_h = p.get("height", 3508.0) * (300.0 if unit == "inch" else 1.0)
             selection_marks = p.get("selectionMarks", [])
             break
 
-    scale_template_to_azure = page_h / 3508.0
-    y0 = y0_template * scale_template_to_azure
-    y1 = y1_template * scale_template_to_azure
+    if len(selection_marks) < 3:
+        return None
 
-    matched_polys = []
+    mark_data = []
     for sm in selection_marks:
         poly = sm.get("polygon", [])
         if not poly or len(poly) < 8:
             continue
         if unit == "inch":
             poly = [pt * 300.0 for pt in poly]
-        ys = [poly[i] for i in range(1, 8, 2)]
-        cy = (min(ys) + max(ys)) / 2.0
-        if y0 <= cy <= y1:
-            matched_polys.append(poly)
+        cx = sum(poly[0::2]) / 4.0
+        cy = sum(poly[1::2]) / 4.0
+        mark_data.append((cx, cy, poly, sm.get("state", "unselected")))
 
-    if len(matched_polys) < 2:
+    if len(mark_data) < 6:
         return None
 
-    return _combine_polygons(matched_polys, page_num)
+    # --- group into 3 x-columns via the two largest cx gaps ---
+    sorted_by_cx = sorted(mark_data, key=lambda m: m[0])
+    gaps = [(sorted_by_cx[i+1][0] - sorted_by_cx[i][0], i) for i in range(len(sorted_by_cx) - 1)]
+    gaps.sort(key=lambda g: -g[0])
+    split1 = min(gaps[0][1], gaps[1][1])
+    split2 = max(gaps[0][1], gaps[1][1])
+    cols = [
+        sorted_by_cx[:split1 + 1],
+        sorted_by_cx[split1 + 1:split2 + 1],
+        sorted_by_cx[split2 + 1:],
+    ]
+
+    # --- collect unselected marks in cy-order per column ---
+    col_unselected = []
+    for col in cols:
+        uns = sorted(
+            [m for m in col if m[3] == "unselected"],
+            key=lambda m: m[1],
+        )
+        if len(uns) < q_num:
+            return None
+        col_unselected.append(uns)
+
+    if len(col_unselected) < 3:
+        return None
+
+    # --- pick the q_num-th mark from each column (1-indexed) ---
+    polys = [col_unselected[i][q_num - 1][2] for i in range(3)]
+    return _combine_polygons(polys, page_num)
 
 
 def _combine_polygons(polys: list[list[float]], page_num: int) -> tuple[list[float], int]:
