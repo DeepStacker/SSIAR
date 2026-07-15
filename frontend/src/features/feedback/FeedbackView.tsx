@@ -137,7 +137,7 @@ export const FeedbackView: React.FC = () => {
   const isClosed = selectedItem?.status === 'closed';
 
   const loadMessages = useCallback(async (id: number) => {
-    try { const d = await api.getMessages(id); setMessages(d.messages); } catch {}
+    try { const d = await api.getMessages(id); setMessages(d.messages); } catch (e) { console.error('Failed to load messages', e); }
   }, []);
 
   useEffect(() => {
@@ -360,7 +360,7 @@ function UserView({ selectedId, setSelectedId, selectedItem, setSelectedItem, me
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { const d = await api.listFeedback({ limit: 100 }); setItems(d.items); } catch {} finally { setLoading(false); }
+    try { const d = await api.listFeedback({ limit: 100 }); setItems(d.items); } catch (e) { console.error('Failed to load feedback', e); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);

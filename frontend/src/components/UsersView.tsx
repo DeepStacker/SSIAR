@@ -49,9 +49,8 @@ export const UsersView: React.FC = () => {
     if (!window.confirm(`Delete ${selectedIds.size} selected user(s)?`)) return;
     setBulkDeleting(true);
     let failed = 0;
-    for (const id of selectedIds) {
-      try { await usersApi.deleteUser(id); } catch { failed++; }
-    }
+    const results = await Promise.allSettled(Array.from(selectedIds).map(id => usersApi.deleteUser(id)));
+    failed = results.filter(r => r.status === 'rejected').length;
     setBulkDeleting(false);
     setSelectedIds(new Set());
     if (failed) showToast(`${failed} deletion(s) failed`, 'error');

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Check, Loader2, X, ArrowLeft, ArrowRight, RotateCcw, Hash, Percent, Calendar, User, GraduationCap, ListOrdered, Download, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 import type { Document, DocumentDetails } from '@/api';
 import { api } from '@/api';
@@ -30,8 +30,7 @@ interface Props {
   saving: boolean;
 }
 
-const CONF_HIGH = 0.8;
-const CONF_MED = 0.5;
+import { CONF_HIGH, CONF_MED } from '@/lib/constants';
 
 const MAIN_FIELDS = [
   { key: 'roll_number', label: 'Roll Number', icon: Hash },
@@ -189,10 +188,10 @@ export const ReviewView: React.FC<Props> = ({ doc, details, onDetailsChange, onD
       onVerify();
     }
   }, [acceptedCount, activeFields.length, onVerify, saving]);
-  const highConfQCount = Array.from({ length: 25 }, (_, i) => `q${i + 1}`).filter(q => {
+  const highConfQCount = useMemo(() => Array.from({ length: 25 }, (_, i) => `q${i + 1}`).filter(q => {
     const c = checkboxConf[q];
     return c === 'high' || c === 'high_confidence' || !c;
-  }).length;
+  }).length, [checkboxConf]);
 
   const dirtyFields = activeFields.filter(f => {
     const val = getFieldVal(f.key);

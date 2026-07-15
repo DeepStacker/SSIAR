@@ -19,7 +19,7 @@ interface Props {
   onDragOver: (v: boolean) => void;
 }
 
-export const UploadZone: React.FC<Props> = ({
+export const UploadZone: React.FC<Props> = React.memo(({
   uploading, autoVerify, onAutoVerifyChange, splitPages, onSplitPagesChange, onUpload,
   failedCount, onRetryAllFailed, isDragOver, onDragOver,
 }) => {
@@ -160,4 +160,4 @@ export const UploadZone: React.FC<Props> = ({
       </div>
     </Card>
   );
-};
+});

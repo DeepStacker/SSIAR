@@ -23,7 +23,7 @@ const BREADCRUMB_LABELS: Record<ViewMode, string> = {
   feedback: 'Feedback',
 };
 
-export const Header: React.FC<Props> = ({ view, onViewChange }) => {
+export const Header: React.FC<Props> = React.memo(({ view, onViewChange }) => {
   const { dark, toggle } = useTheme();
   const { email, token, logout } = useAuth();
   const { show: showToast } = useToast();
@@ -164,4 +164,4 @@ export const Header: React.FC<Props> = ({ view, onViewChange }) => {
       )}
     </>
   );
-};
+});

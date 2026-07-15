@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { CONF_HIGH, CONF_MED } from '@/lib/constants';
 import { useToast } from '@/context/ToastContext';
 
 interface FullPagePreviewProps {
@@ -207,9 +208,6 @@ const DiffRow: React.FC<{ original: string; corrected: string; fieldName?: strin
 
 const c = (base: string, ...extras: (string | false | undefined | null)[]) =>
   [base, ...extras.filter(Boolean)].join(' ');
-
-const CONF_HIGH = 0.8;
-const CONF_MED = 0.5;
 
 function getConfStyle(score: number) {
   if (score >= CONF_HIGH) return { text: 'text-success', badge: 'success' as const };
