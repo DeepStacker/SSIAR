@@ -285,6 +285,14 @@ def init_db():
                 "UPDATE document_issues SET severity = 'error' "
                 "WHERE severity = 'warning' AND details::jsonb->>'priority' = 'critical'"
             )
+            now_str = datetime.now().isoformat()
+            cur.execute(
+                "UPDATE document_issues SET resolved_at = %s, resolution = %s "
+                "WHERE resolved_at IS NULL AND document_id IN ("
+                "  SELECT id FROM documents WHERE status IN ('verified', 'approved', 'failed')"
+                ")",
+                (now_str, "resolved_by_verification")
+            )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at)")
@@ -576,6 +584,14 @@ def _run_migrations(cursor):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_document_issues_doc_id ON document_issues(document_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_document_issues_resolved ON document_issues(resolved_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_document_fixes_doc_id ON document_fixes(document_id)")
+        now_str = datetime.now().isoformat()
+        cursor.execute(
+            "UPDATE document_issues SET resolved_at = ?, resolution = ? "
+            "WHERE resolved_at IS NULL AND document_id IN ("
+            "  SELECT id FROM documents WHERE status IN ('verified', 'approved', 'failed')"
+            ")",
+            (now_str, "resolved_by_verification")
+        )
 
 
 def insert_document(doc_id: str, filename: str, status: str = "processing",
