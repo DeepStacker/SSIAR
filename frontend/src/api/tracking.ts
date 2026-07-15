@@ -11,7 +11,19 @@ export const trackingApi = {
   },
 
   getDlq: async (): Promise<DlqEntry[]> => {
-    return fetchJson<DlqEntry[]>(`${API_BASE}/stats/dlq`);
+    const raw = await fetchJson<{ total: number; documents: any[] }>(`${API_BASE}/stats/dlq`);
+    const docs = raw?.documents ?? [];
+    return docs.map((d: any) => ({
+      document_id: d.id ?? d.document_id,
+      status: d.status,
+      retry_count: d.retry_count ?? 0,
+      error_message: d.error_message,
+      filename: d.filename,
+      roll_number: d.roll_number,
+      issue_count: d.issue_count ?? 0,
+      fix_count: d.fix_count ?? 0,
+      last_error_at: d.created_at,
+    }));
   },
 
   retryFromDlq: async (docId: string): Promise<{ message: string }> => {
