@@ -187,7 +187,6 @@ export function useHandlers(
       confirmVariant: 'destructive',
       confirmLabel: 'Delete',
       onConfirm: async () => {
-        const origDocs = [...doc.documents];
         doc.removeDocument(d.id);
         try {
           await api.deleteDocument(d.id);
@@ -196,7 +195,7 @@ export function useHandlers(
           if (doc.selectedDoc?.id === d.id) closeDoc();
           show("Document deleted");
         } catch {
-          doc.setDocuments(origDocs);
+          invalidateCache('/documents');
           show("Delete failed", 'error');
         }
       },

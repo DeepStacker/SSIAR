@@ -4,6 +4,7 @@ Documents API (V2)
 Clean V2 implementation — no backward compatibility.
 """
 import asyncio
+import threading
 from typing import Optional
 from datetime import datetime
 import cv2
@@ -18,6 +19,7 @@ from app.database import (
     log_correction_data, get_edit_history, get_page_image,
     get_db_connection, put_conn,
 )
+from app.image.storage import delete_document_files
 from app.models import VerifyDataRequest, BulkRequest
 from app.core.events import notify as SSE
 from app.image.crops import extract_crop, get_crop_page, generate_crop_jpeg
@@ -364,16 +366,26 @@ def remove_document(doc_id: str):
     uid = get_current_user_id()
     if not get_document(doc_id):
         raise HTTPException(status_code=404, detail="Document not found")
-    db_delete(doc_id, user_id=uid)
+    db_delete(doc_id, user_id=uid, cleanup=False)
+    threading.Thread(target=delete_document_files, args=(doc_id,), daemon=True).start()
     SSE("document_deleted", {"doc_id": doc_id}, user_id=get_current_user_id())
     return {"message": "Document deleted"}
 
 
 @router.post("/api/documents/bulk-delete")
 def bulk_delete(payload: BulkRequest):
-    count = bulk_delete_documents(payload.doc_ids)
+    count = bulk_delete_documents(payload.doc_ids, cleanup=False)
+    threading.Thread(target=_cleanup_files, args=(payload.doc_ids,), daemon=True).start()
     SSE("documents_bulk_deleted", {"count": count}, user_id=get_current_user_id())
     return {"message": f"Deleted {count} document(s)"}
+
+
+def _cleanup_files(doc_ids: list[str]):
+    for doc_id in doc_ids:
+        try:
+            delete_document_files(doc_id)
+        except Exception:
+            pass
 
 
 @router.post("/api/documents/bulk-verify")

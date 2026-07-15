@@ -815,8 +815,7 @@ def get_corrections_log() -> list:
         put_conn(conn)
 
 
-def delete_document(doc_id: str, user_id: str | None = None):
-    from app.image.storage import delete_document_files
+def delete_document(doc_id: str, user_id: str | None = None, cleanup: bool = True):
     from app.auth import get_current_role
     conn = get_db_connection()
     try:
@@ -835,14 +834,15 @@ def delete_document(doc_id: str, user_id: str | None = None):
         conn.commit()
     finally:
         put_conn(conn)
-    delete_document_files(doc_id)
+    if cleanup:
+        from app.image.storage import delete_document_files
+        delete_document_files(doc_id)
 
 
-def bulk_delete_documents(doc_ids: list) -> int:
+def bulk_delete_documents(doc_ids: list, cleanup: bool = True) -> int:
     if not doc_ids:
         return 0
     from app.auth import get_current_user_id, get_current_role
-    from app.image.storage import delete_document_files
     uid = get_current_user_id()
     is_admin = get_current_role() == "admin"
     conn = get_db_connection()
@@ -860,8 +860,10 @@ def bulk_delete_documents(doc_ids: list) -> int:
         count = cur.rowcount
     finally:
         put_conn(conn)
-    for doc_id in doc_ids:
-        delete_document_files(doc_id)
+    if cleanup:
+        from app.image.storage import delete_document_files
+        for doc_id in doc_ids:
+            delete_document_files(doc_id)
     return count
 
 

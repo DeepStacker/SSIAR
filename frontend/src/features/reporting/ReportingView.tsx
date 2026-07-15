@@ -46,24 +46,27 @@ export const ReportingView: React.FC<Props> = ({
     <>
       <Card className="mb-5">
         <CardContent className="p-5">
-          <h3 className="text-base mb-4 text-[var(--text-secondary)] flex items-center gap-1.5">
+          <h3 className="text-base mb-4 text-muted-foreground flex items-center gap-1.5">
             <Download size={16} />
             Reporting & Export
           </h3>
           <div className="flex gap-4 items-end flex-wrap">
             <div>
-              <label htmlFor="report-date-from" className="text-[11px] text-[var(--text-muted)] block mb-1">Date From</label>
-              <input id="report-date-from" type="date" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-full sm:w-[150px]"
+              <label htmlFor="report-date-from" className="text-[11px] text-muted-foreground block mb-1">Date From</label>
+              <input id="report-date-from" type="date"
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-full sm:w-[150px] text-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                 value={dateFrom} onChange={e => onDateFromChange(e.target.value)} />
             </div>
             <div>
-              <label htmlFor="report-date-to" className="text-[11px] text-[var(--text-muted)] block mb-1">Date To</label>
-              <input id="report-date-to" type="date" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-full sm:w-[150px]"
+              <label htmlFor="report-date-to" className="text-[11px] text-muted-foreground block mb-1">Date To</label>
+              <input id="report-date-to" type="date"
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-full sm:w-[150px] text-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                 value={dateTo} onChange={e => onDateToChange(e.target.value)} />
             </div>
             <div>
-              <label htmlFor="report-status" className="text-[11px] text-[var(--text-muted)] block mb-1">Status</label>
-              <select id="report-status" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-full sm:w-[120px]"
+              <label htmlFor="report-status" className="text-[11px] text-muted-foreground block mb-1">Status</label>
+              <select id="report-status"
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-full sm:w-[120px] text-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                 value={reportStatus} onChange={e => onStatusChange(e.target.value)}>
                 <option value="">All</option>
                 <option value="processing">Processing</option>
@@ -73,22 +76,24 @@ export const ReportingView: React.FC<Props> = ({
               </select>
             </div>
             <div>
-              <label htmlFor="report-class" className="text-[11px] text-[var(--text-muted)] block mb-1">Class</label>
-              <input id="report-class" type="text" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-full sm:w-[100px]"
+              <label htmlFor="report-class" className="text-[11px] text-muted-foreground block mb-1">Class</label>
+              <input id="report-class" type="text"
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-full sm:w-[100px] text-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                 value={reportClass} onChange={e => onClassChange(e.target.value)} placeholder="e.g. 10" />
             </div>
             <div>
-              <label htmlFor="report-format" className="text-[11px] text-[var(--text-muted)] block mb-1">Format</label>
-              <select id="report-format" className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-full sm:w-[100px]"
+              <label htmlFor="report-format" className="text-[11px] text-muted-foreground block mb-1">Format</label>
+              <select id="report-format"
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs w-full sm:w-[100px] text-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                 value={reportFormat} onChange={e => onFormatChange(e.target.value as ReportFormat)}>
                 <option value="excel">Excel</option>
                 <option value="csv">CSV</option>
               </select>
             </div>
           </div>
-          <div className="flex gap-2 mt-4 pt-4 border-t border-[var(--color-border)]">
+          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
             <a href={getExportLink(reportFormat)}
-              className="inline-flex shrink-0 items-center justify-center h-7 gap-1 px-2.5 text-[0.8rem] font-medium whitespace-nowrap rounded-lg border bg-primary text-primary-foreground hover:bg-primary/80 transition-all select-none">
+              className="inline-flex shrink-0 items-center justify-center h-7 gap-1 px-3 text-[0.8rem] font-medium whitespace-nowrap rounded-lg bg-primary text-primary-foreground hover:bg-primary/80 transition-all select-none shadow-sm">
               <Download size={14} /> Generate {reportFormat.toUpperCase()}
             </a>
             <a href={getExportLink('excel')}
@@ -99,7 +104,7 @@ export const ReportingView: React.FC<Props> = ({
               className="inline-flex shrink-0 items-center justify-center h-7 gap-1 px-2.5 text-[0.8rem] font-medium whitespace-nowrap rounded-lg border border-border bg-background hover:bg-muted hover:text-foreground transition-all select-none">निर्यात</a>
             {selectedReportDocs.size > 0 && (
               <a href={getExportLink(reportFormat, undefined, Array.from(selectedReportDocs).join(','))}
-                className="inline-flex shrink-0 items-center justify-center h-7 gap-1 px-2.5 text-[0.8rem] font-medium whitespace-nowrap rounded-lg border bg-primary text-primary-foreground hover:bg-primary/80 transition-all select-none">
+                className="inline-flex shrink-0 items-center justify-center h-7 gap-1 px-3 text-[0.8rem] font-medium whitespace-nowrap rounded-lg bg-primary text-primary-foreground hover:bg-primary/80 transition-all select-none shadow-sm">
                 <Download size={14} /> Selected ({selectedReportDocs.size})
               </a>
             )}
@@ -108,9 +113,9 @@ export const ReportingView: React.FC<Props> = ({
       </Card>
 
       <Card className="overflow-hidden">
-        <div className="flex items-center gap-2 px-5 py-3 border-b text-sm text-[var(--text-secondary)] font-semibold">
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-border text-sm text-muted-foreground font-semibold">
           <input type="checkbox" checked={reportResults.length > 0 && selectedReportDocs.size === reportResults.length}
-            onChange={onToggleSelectAll} className="accent-[var(--accent-violet)]" />
+            onChange={onToggleSelectAll} className="accent-primary h-4 w-4 rounded border-border" />
           Matching Documents ({reportResults.length})
         </div>
         <div className="max-h-[500px] overflow-y-auto [&_thead]:sticky [&_thead]:top-0 [&_thead]:bg-card [&_thead]:z-10">
@@ -124,7 +129,7 @@ export const ReportingView: React.FC<Props> = ({
             </div>
           ) : (
             <Table>
-              <TableHeader>
+              <TableHeader className="[&_tr]:border-b-border/60">
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-8"></TableHead>
                   <TableHead className="text-xs text-muted-foreground font-medium">Filename</TableHead>
@@ -137,10 +142,14 @@ export const ReportingView: React.FC<Props> = ({
               <TableBody>
                 {reportResults.map((doc, idx) => (
                   <TableRow key={doc.id}
-                    className={`cursor-pointer ${selectedReportDocs.has(doc.id) ? 'bg-violet-500/[0.04] hover:bg-violet-500/[0.06]' : 'hover:bg-muted/50'} ${idx % 2 === 0 && !selectedReportDocs.has(doc.id) ? 'bg-muted/20' : ''}`}>
+                    className={`cursor-pointer transition-all ${
+                      selectedReportDocs.has(doc.id)
+                        ? 'bg-violet-500/[0.04] hover:bg-violet-500/[0.08] border-l-2 border-l-violet-500/40'
+                        : 'hover:bg-muted/50 border-l-2 border-l-transparent'
+                    } ${idx % 2 === 0 && !selectedReportDocs.has(doc.id) ? 'bg-muted/15' : ''}`}>
                     <TableCell onClick={e => e.stopPropagation()} className="py-2">
                       <input type="checkbox" checked={selectedReportDocs.has(doc.id)}
-                        onChange={() => onToggleSelect(doc.id)} className="accent-violet-500" />
+                        onChange={() => onToggleSelect(doc.id)} className="accent-primary h-4 w-4 rounded border-border" />
                     </TableCell>
                     <TableCell className="font-medium text-sm py-2 max-w-[220px]" onClick={() => onOpenDoc(doc)}>
                       <span className="truncate block" title={doc.filename}>{doc.filename}</span>

@@ -87,9 +87,10 @@ export const DocumentTable = React.memo<Props>(({
         <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as TabType)}>
           <TabsList variant="line" className="bg-transparent border-none p-0 flex gap-1 overflow-x-auto min-w-0 pb-0.5">
             {tabConfig.map(tab => (
-              <TabsTrigger key={tab.key} value={tab.key} className="text-xs px-3 py-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground font-semibold gap-1.5 text-muted-foreground rounded-none transition-colors">
+              <TabsTrigger key={tab.key} value={tab.key}
+                className="text-xs px-3 py-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground font-semibold gap-1.5 text-muted-foreground rounded-none transition-all">
                 {tab.icon} {tab.label}
-                <span className="text-[10px] bg-secondary px-1.5 py-0.5 rounded-full opacity-70">
+                <span className="text-[10px] bg-secondary/60 px-1.5 py-0.5 rounded-full">
                   {counts[tab.key]}
                 </span>
               </TabsTrigger>
@@ -139,11 +140,11 @@ export const DocumentTable = React.memo<Props>(({
               ) : activeTab === 'processing' ? (
                 <Clock size={26} className="text-muted-foreground" />
               ) : activeTab === 'needs_review' ? (
-                <Check size={26} className="text-emerald-500" />
+                <AlertTriangle size={26} className="text-violet-500" />
               ) : activeTab === 'verified' ? (
                 <Check size={26} className="text-emerald-500" />
               ) : activeTab === 'failed' ? (
-                <Check size={26} className="text-emerald-500" />
+                <X size={26} className="text-rose-500" />
               ) : (
                 <FileWarning size={26} className="text-muted-foreground" />
               )}

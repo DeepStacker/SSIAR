@@ -14,8 +14,8 @@ export const BulkActionBar: React.FC<Props> = ({ selectedCount, docIds, onDone, 
   if (!selectedCount) return null;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b bg-[var(--bg-highlight)]">
-      <span className="text-sm font-semibold text-[var(--text-primary)]">{selectedCount} selected</span>
+    <div className="flex items-center gap-2 px-4 py-2 border-b bg-muted/30">
+      <span className="text-sm font-semibold text-foreground">{selectedCount} selected</span>
       {onBulkVerify && (
         <Button variant="default" size="sm" onClick={() => { onBulkVerify(docIds); onDone(); }}>
           <Check size={14} /> Verify

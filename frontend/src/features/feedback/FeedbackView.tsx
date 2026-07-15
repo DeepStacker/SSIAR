@@ -337,8 +337,10 @@ function AdminView({ selectedId, setSelectedId, selectedItem, setSelectedItem, m
             <ChatInput />
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
-            <MessageSquare size={26} className="opacity-[0.1]" />
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
+            <div className="w-14 h-14 rounded-2xl bg-muted/30 flex items-center justify-center">
+              <MessageSquare size={24} className="opacity-40" />
+            </div>
             <p className="text-sm font-medium text-muted-foreground/50 tracking-tight">Select a submission</p>
             <p className="text-xs text-muted-foreground/30">Choose from the list to view and respond</p>
           </div>

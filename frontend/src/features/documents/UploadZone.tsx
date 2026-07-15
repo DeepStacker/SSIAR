@@ -107,51 +107,51 @@ export const UploadZone: React.FC<Props> = React.memo(({
         <div className="flex items-center gap-4">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 ${
             uploadSuccess
-              ? 'bg-emerald-950/30 border-emerald-500/30'
+              ? 'bg-emerald-500/15 border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
               : isUploading || isDragOver
-              ? 'bg-indigo-950/40 border-indigo-500/30 scale-110'
-              : 'bg-slate-900/40 border-white/5'
+              ? 'bg-indigo-500/15 border-indigo-500/30 scale-110 shadow-[0_0_12px_rgba(99,102,241,0.15)]'
+              : 'bg-muted/30 border-border/40'
           }`}>
             {uploadSuccess ? (
               <CheckCircle2 size={24} className="text-emerald-400" />
             ) : isUploading ? (
               <Loader2 size={24} className="animate-spin text-indigo-400" />
             ) : (
-              <Upload size={24} className={isDragOver ? 'text-indigo-400' : 'text-[var(--text-muted)]'} />
+              <Upload size={24} className={isDragOver ? 'text-indigo-400' : 'text-muted-foreground'} />
             )}
           </div>
           <div className="text-left">
-            <div className="font-semibold text-sm text-[var(--text-primary)]">
+            <div className="font-semibold text-sm text-foreground">
               {uploadSuccess ? 'Upload complete!' : isUploading ? `Uploading ${uploadingFilename}...` : 'Upload or drop PDFs'}
             </div>
-            <div id={descriptionId} className="text-xs text-[var(--text-muted)] mt-0.5">
+            <div id={descriptionId} className="text-xs text-muted-foreground mt-0.5">
               {uploadSuccess ? 'Document queued for processing' : isUploading ? 'Processing document layouts...' : 'Drag & drop research PDFs or click to browse'}
             </div>
             {isUploading && (
-              <div className="mt-2 w-full max-w-[200px] h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-indigo-500 rounded-full transition-all duration-300 ease-out" style={{ width: `${Math.min(uploadProgress, 100)}%` }} />
+              <div className="mt-2 w-full max-w-[200px] h-1.5 bg-muted/50 rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-300 ease-out bg-gradient-to-r from-indigo-500 to-violet-500 shadow-[0_0_6px_rgba(99,102,241,0.3)]" style={{ width: `${Math.min(uploadProgress, 100)}%` }} />
               </div>
             )}
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-4 pointer-events-auto" onClick={e => e.stopPropagation()}>
-          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-            <input type="checkbox" checked={autoVerify} onChange={e => onAutoVerifyChange(e.target.checked)} className="rounded border-border text-indigo-600 focus:ring-indigo-500 h-4 w-4 bg-slate-900" />
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+            <input type="checkbox" checked={autoVerify} onChange={e => onAutoVerifyChange(e.target.checked)} className="rounded border-border text-indigo-600 focus:ring-indigo-500 h-4 w-4 accent-indigo-500" />
             Auto-verify
           </label>
-          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-            <input type="checkbox" checked={splitPages} onChange={e => onSplitPagesChange(e.target.checked)} className="rounded border-border text-indigo-600 focus:ring-indigo-500 h-4 w-4 bg-slate-900" />
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+            <input type="checkbox" checked={splitPages} onChange={e => onSplitPagesChange(e.target.checked)} className="rounded border-border text-indigo-600 focus:ring-indigo-500 h-4 w-4 accent-indigo-500" />
             Split 2-page forms
           </label>
           {failedCount > 0 && (
-            <Button variant="outline" size="sm" onClick={onRetryAllFailed} className="text-rose-400 border-rose-500/30 hover:bg-rose-950/20 h-7 text-[11px] font-semibold">
+            <Button variant="outline" size="sm" onClick={onRetryAllFailed} className="text-rose-500 border-rose-500/30 hover:bg-rose-500/10 h-7 text-[11px] font-semibold">
               <RotateCcw size={10} className="mr-1.5" /> Retry Failed ({failedCount})
             </Button>
           )}
         </div>
       </div>
-      <div className="text-left text-[10px] text-[var(--text-muted)]/60 mt-4 pointer-events-none border-t border-border/30 pt-3 w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1">
+      <div className="text-left text-[10px] text-muted-foreground/60 mt-4 pointer-events-none border-t border-border/30 pt-3 w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1">
         <span className="flex items-center gap-1.5">
           <FileText size={10} />
           {isUploading ? 'Ingesting PDF data structures...' : `PDF files up to ${MAX_FILE_SIZE_MB}MB`}

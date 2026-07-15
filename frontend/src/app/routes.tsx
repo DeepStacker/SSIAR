@@ -253,24 +253,24 @@ export function AppContent(props: Props) {
         onUpload={() => quickUploadRef.current?.click()}
       />
 
-      <div className="sticky bottom-0 left-0 right-0 z-20 mt-2">
-        <div className="border-t border-border px-0 py-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
-          <div className="flex items-center gap-3 text-muted-foreground">
+      <div className="sticky bottom-0 left-0 right-0 z-20 mt-2 bg-background/95 backdrop-blur-sm border-t border-border">
+        <div className="px-4 sm:px-6 py-2 flex items-center justify-between text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
-              <Activity size={13} className={processingCount > 0 ? 'text-[var(--accent-amber)] animate-pulse' : 'text-muted-foreground'} />
+              <Activity size={13} className={processingCount > 0 ? 'text-amber-400 animate-pulse' : 'text-muted-foreground/50'} />
               {processingCount > 0 ? (
-                <span className="font-medium text-[var(--accent-amber)]">{processingCount} processing</span>
+                <span className="font-medium text-amber-400">{processingCount} processing</span>
               ) : (
                 <span>Queue idle</span>
               )}
             </span>
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 text-muted-foreground/70">
               <Users size={13} />
               <span>{workerCount} worker{workerCount !== 1 ? 's' : ''}</span>
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">{doc.documents.length} total docs</span>
+          <div className="flex items-center gap-3">
+            <span className="text-muted-foreground/60">{doc.documents.length} total docs</span>
             {doc.loading && (
               <span className="flex items-center gap-1 text-primary font-medium">
                 <Loader2 size={12} className="animate-spin" />Syncing...
